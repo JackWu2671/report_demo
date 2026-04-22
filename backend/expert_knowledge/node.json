@@ -1,0 +1,116 @@
+[
+  {
+    "id": "scene_001",
+    "name": "企业网络质量分析",
+    "level": 1,
+    "intro_text": "对企业网络进行全面质量评估，涵盖时延、带宽、可用性等核心指标"
+  },
+  {
+    "id": "sub_001",
+    "name": "时延性能分析",
+    "level": 2,
+    "intro_text": "分析网络端到端时延及抖动情况"
+  },
+  {
+    "id": "sub_002",
+    "name": "带宽容量分析",
+    "level": 2,
+    "intro_text": "分析网络带宽利用率与流量趋势"
+  },
+  {
+    "id": "dim_001",
+    "name": "端到端时延",
+    "level": 3,
+    "intro_text": "评估业务报文从源端到目的端的传输时延水平"
+  },
+  {
+    "id": "dim_002",
+    "name": "传输时延",
+    "level": 3,
+    "intro_text": "评估各链路段的物理传播及处理时延"
+  },
+  {
+    "id": "dim_003",
+    "name": "带宽利用率",
+    "level": 3,
+    "intro_text": "评估网络带宽资源的使用效率"
+  },
+  {
+    "id": "dim_004",
+    "name": "流量趋势",
+    "level": 3,
+    "intro_text": "分析网络流量随时间的变化规律"
+  },
+  {
+    "id": "item_001",
+    "name": "平均往返时延",
+    "level": 4,
+    "intro_text": ""
+  },
+  {
+    "id": "item_002",
+    "name": "时延抖动",
+    "level": 4,
+    "intro_text": ""
+  },
+  {
+    "id": "item_003",
+    "name": "链路传播时延",
+    "level": 4,
+    "intro_text": ""
+  },
+  {
+    "id": "item_004",
+    "name": "峰值带宽利用率",
+    "level": 4,
+    "intro_text": ""
+  },
+  {
+    "id": "item_005",
+    "name": "平均带宽利用率",
+    "level": 4,
+    "intro_text": ""
+  },
+  {
+    "id": "item_006",
+    "name": "流量增长趋势",
+    "level": 4,
+    "intro_text": ""
+  },
+  {
+    "id": "ind_001",
+    "name": "RTT均值（ms）",
+    "level": 5,
+    "intro_text": ""
+  },
+  {
+    "id": "ind_002",
+    "name": "时延标准差（ms）",
+    "level": 5,
+    "intro_text": ""
+  },
+  {
+    "id": "ind_003",
+    "name": "链路传播延迟（ms）",
+    "level": 5,
+    "intro_text": ""
+  },
+  {
+    "id": "ind_004",
+    "name": "95分位带宽利用率（%）",
+    "level": 5,
+    "intro_text": ""
+  },
+  {
+    "id": "ind_005",
+    "name": "7日均值带宽利用率（%）",
+    "level": 5,
+    "intro_text": ""
+  },
+  {
+    "id": "ind_006",
+    "name": "月环比流量增长率（%）",
+    "level": 5,
+    "intro_text": ""
+  }
+]
