@@ -249,52 +249,26 @@ def step6_build_subtree(
 
 
 # ─────────────────────────────────────────────────────────────
-# Step 7: LLM 生成报告大纲
+# Step 7: 子树直接渲染为 Markdown 大纲
 # ─────────────────────────────────────────────────────────────
 
-async def step7_generate_outline(question: str, subtree: dict) -> str:
+def step7_render_outline(subtree: dict) -> str:
     """
-    调用 LLM，基于锚节点子树为用户问题生成 Markdown 格式报告大纲。
+    将锚节点子树直接渲染为 Markdown 大纲，无需 LLM。
+    锚节点对应 # 标题，每深一层标题级别加一。
 
     Returns:
         Markdown 格式的报告大纲字符串
     """
-    llm = LLMService.from_env()
-    context = _subtree_to_text(subtree)
-
-    system_prompt = (
-        "你是一个专业的分析报告大纲生成助手。\n"
-        "根据用户问题和提供的知识图谱结构，生成一份层次清晰的分析报告大纲。\n"
-        "要求：\n"
-        "- 使用 Markdown 格式（# 报告标题，## 一级章节，### 二级章节）\n"
-        "- 严格基于知识图谱中的 L3 维度和 L4 评估项组织章节\n"
-        "- L3 维度对应 ## 章节，L4 评估项对应 ### 章节\n"
-        "- 可在每个 ## 章节后加一句简短说明\n"
-        "- 语言简洁专业，直接输出大纲，不加额外解释"
-    )
-
-    user_prompt = (
-        f"用户问题：{question}\n\n"
-        f"知识图谱结构：\n{context}\n\n"
-        "请基于以上知识图谱，生成分析报告大纲。"
-    )
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    outline = await llm.complete(messages)
-    logger.info(f"[Step 7] 大纲生成完成: {len(outline)} 字符")
+    blocks = _render_node(subtree, heading_level=1)
+    outline = "\n\n".join(blocks)
+    logger.info(f"[Step 7] 大纲渲染完成: {len(outline)} 字符")
     return outline
 
 
 # ─────────────────────────────────────────────────────────────
 # 内部工具函数
 # ─────────────────────────────────────────────────────────────
-
-_LEVEL_LABELS = {1: "场景", 2: "子场景", 3: "维度", 4: "评估项", 5: "指标"}
-
 
 def _build_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dict:
     node = dict(nodes_dict[node_id])
@@ -309,13 +283,15 @@ def _count_nodes(node: dict) -> int:
     return 1 + sum(_count_nodes(c) for c in node.get("children", []))
 
 
-def _subtree_to_text(node: dict, depth: int = 0) -> str:
-    indent = "  " * depth
-    label = _LEVEL_LABELS.get(node.get("level", 0), "")
-    intro = f" — {node['intro_text']}" if node.get("intro_text") else ""
-    line = f"{indent}[L{node.get('level', 0)} {label}] {node['name']}{intro}"
-    child_lines = [_subtree_to_text(c, depth + 1) for c in node.get("children", [])]
-    return "\n".join([line] + child_lines)
+def _render_node(node: dict, heading_level: int) -> list[str]:
+    prefix = "#" * min(heading_level, 6)
+    block = f"{prefix} {node['name']}"
+    if node.get("intro_text"):
+        block += f"\n\n{node['intro_text']}"
+    blocks = [block]
+    for child in node.get("children", []):
+        blocks.extend(_render_node(child, heading_level + 1))
+    return blocks
 
 
 # ─────────────────────────────────────────────────────────────
@@ -351,8 +327,8 @@ async def main(question: str) -> str:
     # Step 6: 从锚节点构建子树
     subtree = step6_build_subtree(anchor["selected_id"], nodes_dict, children_map)
 
-    # Step 7: LLM 生成大纲
-    outline = await step7_generate_outline(question, subtree)
+    # Step 7: 渲染大纲
+    outline = step7_render_outline(subtree)
 
     return outline
 
