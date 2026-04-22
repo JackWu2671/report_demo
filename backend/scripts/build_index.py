@@ -49,7 +49,10 @@ async def build_index() -> None:
         base_url=os.getenv("EMBEDDING_BASE_URL", "http://localhost:8001/v1"),
         dim=int(os.getenv("EMBEDDING_DIM", 1024)),
     )
-    texts = [n["name"] for n in nodes]
+    texts = [
+        n["name"] + " " + " ".join(n.get("keywords", []))
+        for n in nodes
+    ]
     logger.info(f"开始获取 {len(texts)} 个节点的 Embedding...")
     embeddings = await emb_svc.get_embeddings_batch(texts, batch_size=32)
     logger.info(f"Embedding 完成，shape: {embeddings.shape}")

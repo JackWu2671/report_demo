@@ -1,20 +1,35 @@
 [
-  {"from_id": "scene_001", "to_id": "sub_001",  "type": "HAS_SUBSCENE"},
-  {"from_id": "scene_001", "to_id": "sub_002",  "type": "HAS_SUBSCENE"},
-  {"from_id": "sub_001",   "to_id": "dim_001",  "type": "HAS_DIMENSION"},
-  {"from_id": "sub_001",   "to_id": "dim_002",  "type": "HAS_DIMENSION"},
-  {"from_id": "sub_002",   "to_id": "dim_003",  "type": "HAS_DIMENSION"},
-  {"from_id": "sub_002",   "to_id": "dim_004",  "type": "HAS_DIMENSION"},
-  {"from_id": "dim_001",   "to_id": "item_001", "type": "HAS_ITEM"},
-  {"from_id": "dim_001",   "to_id": "item_002", "type": "HAS_ITEM"},
-  {"from_id": "dim_002",   "to_id": "item_003", "type": "HAS_ITEM"},
-  {"from_id": "dim_003",   "to_id": "item_004", "type": "HAS_ITEM"},
-  {"from_id": "dim_003",   "to_id": "item_005", "type": "HAS_ITEM"},
-  {"from_id": "dim_004",   "to_id": "item_006", "type": "HAS_ITEM"},
-  {"from_id": "item_001",  "to_id": "ind_001",  "type": "HAS_INDICATOR"},
-  {"from_id": "item_002",  "to_id": "ind_002",  "type": "HAS_INDICATOR"},
-  {"from_id": "item_003",  "to_id": "ind_003",  "type": "HAS_INDICATOR"},
-  {"from_id": "item_004",  "to_id": "ind_004",  "type": "HAS_INDICATOR"},
-  {"from_id": "item_005",  "to_id": "ind_005",  "type": "HAS_INDICATOR"},
-  {"from_id": "item_006",  "to_id": "ind_006",  "type": "HAS_INDICATOR"}
+  {"parent": "L1_001", "child": "L2_001", "order": 1},
+  {"parent": "L1_001", "child": "L2_002", "order": 2},
+
+  {"parent": "L2_001", "child": "L3_001", "order": 1},
+  {"parent": "L2_001", "child": "L3_002", "order": 2},
+
+  {"parent": "L2_002", "child": "L3_001", "order": 1},
+
+  {"parent": "L3_001", "child": "L4_001", "order": 1},
+  {"parent": "L3_001", "child": "L4_002", "order": 2},
+
+  {"parent": "L3_002", "child": "L4_003", "order": 1},
+  {"parent": "L3_002", "child": "L4_004", "order": 2},
+  {"parent": "L3_002", "child": "L4_005", "order": 3},
+
+  {"parent": "L4_001", "child": "L5_001", "order": 1},
+  {"parent": "L4_001", "child": "L5_002", "order": 2},
+  {"parent": "L4_001", "child": "L5_003", "order": 3},
+  {"parent": "L4_001", "child": "L5_004", "order": 4},
+
+  {"parent": "L4_002", "child": "L5_005", "order": 1},
+  {"parent": "L4_002", "child": "L5_006", "order": 2},
+  {"parent": "L4_002", "child": "L5_007", "order": 3},
+  {"parent": "L4_002", "child": "L5_008", "order": 4},
+
+  {"parent": "L4_003", "child": "L5_009", "order": 1},
+  {"parent": "L4_003", "child": "L5_010", "order": 2},
+
+  {"parent": "L4_004", "child": "L5_011", "order": 1},
+  {"parent": "L4_004", "child": "L5_012", "order": 2},
+
+  {"parent": "L4_005", "child": "L5_013", "order": 1},
+  {"parent": "L4_005", "child": "L5_014", "order": 2}
 ]

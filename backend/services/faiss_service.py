@@ -56,7 +56,7 @@ class FAISSService:
             threshold      : 最低相似度分数（余弦相似度，范围 0~1）
 
         Returns:
-            [{id, name, level, intro_text, score}, ...]  按分数降序
+            [{id, name, level, score, ...}, ...]  按分数降序
         """
         if self.index is None or self.index.ntotal == 0:
             return []

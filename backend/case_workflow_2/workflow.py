@@ -71,7 +71,7 @@ def step1_load_resources() -> tuple[FAISSService, dict, dict]:
     nodes_dict = {n["id"]: n for n in nodes}
     children_map: dict[str, list[str]] = {}
     for rel in relations:
-        children_map.setdefault(rel["from_id"], []).append(rel["to_id"])
+        children_map.setdefault(rel["parent"], []).append(rel["child"])
 
     logger.info(
         f"[Step 1] 加载完成 — 节点: {len(nodes_dict)}, 关系: {len(relations)}, "
@@ -286,8 +286,8 @@ def _count_nodes(node: dict) -> int:
 def _render_node(node: dict, heading_level: int) -> list[str]:
     prefix = "#" * min(heading_level, 6)
     block = f"{prefix} {node['name']}"
-    if node.get("intro_text"):
-        block += f"\n\n{node['intro_text']}"
+    if node.get("description"):
+        block += f"\n\n{node['description']}"
     blocks = [block]
     for child in node.get("children", []):
         blocks.extend(_render_node(child, heading_level + 1))
