@@ -3,6 +3,7 @@ LLM 服务层，封装 OpenAI-compatible chat completions API。
 
 参考 report_system/backend/llm/service.py，简化为 demo 所需功能：
   - complete()        非流式调用，返回 content 字符串
+  - complete_json()   非流式调用，解析并返回 JSON dict
   - complete_stream() 流式调用，async generator，yield content 片段
   - from_env()        从 .env 环境变量构造实例
 
@@ -15,6 +16,7 @@ think_tag_mode:
 import json
 import logging
 import os
+import re
 
 import aiohttp
 
@@ -66,6 +68,16 @@ class LLMService:
         data = await self._post(payload, cfg)
         content = data["choices"][0]["message"]["content"]
         return self._strip_think(content)
+
+    async def complete_json(
+        self, messages: list[dict], config: LLMConfig | None = None
+    ) -> dict:
+        """
+        非流式调用，自动解析 LLM 响应中的 JSON。
+        支持 ```json``` 代码块和裸 JSON 两种格式。
+        """
+        raw = await self.complete(messages, config)
+        return self._parse_json(raw)
 
     async def complete_stream(
         self, messages: list[dict], config: LLMConfig | None = None
@@ -178,3 +190,30 @@ class LLMService:
         if "</think>" in content:
             return content[content.index("</think>") + 8 :].strip()
         return content
+
+    @staticmethod
+    def _parse_json(raw: str) -> dict:
+        """
+        从 LLM 输出中提取 JSON，兼容三种格式：
+        1. ```json … ``` 代码块
+        2. 裸 JSON 对象
+        3. 文本中嵌套的 {...} 块
+        """
+        s = raw.strip()
+        # 1. ```json``` 代码块
+        m = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", s, re.DOTALL)
+        if m:
+            s = m.group(1).strip()
+        # 2. 直接解析
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            pass
+        # 3. 最外层 { ... }
+        first, last = s.find("{"), s.rfind("}")
+        if first != -1 and last > first:
+            try:
+                return json.loads(s[first : last + 1])
+            except json.JSONDecodeError:
+                pass
+        raise ValueError(f"无法从 LLM 输出中提取 JSON: {s[:200]}")

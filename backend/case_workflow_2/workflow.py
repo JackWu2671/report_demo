@@ -4,6 +4,7 @@ case_workflow_2 — 基于 JSON 知识图谱 + FAISS 的报告大纲生成工作
 对应 report_system 的 case_2（outline-generate）：
   - 用 expert_knowledge/node.json + relation.json 替代 Neo4j
   - 用 services/faiss_service.py 做向量检索
+  - 用 ANCHOR_PROMPT + LLM 选锚节点（同 report_system/graph_rag_executor.py）
   - 用 LLM 生成最终大纲文本
 
 使用方法:
@@ -33,6 +34,14 @@ logger = logging.getLogger(__name__)
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DATA_DIR = os.path.join(_BASE_DIR, "data")
 _EXPERT_DIR = os.path.join(_BASE_DIR, "expert_knowledge")
+
+# 与 report_system/graph_rag_executor.py 保持一致
+ANCHOR_PROMPT = """你是知识库节点选择专家。从候选中选出最符合用户意图的唯一节点。
+判断原则: 宽泛→高层级，具体→低层级，父子关系时按粒度判断。
+用 ```json ``` 代码块包裹输出，不要加解释文字。格式:
+```json
+{"selected_id":"","selected_name":"","selected_path":"","level":0,"reason":""}
+```"""
 
 
 # ─────────────────────────────────────────────────────────────
@@ -92,17 +101,17 @@ async def step2_embed_query(question: str) -> np.ndarray:
 
 
 # ─────────────────────────────────────────────────────────────
-# Step 3: FAISS 检索最相关节点
+# Step 3: FAISS 检索候选节点
 # ─────────────────────────────────────────────────────────────
 
 def step3_search_nodes(
     query_embedding: np.ndarray,
     faiss_svc: FAISSService,
-    top_k: int = 5,
+    top_k: int = 10,
     threshold: float | None = None,
 ) -> list[dict]:
     """
-    在 FAISS 索引中检索与问题最相关的知识节点。
+    在 FAISS 索引中检索与问题最相关的候选节点。
 
     Returns:
         [{id, name, level, intro_text, score}, ...]  按分数降序
@@ -117,96 +126,141 @@ def step3_search_nodes(
 
 
 # ─────────────────────────────────────────────────────────────
-# Step 4: 从命中节点向上找根，再向下构建子树
+# Step 4: 为候选节点构建祖先路径
 # ─────────────────────────────────────────────────────────────
 
-def _find_root(node_id: str, children_map: dict) -> str:
-    """沿父节点链向上走到最顶层（level-1）节点。"""
+def step4_build_candidate_paths(
+    hits: list[dict],
+    nodes_dict: dict,
+    children_map: dict,
+) -> list[dict]:
+    """
+    为每个 FAISS 命中节点构建完整祖先路径，供 LLM 理解节点在图中的位置。
+
+    格式同 report_system/graph_rag_executor.py：
+      id=... name=... level=... path=（根 > ... > 节点）
+
+    Returns:
+        [{id, name, level, score, path}, ...]
+    """
+    # 反向映射：child_id -> parent_id
     parent_map: dict[str, str] = {}
     for pid, cids in children_map.items():
         for cid in cids:
             parent_map[cid] = pid
-    current = node_id
-    while current in parent_map:
-        current = parent_map[current]
-    return current
+
+    candidates = []
+    for hit in hits:
+        chain: list[str] = []
+        cur: str | None = hit["id"]
+        while cur and cur in nodes_dict:
+            chain.append(nodes_dict[cur]["name"])
+            cur = parent_map.get(cur)
+        chain.reverse()  # 根 → 叶
+        candidates.append(
+            {
+                "id": hit["id"],
+                "name": hit["name"],
+                "level": hit["level"],
+                "score": hit["score"],
+                "path": " > ".join(chain),
+            }
+        )
+
+    logger.info(
+        f"[Step 4] {len(candidates)} 个候选节点:\n"
+        + "\n".join(
+            f"  L{c['level']} {c['name']} | {c['path']} | score={c['score']:.3f}"
+            for c in candidates
+        )
+    )
+    return candidates
 
 
-def _build_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dict:
-    """递归构建以 node_id 为根的子树 dict（含 children 列表）。"""
-    node = dict(nodes_dict[node_id])
-    node["children"] = [
-        _build_subtree(cid, nodes_dict, children_map)
-        for cid in children_map.get(node_id, [])
+# ─────────────────────────────────────────────────────────────
+# Step 5: LLM 选锚节点
+# ─────────────────────────────────────────────────────────────
+
+async def step5_select_anchor(question: str, candidates: list[dict]) -> dict:
+    """
+    使用 ANCHOR_PROMPT 让 LLM 从候选节点中选出最符合用户意图的锚节点。
+
+    候选格式（同 report_system）：
+        - id=... name=... level=... path=...
+
+    Returns:
+        {"selected_id": ..., "selected_name": ..., "selected_path": ...,
+         "level": ..., "reason": ...}
+    """
+    llm = LLMService.from_env()
+
+    cs = "\n".join(
+        f"- id={c['id']} name={c['name']} level={c['level']} path={c['path']}"
+        for c in candidates
+    )
+
+    messages = [
+        {"role": "system", "content": ANCHOR_PROMPT},
+        {"role": "user", "content": f"## 候选\n{cs}\n\n## 问题\n{question}"},
     ]
-    return node
+
+    try:
+        anchor = await llm.complete_json(messages)
+    except Exception as e:
+        logger.warning(f"[Step 5] LLM 选锚失败，回退到 score 最高的候选: {e}")
+        f = candidates[0]
+        anchor = {
+            "selected_id": f["id"],
+            "selected_name": f["name"],
+            "selected_path": f["path"],
+            "level": f["level"],
+            "reason": "fallback",
+        }
+
+    logger.info(
+        f"[Step 5] 选锚: '{anchor.get('selected_name')}' "
+        f"(L{anchor.get('level')}), reason={anchor.get('reason', '')}"
+    )
+    return anchor
 
 
-def step4_build_subtree(
-    hits: list[dict],
-    nodes_dict: dict,
-    children_map: dict,
+# ─────────────────────────────────────────────────────────────
+# Step 6: 从锚节点构建子树
+# ─────────────────────────────────────────────────────────────
+
+def step6_build_subtree(
+    anchor_id: str, nodes_dict: dict, children_map: dict
 ) -> dict:
     """
-    取得分最高的命中节点，向上找到 Level-1 根节点，
-    再递归构建完整子树。
+    从锚节点递归构建完整子树 dict（含 children 列表）。
 
     Returns:
         subtree dict，结构: {id, name, level, intro_text, children: [...]}
     """
-    if not hits:
-        raise ValueError("FAISS 未命中任何节点，请先运行 build_index.py 构建索引")
+    if anchor_id not in nodes_dict:
+        raise ValueError(f"锚节点 '{anchor_id}' 不在知识图谱中")
 
-    best_id = hits[0]["id"]
-    root_id = _find_root(best_id, children_map)
-    subtree = _build_subtree(root_id, nodes_dict, children_map)
+    subtree = _build_subtree(anchor_id, nodes_dict, children_map)
     logger.info(
-        f"[Step 4] 子树根: '{nodes_dict[root_id]['name']}' (id={root_id}), "
-        f"命中节点: '{hits[0]['name']}' (score={hits[0]['score']:.3f})"
+        f"[Step 6] 子树构建完成: 根='{nodes_dict[anchor_id]['name']}', "
+        f"共 {_count_nodes(subtree)} 个节点"
     )
     return subtree
 
 
 # ─────────────────────────────────────────────────────────────
-# Step 5: 将子树转换为 LLM 上下文文本
+# Step 7: LLM 生成报告大纲
 # ─────────────────────────────────────────────────────────────
 
-_LEVEL_LABELS = {1: "场景", 2: "子场景", 3: "维度", 4: "评估项", 5: "指标"}
-
-
-def _subtree_to_text(node: dict, depth: int = 0) -> str:
-    indent = "  " * depth
-    label = _LEVEL_LABELS.get(node.get("level", 0), "")
-    intro = f" — {node['intro_text']}" if node.get("intro_text") else ""
-    line = f"{indent}[L{node.get('level', 0)} {label}] {node['name']}{intro}"
-    child_lines = [_subtree_to_text(c, depth + 1) for c in node.get("children", [])]
-    return "\n".join([line] + child_lines)
-
-
-def step5_build_context(subtree: dict) -> str:
+async def step7_generate_outline(question: str, subtree: dict) -> str:
     """
-    将子树 dict 序列化为缩进文本，供 LLM 理解知识图谱结构。
-
-    Returns:
-        多行字符串，每行标注层级类型和节点名称
-    """
-    context = _subtree_to_text(subtree)
-    logger.info(f"[Step 5] 知识上下文 ({len(context)} 字符):\n{context}")
-    return context
-
-
-# ─────────────────────────────────────────────────────────────
-# Step 6: LLM 生成报告大纲
-# ─────────────────────────────────────────────────────────────
-
-async def step6_generate_outline(question: str, context: str) -> str:
-    """
-    调用 LLM，基于检索到的知识图谱结构为用户问题生成报告大纲。
+    调用 LLM，基于锚节点子树为用户问题生成 Markdown 格式报告大纲。
 
     Returns:
         Markdown 格式的报告大纲字符串
     """
     llm = LLMService.from_env()
+    context = _subtree_to_text(subtree)
 
     system_prompt = (
         "你是一个专业的分析报告大纲生成助手。\n"
@@ -231,8 +285,37 @@ async def step6_generate_outline(question: str, context: str) -> str:
     ]
 
     outline = await llm.complete(messages)
-    logger.info(f"[Step 6] 大纲生成完成: {len(outline)} 字符")
+    logger.info(f"[Step 7] 大纲生成完成: {len(outline)} 字符")
     return outline
+
+
+# ─────────────────────────────────────────────────────────────
+# 内部工具函数
+# ─────────────────────────────────────────────────────────────
+
+_LEVEL_LABELS = {1: "场景", 2: "子场景", 3: "维度", 4: "评估项", 5: "指标"}
+
+
+def _build_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dict:
+    node = dict(nodes_dict[node_id])
+    node["children"] = [
+        _build_subtree(cid, nodes_dict, children_map)
+        for cid in children_map.get(node_id, [])
+    ]
+    return node
+
+
+def _count_nodes(node: dict) -> int:
+    return 1 + sum(_count_nodes(c) for c in node.get("children", []))
+
+
+def _subtree_to_text(node: dict, depth: int = 0) -> str:
+    indent = "  " * depth
+    label = _LEVEL_LABELS.get(node.get("level", 0), "")
+    intro = f" — {node['intro_text']}" if node.get("intro_text") else ""
+    line = f"{indent}[L{node.get('level', 0)} {label}] {node['name']}{intro}"
+    child_lines = [_subtree_to_text(c, depth + 1) for c in node.get("children", [])]
+    return "\n".join([line] + child_lines)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -254,19 +337,22 @@ async def main(question: str) -> str:
     # Step 2: 问题向量化
     query_embedding = await step2_embed_query(question)
 
-    # Step 3: FAISS 检索
+    # Step 3: FAISS 检索候选节点
     hits = step3_search_nodes(query_embedding, faiss_svc)
     if not hits:
         return f"未找到与'{question}'相关的知识节点，请检查索引或降低 FAISS_SCORE_THRESHOLD。"
 
-    # Step 4: 构建子树
-    subtree = step4_build_subtree(hits, nodes_dict, children_map)
+    # Step 4: 构建候选节点祖先路径
+    candidates = step4_build_candidate_paths(hits, nodes_dict, children_map)
 
-    # Step 5: 生成 LLM 上下文
-    context = step5_build_context(subtree)
+    # Step 5: LLM 选锚节点
+    anchor = await step5_select_anchor(question, candidates)
 
-    # Step 6: LLM 生成大纲
-    outline = await step6_generate_outline(question, context)
+    # Step 6: 从锚节点构建子树
+    subtree = step6_build_subtree(anchor["selected_id"], nodes_dict, children_map)
+
+    # Step 7: LLM 生成大纲
+    outline = await step7_generate_outline(question, subtree)
 
     return outline
 
