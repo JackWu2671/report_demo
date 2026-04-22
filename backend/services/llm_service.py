@@ -91,7 +91,7 @@ class LLMService:
         headers = self._headers()
         timeout = aiohttp.ClientTimeout(total=cfg.timeout or self._timeout)
 
-        is_inside_think = self.think_tag_mode in ("qwen3", "r1")
+        is_inside_think = False
         parse_think = self.think_tag_mode != "none"
 
         async with aiohttp.ClientSession() as session:
