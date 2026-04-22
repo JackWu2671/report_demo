@@ -204,8 +204,22 @@ async def step5_select_anchor(question: str, candidates: list[dict]) -> dict:
         {"role": "user", "content": f"## 候选\n{cs}\n\n## 问题\n{question}"},
     ]
 
+    logger.info(
+        "[Step 5] Prompt:\n[SYSTEM]\n%s\n\n[USER]\n%s",
+        messages[0]["content"],
+        messages[1]["content"],
+    )
+
+    print("\n[Step 5] LLM 流式输出 ↓", flush=True)
+    print("-" * 50, flush=True)
+    full_text = ""
     try:
-        anchor = await llm.complete_json(messages)
+        async for chunk in llm.complete_stream(messages):
+            print(chunk, end="", flush=True)
+            full_text += chunk
+        print("\n" + "-" * 50, flush=True)
+        logger.info("[Step 5] LLM 完整输出:\n%s", full_text)
+        anchor = LLMService._parse_json(full_text)
     except Exception as e:
         logger.warning(f"[Step 5] LLM 选锚失败，回退到 score 最高的候选: {e}")
         f = candidates[0]
@@ -218,8 +232,10 @@ async def step5_select_anchor(question: str, candidates: list[dict]) -> dict:
         }
 
     logger.info(
-        f"[Step 5] 选锚: '{anchor.get('selected_name')}' "
-        f"(L{anchor.get('level')}), reason={anchor.get('reason', '')}"
+        "[Step 5] 选锚: '%s' (L%s), reason=%s",
+        anchor.get("selected_name"),
+        anchor.get("level"),
+        anchor.get("reason", ""),
     )
     return anchor
 
@@ -334,8 +350,10 @@ async def main(question: str) -> str:
 
 
 if __name__ == "__main__":
-    q = sys.argv[1] if len(sys.argv) > 1 else "分析企业网络时延问题"
+    q = sys.argv[1] if len(sys.argv) > 1 else "分析政企OTN升级"
     result = asyncio.run(main(q))
     print("\n" + "=" * 60)
+    print("[Step 7] 大纲（知识图谱子树遍历结果）")
+    print("=" * 60)
     print(result)
     print("=" * 60)
