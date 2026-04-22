@@ -17,7 +17,6 @@ import logging
 import os
 import sys
 
-import aiohttp
 import numpy as np
 from dotenv import load_dotenv
 
@@ -25,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.embedding_service import EmbeddingService
 from services.faiss_service import FAISSService
+from services.llm_service import LLMService
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -206,9 +206,7 @@ async def step6_generate_outline(question: str, context: str) -> str:
     Returns:
         Markdown 格式的报告大纲字符串
     """
-    llm_url = os.getenv("LLM_BASE_URL", "http://localhost:8000/v1")
-    llm_model = os.getenv("LLM_MODEL_NAME", "qwen3-27b")
-    llm_api_key = os.getenv("LLM_API_KEY", "")
+    llm = LLMService.from_env()
 
     system_prompt = (
         "你是一个专业的分析报告大纲生成助手。\n"
@@ -227,33 +225,12 @@ async def step6_generate_outline(question: str, context: str) -> str:
         "请基于以上知识图谱，生成分析报告大纲。"
     )
 
-    headers = {"Content-Type": "application/json"}
-    if llm_api_key:
-        headers["Authorization"] = f"Bearer {llm_api_key}"
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
 
-    payload = {
-        "model": llm_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": float(os.getenv("LLM_TEMPERATURE", 0.1)),
-        "stream": False,
-    }
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            f"{llm_url}/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=120),
-        ) as resp:
-            if resp.status != 200:
-                body = await resp.text()
-                raise RuntimeError(f"LLM 调用失败: status={resp.status}, body={body[:300]}")
-            data = await resp.json()
-            outline = data["choices"][0]["message"]["content"]
-
+    outline = await llm.complete(messages)
     logger.info(f"[Step 6] 大纲生成完成: {len(outline)} 字符")
     return outline
 
@@ -280,7 +257,7 @@ async def main(question: str) -> str:
     # Step 3: FAISS 检索
     hits = step3_search_nodes(query_embedding, faiss_svc)
     if not hits:
-        return f"未找到与"{question}"相关的知识节点，请检查索引或降低 FAISS_SCORE_THRESHOLD。"
+        return f"未找到与'{question}'相关的知识节点，请检查索引或降低 FAISS_SCORE_THRESHOLD。"
 
     # Step 4: 构建子树
     subtree = step4_build_subtree(hits, nodes_dict, children_map)
