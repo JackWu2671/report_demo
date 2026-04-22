@@ -1,0 +1,20 @@
+[
+  {"from_id": "scene_001", "to_id": "sub_001",  "type": "HAS_SUBSCENE"},
+  {"from_id": "scene_001", "to_id": "sub_002",  "type": "HAS_SUBSCENE"},
+  {"from_id": "sub_001",   "to_id": "dim_001",  "type": "HAS_DIMENSION"},
+  {"from_id": "sub_001",   "to_id": "dim_002",  "type": "HAS_DIMENSION"},
+  {"from_id": "sub_002",   "to_id": "dim_003",  "type": "HAS_DIMENSION"},
+  {"from_id": "sub_002",   "to_id": "dim_004",  "type": "HAS_DIMENSION"},
+  {"from_id": "dim_001",   "to_id": "item_001", "type": "HAS_ITEM"},
+  {"from_id": "dim_001",   "to_id": "item_002", "type": "HAS_ITEM"},
+  {"from_id": "dim_002",   "to_id": "item_003", "type": "HAS_ITEM"},
+  {"from_id": "dim_003",   "to_id": "item_004", "type": "HAS_ITEM"},
+  {"from_id": "dim_003",   "to_id": "item_005", "type": "HAS_ITEM"},
+  {"from_id": "dim_004",   "to_id": "item_006", "type": "HAS_ITEM"},
+  {"from_id": "item_001",  "to_id": "ind_001",  "type": "HAS_INDICATOR"},
+  {"from_id": "item_002",  "to_id": "ind_002",  "type": "HAS_INDICATOR"},
+  {"from_id": "item_003",  "to_id": "ind_003",  "type": "HAS_INDICATOR"},
+  {"from_id": "item_004",  "to_id": "ind_004",  "type": "HAS_INDICATOR"},
+  {"from_id": "item_005",  "to_id": "ind_005",  "type": "HAS_INDICATOR"},
+  {"from_id": "item_006",  "to_id": "ind_006",  "type": "HAS_INDICATOR"}
+]
