@@ -39,7 +39,8 @@ def parse_new_nodes(outline_md: str) -> list[dict]:
     解析带 id 标注的 Markdown 大纲，提取所有 [new] 节点及其层级/父节点信息。
 
     解析规则:
-    - 每行格式: `## [L2_001] 节点名` 或 `### [new] 新节点名`
+    - 每行格式: `## [L2_001] 节点名` 或 `### [new] 新节点名: 描述`
+    - [new] 节点名后可跟 ": 描述"（大纲生成时内联写入）
     - 标题深度（# 数量）= 知识库层级（## = L2, ### = L3, ...）
     - 用栈跟踪各层级当前节点，确定 [new] 节点的父节点
 
@@ -47,7 +48,9 @@ def parse_new_nodes(outline_md: str) -> list[dict]:
         outline_md: generate_outline() 输出的带 id 标注 Markdown
 
     Returns:
-        [{name, level, parent_id, parent_name, order}, ...]
+        [{name, description, level, parent_id, parent_name, order}, ...]
+        name        : 节点名称（冒号前部分）
+        description : 内联描述（冒号后部分，可能为空字符串）
         parent_id   : 父节点的真实 KB id（若父节点也是 [new]，则为 None）
         parent_name : 父节点名称（供 apply_updates 做 name→id 解析，处理链式 [new]）
         order       : 在同级节点中的顺序（按出现顺序计数）
@@ -65,8 +68,17 @@ def parse_new_nodes(outline_md: str) -> list[dict]:
 
         hashes = m.group(1)
         node_ref = m.group(2).strip()
-        name = m.group(3).strip()
+        raw_text = m.group(3).strip()
         depth = len(hashes)  # ## = 2 = L2
+
+        # 拆分 "节点名: 描述"（仅对 [new] 节点有效，已有 id 节点的描述来自 KB）
+        if node_ref.lower() == "new" and ": " in raw_text:
+            name, inline_desc = raw_text.split(": ", 1)
+            name = name.strip()
+            inline_desc = inline_desc.strip()
+        else:
+            name = raw_text
+            inline_desc = ""
 
         # 清除比当前深度更深的层级（向上或同层移动时清空子树）
         for d in [d for d in level_stack if d >= depth]:
@@ -81,6 +93,7 @@ def parse_new_nodes(outline_md: str) -> list[dict]:
         if node_ref.lower() == "new":
             new_nodes.append({
                 "name": name,
+                "description": inline_desc,
                 "level": depth,
                 "parent_id": parent_ref if (parent_ref and parent_ref.lower() != "new") else None,
                 "parent_name": parent["name"] if parent else None,
@@ -113,11 +126,14 @@ async def enrich_new_nodes(new_nodes: list[dict], expert_text: str) -> dict:
 
     llm = LLMService.from_env()
 
-    nodes_text = "\n".join(
-        f"- L{n['level']} 节点「{n['name']}」"
-        f"（父节点: {n.get('parent_name') or n.get('parent_id') or '未知'}）"
-        for n in new_nodes
-    )
+    nodes_lines = []
+    for n in new_nodes:
+        desc_hint = f"，已有描述：{n['description']}" if n.get("description") else ""
+        parent_label = n.get("parent_name") or n.get("parent_id") or "未知"
+        nodes_lines.append(
+            f"- L{n['level']} 节点「{n['name']}」（父节点: {parent_label}{desc_hint}）"
+        )
+    nodes_text = "\n".join(nodes_lines)
 
     user_content = f"## 专家描述\n{expert_text}\n\n## 需要补充信息的新节点\n{nodes_text}"
 
@@ -143,17 +159,19 @@ async def enrich_new_nodes(new_nodes: list[dict], expert_text: str) -> dict:
     result = LLMService._parse_json(answer)
     enriched = result.get("nodes", [])
 
-    # 将 LLM 补充的 keywords/description 与结构信息（parent_id, order 等）合并
+    # 合并：结构信息来自 parse_new_nodes，keywords/description 来自 LLM
+    # 若大纲中已有内联描述，优先使用；否则用 LLM 生成的
     name_to_struct = {n["name"]: n for n in new_nodes}
     add_nodes = []
     for e in enriched:
         name = e.get("name", "")
         struct = name_to_struct.get(name, {})
+        inline_desc = struct.get("description", "")
         add_nodes.append({
             "name": name,
             "level": struct.get("level", e.get("level")),
             "keywords": e.get("keywords", []),
-            "description": e.get("description", ""),
+            "description": inline_desc or e.get("description", ""),
             "parent_id": struct.get("parent_id"),
             "parent_name": struct.get("parent_name"),
             "order": struct.get("order", 99),

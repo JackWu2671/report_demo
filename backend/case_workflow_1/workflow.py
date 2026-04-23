@@ -92,7 +92,8 @@ async def main(expert_text: str) -> tuple[str, list, list, list]:
     extraction = await extract_from_expert(expert_text)
     print(
         f"\n[Step 1 结果] 场景: {extraction.get('scene_name')} "
-        f"| 关键词: {extraction.get('keywords')}",
+        f"| 关键词: {extraction.get('keywords')}\n"
+        f"           使用条件: {extraction.get('usage_conditions')}",
         flush=True,
     )
 

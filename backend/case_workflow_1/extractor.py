@@ -1,7 +1,7 @@
 """
-extractor.py — Step 1: LLM 从专家输入文本中抽取关键词、摘要和场景名称。
+extractor.py — Step 1: LLM 从专家输入文本中抽取关键词、摘要、场景名称和使用条件。
 
-输出: {"keywords": [...], "summary": str, "scene_name": str}
+输出: {"keywords": [...], "summary": str, "scene_name": str, "usage_conditions": str}
 """
 
 import logging
@@ -54,8 +54,9 @@ async def extract_from_expert(expert_text: str) -> dict:
 
     result = LLMService._parse_json(answer)
     logger.info(
-        "[Step 1] 抽取完成 — 场景: %s | 关键词: %s",
+        "[Step 1] 抽取完成 — 场景: %s | 关键词: %s | 使用条件: %s",
         result.get("scene_name"),
         result.get("keywords"),
+        result.get("usage_conditions"),
     )
     return result
