@@ -64,15 +64,9 @@ async def select_anchor(question: str, candidates: list[dict]) -> dict:
     print("\n[Step 5] LLM 流式输出 ↓", flush=True)
     print("-" * 50, flush=True)
 
-    full_text = ""
     try:
-        # strip_think=False：流式阶段全量输出（含思考内容），让用户看到实时生成
-        # 收集完毕后再剥除 <think> 块，再做 JSON 解析
-        async for chunk in llm.complete_stream(messages, strip_think=False):
-            print(chunk, end="", flush=True)
-            full_text += chunk
+        answer = await llm.stream_and_collect(messages)
         print("\n" + "-" * 50, flush=True)
-        answer = llm._strip_think(full_text)
         logger.info("[Step 5] LLM 完整输出:\n%s", answer)
         anchor = LLMService._parse_json(answer)
     except Exception as e:

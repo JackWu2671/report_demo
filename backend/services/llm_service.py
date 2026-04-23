@@ -153,6 +153,120 @@ class LLMService:
 
     # ─── 内部方法 ───────────────────────────────────────────────
 
+    async def stream_and_collect(
+        self, messages: list[dict], config: LLMConfig | None = None
+    ) -> str:
+        """
+        流式调用并实时打印到终端，返回最终正式回答内容。
+
+        - <think>...</think> 思考内容：灰色字体实时打印，不计入返回值
+        - 正式回答内容：正常字体实时打印，收集后返回
+        - think_tag_mode=none 时：全部内容正常打印并返回
+
+        Returns:
+            仅正式回答内容（已剥除思考标签）的完整字符串
+        """
+        cfg = config or LLMConfig()
+        payload = self._build_payload(messages, cfg, stream=True)
+        headers = self._headers()
+        timeout = aiohttp.ClientTimeout(total=cfg.timeout or self._timeout)
+
+        use_think = self.think_tag_mode in ("qwen3", "r1")
+        _OPEN, _CLOSE = "<think>", "</think>"
+        _PAD = max(len(_OPEN), len(_CLOSE)) - 1  # 滚动缓冲区保留长度，防止标签被截断
+
+        result: list[str] = []
+        is_thinking = False
+        pending = ""  # 未确认输出的滚动缓冲区
+
+        def _drain(text: str) -> None:
+            """将新文本追加到缓冲区，识别并处理 think 标签，刷出安全内容。"""
+            nonlocal pending, is_thinking
+            pending += text
+
+            if not use_think:
+                print(pending, end="", flush=True)
+                result.append(pending)
+                pending = ""
+                return
+
+            while True:
+                tag = _CLOSE if is_thinking else _OPEN
+                idx = pending.find(tag)
+                if idx != -1:
+                    segment = pending[:idx]
+                    if segment:
+                        if is_thinking:
+                            print(f"\033[90m{segment}\033[0m", end="", flush=True)
+                        else:
+                            print(segment, end="", flush=True)
+                            result.append(segment)
+                    is_thinking = not is_thinking
+                    pending = pending[idx + len(tag):]
+                else:
+                    # 保留最后 _PAD 个字符以防标签跨 chunk 截断
+                    safe_len = max(0, len(pending) - _PAD)
+                    if safe_len:
+                        safe = pending[:safe_len]
+                        if is_thinking:
+                            print(f"\033[90m{safe}\033[0m", end="", flush=True)
+                        else:
+                            print(safe, end="", flush=True)
+                            result.append(safe)
+                        pending = pending[safe_len:]
+                    break
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=timeout,
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    raise RuntimeError(
+                        f"LLM 流式调用失败: status={resp.status}, body={body[:200]}"
+                    )
+
+                raw_buf = bytearray()
+                done = False
+                async for raw_bytes in resp.content:
+                    if done:
+                        break
+                    raw_buf.extend(raw_bytes)
+                    while b"\n" in raw_buf:
+                        end = raw_buf.find(b"\n")
+                        line = bytes(raw_buf[:end])
+                        del raw_buf[: end + 1]
+                        if not line.startswith(b"data:"):
+                            continue
+                        data_str = line[5:].strip()
+                        if data_str == b"[DONE]":
+                            done = True
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            text = (
+                                chunk.get("choices", [{}])[0]
+                                .get("delta", {})
+                                .get("content", "")
+                            )
+                            if text:
+                                _drain(text)
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+
+        # 刷出缓冲区剩余内容
+        if pending:
+            if is_thinking:
+                print(f"\033[90m{pending}\033[0m", end="", flush=True)
+            else:
+                print(pending, end="", flush=True)
+                result.append(pending)
+
+        return "".join(result)
+
     def _build_payload(
         self, messages: list[dict], cfg: LLMConfig, stream: bool
     ) -> dict:

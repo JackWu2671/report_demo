@@ -63,13 +63,8 @@ async def parse_patch(user_request: str, outline_tree: dict) -> list[dict]:
     print("\n[Step 8] LLM Patch 流式输出 ↓", flush=True)
     print("-" * 50, flush=True)
 
-    full_text = ""
-    # strip_think=False：全量流式输出，收集后再剥除思考内容
-    async for chunk in llm.complete_stream(messages, strip_think=False):
-        print(chunk, end="", flush=True)
-        full_text += chunk
+    answer = await llm.stream_and_collect(messages)
     print("\n" + "-" * 50, flush=True)
-    answer = llm._strip_think(full_text)
     logger.info("[Step 8] LLM 完整输出:\n%s", answer)
 
     raw = LLMService._parse_json(answer)
