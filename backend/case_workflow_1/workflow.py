@@ -3,9 +3,11 @@ workflow.py — case_workflow_1 编排入口：专家知识沉淀到 JSON 知识
 
 完整流程（4 步）:
   Step 1  extractor.extract_from_expert()    LLM 抽取关键词 + 摘要 + 场景名称
-  Step 2  searcher.dual_search()             双路 FAISS 检索（关键词 + 摘要），合并候选节点
-  Step 3  outline_gen.generate_outline()     LLM 生成 Markdown 大纲
-  Step 4  kb_updater.propose_updates()       LLM 分析新知识点，建议新增节点
+  Step 2  searcher.dual_search()             双路 FAISS 检索（关键词 + 摘要），得到命中 id 集合
+          searcher.build_kb_tree_text()      渲染完整 KB 树（★ 标命中节点）
+  Step 3  outline_gen.generate_outline()     LLM 生成带 [id]/[new] 标注的 Markdown 大纲
+  Step 4  kb_updater.parse_new_nodes()       解析大纲中的 [new] 节点（含层级/父节点信息）
+          kb_updater.enrich_new_nodes()      LLM 为 [new] 节点补充 keywords/description
           kb_updater.apply_updates()          分配 ID，生成 relation 记录
           kb_updater.save_json_files()        写回 node.json + relation.json
           kb_updater.rebuild_index()          增量追加 FAISS 向量（仅新节点）
@@ -35,9 +37,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 from extractor import extract_from_expert
-from searcher import dual_search
+from searcher import dual_search, build_kb_tree_text
 from outline_gen import generate_outline
-from kb_updater import propose_updates, apply_updates, save_json_files, rebuild_index
+from kb_updater import parse_new_nodes, enrich_new_nodes, apply_updates, save_json_files, rebuild_index
 
 _EXPERT_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 _DATA_DIR = os.path.join(_BACKEND_DIR, "data")
@@ -70,17 +72,19 @@ def _load_kb() -> tuple:
     return faiss_svc, nodes_dict, children_map, nodes_list, relations_list
 
 
-async def main(expert_text: str) -> tuple[str, dict, list, list]:
+async def main(expert_text: str) -> tuple[str, list, list, list]:
     """
-    完整工作流：专家输入 → 关键词抽取 → 双路检索 → 大纲生成 → KB 更新建议。
+    完整工作流：专家输入 → 关键词抽取 → 双路检索 → 带 id 大纲生成 → 解析 [new] 节点。
 
     Args:
         expert_text: 专家输入的自然语言场景描述
 
     Returns:
-        (outline_md, patch, nodes_list, relations_list)
-        patch 含 LLM 建议的新节点；nodes_list / relations_list 为当前 KB 原始内容，
-        用于调用方决定是否持久化（confirm_and_save）。
+        (outline_md, new_nodes_raw, nodes_list, relations_list)
+        outline_md      : 带 [id]/[new] 标注的 Markdown 大纲
+        new_nodes_raw   : parse_new_nodes() 结果，用于展示给用户确认
+        nodes_list      : 当前 KB 节点列表（供 confirm_and_save 使用）
+        relations_list  : 当前 KB 关系列表（供 confirm_and_save 使用）
     """
     faiss_svc, nodes_dict, children_map, nodes_list, relations_list = _load_kb()
 
@@ -92,35 +96,39 @@ async def main(expert_text: str) -> tuple[str, dict, list, list]:
         flush=True,
     )
 
-    # Step 2: 双路检索
-    candidates = await dual_search(extraction, faiss_svc, nodes_dict, children_map)
-    if not candidates:
-        print("\n[Step 2] 未检索到相关知识节点，将基于专家描述直接生成大纲。", flush=True)
-    else:
-        print(f"\n[Step 2 结果] 检索到 {len(candidates)} 个相关节点", flush=True)
+    # Step 2: 双路检索 + 渲染完整 KB 树
+    hits = await dual_search(extraction, faiss_svc, nodes_dict, children_map)
+    hit_ids = {h["id"] for h in hits}
+    print(f"\n[Step 2 结果] 命中 {len(hit_ids)} 个相关节点", flush=True)
 
-    # Step 3: 大纲生成
-    outline_md = await generate_outline(expert_text, candidates)
+    tree_text = build_kb_tree_text(hit_ids, nodes_dict, children_map)
+    logger.info("[Step 2] KB 树状结构:\n%s", tree_text)
 
-    # Step 4: KB 更新分析（只分析，不写入）
-    patch = await propose_updates(expert_text, outline_md, nodes_dict)
+    # Step 3: 带 id 标注的大纲生成
+    outline_md = await generate_outline(expert_text, tree_text)
 
-    return outline_md, patch, nodes_list, relations_list
+    # Step 4a: 解析 [new] 节点（不调用 LLM，纯解析）
+    new_nodes_raw = parse_new_nodes(outline_md)
+
+    return outline_md, new_nodes_raw, nodes_list, relations_list
 
 
 async def confirm_and_save(
-    patch: dict,
+    new_nodes_raw: list,
+    expert_text: str,
     nodes_list: list,
     relations_list: list,
 ) -> None:
     """
-    应用 KB 更新：写入 JSON + 增量重建 FAISS。
+    应用 KB 更新：LLM 补充元数据 → 写入 JSON → 增量重建 FAISS。
 
     Args:
-        patch          : propose_updates() 的输出
+        new_nodes_raw  : parse_new_nodes() 返回的 [new] 节点列表
+        expert_text    : 专家输入原文（供 enrich LLM 使用）
         nodes_list     : main() 返回的当前节点列表
         relations_list : main() 返回的当前关系列表
     """
+    patch = await enrich_new_nodes(new_nodes_raw, expert_text)
     updated_nodes, updated_relations, new_nodes = apply_updates(patch, nodes_list, relations_list)
     save_json_files(updated_nodes, updated_relations)
     await rebuild_index(new_nodes)
@@ -146,21 +154,21 @@ if __name__ == "__main__":
         print("错误: 输入不能为空")
         sys.exit(1)
 
-    outline, patch, nodes_list, relations_list = asyncio.run(main(text))
+    outline, new_nodes_raw, nodes_list, relations_list = asyncio.run(main(text))
 
     print("\n" + "=" * 60)
-    print("生成大纲")
+    print("生成大纲（带 id 标注）")
     print("=" * 60)
     print(outline)
     print("=" * 60)
 
-    add_nodes = patch.get("add_nodes", [])
-    if not add_nodes:
-        print("\n[Step 4] 知识库已完整覆盖本次场景，无需新增节点。")
+    if not new_nodes_raw:
+        print("\n[Step 4] 大纲完全引用现有知识库节点，无需新增。")
     else:
-        print(f"\n[Step 4] LLM 建议新增 {len(add_nodes)} 个节点:")
-        for n in add_nodes:
-            print(f"  L{n.get('level')} {n.get('name')} → 挂载到 {n.get('parent_id')}")
+        print(f"\n[Step 4] 大纲中包含 {len(new_nodes_raw)} 个 [new] 节点:")
+        for n in new_nodes_raw:
+            parent_label = n.get("parent_id") or n.get("parent_name") or "未知"
+            print(f"  L{n['level']} 「{n['name']}」→ 父节点: {parent_label}")
 
         try:
             ans = input("\n是否将新知识点沉淀到知识库? (y/n) > ").strip().lower()
@@ -168,6 +176,6 @@ if __name__ == "__main__":
             ans = "n"
 
         if ans == "y":
-            asyncio.run(confirm_and_save(patch, nodes_list, relations_list))
+            asyncio.run(confirm_and_save(new_nodes_raw, text, nodes_list, relations_list))
         else:
             print("已取消，知识库未修改。")
