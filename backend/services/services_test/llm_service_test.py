@@ -27,7 +27,7 @@ async def test_stream(question: str) -> None:
 
     print(f"模型  : {llm.default_model}")
     print(f"地址  : {llm.base_url}")
-    print(f"Think : {llm.think_tag_mode}")
+    print(f"Think : {llm.enable_thinking}")
     print(f"问题  : {question}")
     print("-" * 50)
 
