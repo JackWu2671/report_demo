@@ -64,13 +64,15 @@ async def parse_patch(user_request: str, outline_tree: dict) -> list[dict]:
     print("-" * 50, flush=True)
 
     full_text = ""
-    async for chunk in llm.complete_stream(messages):
+    # strip_think=False：全量流式输出，收集后再剥除思考内容
+    async for chunk in llm.complete_stream(messages, strip_think=False):
         print(chunk, end="", flush=True)
         full_text += chunk
     print("\n" + "-" * 50, flush=True)
-    logger.info("[Step 8] LLM 完整输出:\n%s", full_text)
+    answer = llm._strip_think(full_text)
+    logger.info("[Step 8] LLM 完整输出:\n%s", answer)
 
-    raw = LLMService._parse_json(full_text)
+    raw = LLMService._parse_json(answer)
     ops: list[dict] = raw if isinstance(raw, list) else [raw]
     logger.info("[Step 8] 解析 patch 操作 (%d 条): %s", len(ops), ops)
     return ops

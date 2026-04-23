@@ -80,11 +80,18 @@ class LLMService:
         return self._parse_json(raw)
 
     async def complete_stream(
-        self, messages: list[dict], config: LLMConfig | None = None
+        self,
+        messages: list[dict],
+        config: LLMConfig | None = None,
+        strip_think: bool = False,
     ):
         """
         流式调用，async generator，逐 chunk yield content 字符串片段。
-        think 内容在流式中会被过滤掉。
+
+        Args:
+            strip_think: True 时在流式阶段过滤 <think> 内容（用户看不到思考过程）。
+                         False（默认）时全量输出，调用方收集完整文本后可自行调用
+                         _strip_think() 剥除思考内容。建议保持 False 以获得实时流式体验。
         """
         cfg = config or LLMConfig()
         payload = self._build_payload(messages, cfg, stream=True)
@@ -92,7 +99,7 @@ class LLMService:
         timeout = aiohttp.ClientTimeout(total=cfg.timeout or self._timeout)
 
         is_inside_think = False
-        parse_think = self.think_tag_mode != "none"
+        parse_think = self.think_tag_mode != "none" and strip_think
 
         async with aiohttp.ClientSession() as session:
             async with session.post(

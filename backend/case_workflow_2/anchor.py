@@ -66,12 +66,15 @@ async def select_anchor(question: str, candidates: list[dict]) -> dict:
 
     full_text = ""
     try:
-        async for chunk in llm.complete_stream(messages):
+        # strip_think=False：流式阶段全量输出（含思考内容），让用户看到实时生成
+        # 收集完毕后再剥除 <think> 块，再做 JSON 解析
+        async for chunk in llm.complete_stream(messages, strip_think=False):
             print(chunk, end="", flush=True)
             full_text += chunk
         print("\n" + "-" * 50, flush=True)
-        logger.info("[Step 5] LLM 完整输出:\n%s", full_text)
-        anchor = LLMService._parse_json(full_text)
+        answer = llm._strip_think(full_text)
+        logger.info("[Step 5] LLM 完整输出:\n%s", answer)
+        anchor = LLMService._parse_json(answer)
     except Exception as e:
         logger.warning("[Step 5] LLM 选锚失败，回退到 score 最高的候选: %s", e)
         f = candidates[0]
