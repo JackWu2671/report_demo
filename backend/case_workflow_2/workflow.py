@@ -509,8 +509,22 @@ def _set_param_node(tree: dict, node_id: str, key: str, value, unit: str) -> boo
 
 
 # ─────────────────────────────────────────────────────────────
-# Main / Modify
+# Step 10: 大纲树导出为 JSON
 # ─────────────────────────────────────────────────────────────
+
+def step10_export_json(outline_tree: dict) -> dict:
+    """
+    将大纲树导出为干净的 JSON 结构（去除 score、keywords 等内部字段）。
+    保留: id, name, level, description, params, children
+    params 仅在节点有参数标注时出现。
+    """
+    _KEEP = {"id", "name", "level", "description", "params"}
+    node = {k: v for k, v in outline_tree.items() if k in _KEEP}
+    node["children"] = [step10_export_json(c) for c in outline_tree.get("children", [])]
+    return node
+
+
+
 
 async def main(question: str) -> tuple[dict, str]:
     """
@@ -559,18 +573,23 @@ async def modify(user_request: str, outline_tree: dict) -> tuple[dict, str]:
     return new_tree, outline
 
 
-def _print_outline(outline: str) -> None:
+def _print_outline(outline: str, json_tree: dict) -> None:
     print("\n" + "=" * 60)
-    print("大纲（知识图谱子树遍历结果）")
+    print("大纲 Markdown")
     print("=" * 60)
     print(outline)
+    print("=" * 60)
+    print("\n" + "=" * 60)
+    print("大纲 JSON")
+    print("=" * 60)
+    print(json.dumps(json_tree, ensure_ascii=False, indent=2))
     print("=" * 60)
 
 
 if __name__ == "__main__":
     q = sys.argv[1] if len(sys.argv) > 1 else "分析政企OTN升级"
-    tree, result = asyncio.run(main(q))
-    _print_outline(result)
+    tree, outline = asyncio.run(main(q))
+    _print_outline(outline, step10_export_json(tree))
 
     # 多轮修改交互循环
     while True:
@@ -580,5 +599,5 @@ if __name__ == "__main__":
             break
         if not cmd:
             break
-        tree, result = asyncio.run(modify(cmd, tree))
-        _print_outline(result)
+        tree, outline = asyncio.run(modify(cmd, tree))
+        _print_outline(outline, step10_export_json(tree))
