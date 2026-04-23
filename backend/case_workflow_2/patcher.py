@@ -89,18 +89,19 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> dict:
     tree = copy.deepcopy(outline_tree)
     for op in ops:
         node_id = op.get("node_id", "")
+        reason = op.get("reason", "")
         if op["op"] == "delete":
             removed = _delete_node(tree, node_id)
             if removed:
-                logger.info("[Step 9] delete: 已删除节点 %s", node_id)
+                logger.info("[Step 9] delete: 已删除节点 %s | 原因: %s", node_id, reason)
             else:
                 logger.warning("[Step 9] delete: 未找到节点 %s", node_id)
         elif op["op"] == "set_param":
             found = _set_param_node(tree, node_id, op["key"], op["value"], op.get("unit", ""))
             if found:
                 logger.info(
-                    "[Step 9] set_param: 节点 %s → %s=%s%s",
-                    node_id, op["key"], op["value"], op.get("unit", ""),
+                    "[Step 9] set_param: 节点 %s → %s=%s%s | 原因: %s",
+                    node_id, op["key"], op["value"], op.get("unit", ""), reason,
                 )
             else:
                 logger.warning("[Step 9] set_param: 未找到节点 %s", node_id)
