@@ -40,6 +40,7 @@ from extractor import extract_from_expert
 from searcher import dual_search, build_kb_tree_text
 from outline_gen import generate_outline
 from kb_updater import parse_new_nodes, enrich_new_nodes, apply_updates, save_json_files, rebuild_index
+from template_saver import save_template
 
 _EXPERT_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 _DATA_DIR = os.path.join(_BACKEND_DIR, "data")
@@ -72,7 +73,7 @@ def _load_kb() -> tuple:
     return faiss_svc, nodes_dict, children_map, nodes_list, relations_list
 
 
-async def main(expert_text: str) -> tuple[str, list, list, list]:
+async def main(expert_text: str) -> tuple[dict, str, list, list, list]:
     """
     完整工作流：专家输入 → 关键词抽取 → 双路检索 → 带 id 大纲生成 → 解析 [new] 节点。
 
@@ -80,7 +81,8 @@ async def main(expert_text: str) -> tuple[str, list, list, list]:
         expert_text: 专家输入的自然语言场景描述
 
     Returns:
-        (outline_md, new_nodes_raw, nodes_list, relations_list)
+        (extraction, outline_md, new_nodes_raw, nodes_list, relations_list)
+        extraction      : Step 1 结果（scene_name/keywords/summary/usage_conditions）
         outline_md      : 带 [id]/[new] 标注的 Markdown 大纲
         new_nodes_raw   : parse_new_nodes() 结果，用于展示给用户确认
         nodes_list      : 当前 KB 节点列表（供 confirm_and_save 使用）
@@ -111,29 +113,43 @@ async def main(expert_text: str) -> tuple[str, list, list, list]:
     # Step 4a: 解析 [new] 节点（不调用 LLM，纯解析）
     new_nodes_raw = parse_new_nodes(outline_md)
 
-    return outline_md, new_nodes_raw, nodes_list, relations_list
+    return extraction, outline_md, new_nodes_raw, nodes_list, relations_list
 
 
 async def confirm_and_save(
     new_nodes_raw: list,
     expert_text: str,
+    extraction: dict,
+    outline_md: str,
     nodes_list: list,
     relations_list: list,
 ) -> None:
     """
-    应用 KB 更新：LLM 补充元数据 → 写入 JSON → 增量重建 FAISS。
+    应用 KB 更新（若有新节点）并保存模板 JSON 到 templates/ 目录。
 
     Args:
         new_nodes_raw  : parse_new_nodes() 返回的 [new] 节点列表
         expert_text    : 专家输入原文（供 enrich LLM 使用）
+        extraction     : Step 1 元数据（scene_name/keywords/summary/usage_conditions）
+        outline_md     : 带 [id]/[new] 标注的 Markdown 大纲
         nodes_list     : main() 返回的当前节点列表
         relations_list : main() 返回的当前关系列表
     """
-    patch = await enrich_new_nodes(new_nodes_raw, expert_text)
-    updated_nodes, updated_relations, new_nodes = apply_updates(patch, nodes_list, relations_list)
-    save_json_files(updated_nodes, updated_relations)
-    await rebuild_index(new_nodes)
-    print(f"\n✅ 知识库已更新，新增 {len(new_nodes)} 个节点，FAISS 索引已增量重建。", flush=True)
+    # KB 更新（仅当有 [new] 节点时）
+    if new_nodes_raw:
+        patch = await enrich_new_nodes(new_nodes_raw, expert_text)
+        updated_nodes, updated_relations, new_nodes = apply_updates(patch, nodes_list, relations_list)
+        save_json_files(updated_nodes, updated_relations)
+        await rebuild_index(new_nodes)
+        print(f"\n✅ 知识库已更新，新增 {len(new_nodes)} 个节点，FAISS 索引已增量重建。", flush=True)
+        # 用更新后的节点字典保存模板（新节点已有真实 id）
+        nodes_dict = {n["id"]: n for n in updated_nodes}
+    else:
+        nodes_dict = {n["id"]: n for n in nodes_list}
+
+    # 保存模板 JSON
+    path = save_template(extraction, outline_md, nodes_dict)
+    print(f"✅ 模板已保存: {path}", flush=True)
 
 
 # ── 本地运行入口 ──────────────────────────────────────────────
@@ -155,7 +171,7 @@ if __name__ == "__main__":
         print("错误: 输入不能为空")
         sys.exit(1)
 
-    outline, new_nodes_raw, nodes_list, relations_list = asyncio.run(main(text))
+    extraction, outline, new_nodes_raw, nodes_list, relations_list = asyncio.run(main(text))
 
     print("\n" + "=" * 60)
     print("生成大纲（带 id 标注）")
@@ -171,12 +187,12 @@ if __name__ == "__main__":
             parent_label = n.get("parent_id") or n.get("parent_name") or "未知"
             print(f"  L{n['level']} 「{n['name']}」→ 父节点: {parent_label}")
 
-        try:
-            ans = input("\n是否将新知识点沉淀到知识库? (y/n) > ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            ans = "n"
+    try:
+        ans = input("\n是否保存模板并沉淀新知识到知识库? (y/n) > ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ans = "n"
 
-        if ans == "y":
-            asyncio.run(confirm_and_save(new_nodes_raw, text, nodes_list, relations_list))
-        else:
-            print("已取消，知识库未修改。")
+    if ans == "y":
+        asyncio.run(confirm_and_save(new_nodes_raw, text, extraction, outline, nodes_list, relations_list))
+    else:
+        print("已取消，知识库和模板均未修改。")
