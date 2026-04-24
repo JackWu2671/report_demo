@@ -18,7 +18,7 @@ CLI 交互:
 使用方法:
     cd backend
     python case_workflow_1/workflow.py "专家输入文本..."
-    python case_workflow_1/workflow.py  # 交互式多行输入，Ctrl+D 结束
+    python case_workflow_1/workflow.py  # 交互式多行输入，--- 单独一行结束
 """
 
 import asyncio
@@ -75,13 +75,9 @@ def _load_kb() -> tuple:
 
 
 def _ask(prompt: str) -> str:
-    """从 /dev/tty 读取用户输入，避免 Ctrl+D 关闭 stdin 后无法交互。"""
     try:
-        sys.stdout.write(prompt)
-        sys.stdout.flush()
-        with open("/dev/tty") as tty:
-            return tty.readline().strip().lower()
-    except (OSError, EOFError, KeyboardInterrupt):
+        return input(prompt).strip().lower()
+    except (EOFError, KeyboardInterrupt):
         return "n"
 
 
@@ -220,13 +216,12 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         text = " ".join(sys.argv[1:])
     else:
-        print("请输入专家场景描述（多行输入，Ctrl+D 结束）:")
+        print("请输入专家场景描述（多行输入，输入 --- 单独一行结束）:")
         lines = []
-        try:
-            while True:
-                lines.append(input())
-        except EOFError:
-            pass
+        for line in sys.stdin:
+            if line.rstrip("\n") == "---":
+                break
+            lines.append(line.rstrip("\n"))
         text = "\n".join(lines).strip()
 
     if not text:
