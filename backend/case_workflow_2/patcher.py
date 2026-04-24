@@ -119,7 +119,8 @@ def tree_to_id_text(node: dict, depth: int = 0) -> str:
     格式: [id={id} L{level}] {name}
     """
     indent = "  " * depth
-    line = f"{indent}[id={node['id']} L{node['level']}] {node['name']}"
+    desc = f" — {node['description']}" if node.get("description") else ""
+    line = f"{indent}[id={node['id']} L{node['level']}] {node['name']}{desc}"
     child_lines = [tree_to_id_text(c, depth + 1) for c in node.get("children", [])]
     return "\n".join([line] + child_lines)
 
