@@ -1,19 +1,17 @@
 """
-workflow.py — case_workflow_1 编排入口：专家知识沉淀到 JSON 知识库。
+workflow.py — case_workflow_1 编排入口：专家知识沉淀到模板 JSON。
 
 完整流程（5 步）:
   Step 1  extractor.extract_from_expert()    LLM 抽取关键词 + 摘要 + 场景名称
   Step 2  searcher.dual_search()             双路 FAISS 检索，得到命中 id 集合
           searcher.build_kb_tree_text()      渲染完整 KB 树（★ 标命中节点）
   Step 3  outline_gen.generate_outline()     LLM 生成带 [id]/[new] 标注的 Markdown 大纲
-  Step 4  kb_updater.parse_new_nodes()       解析大纲中的 [new] 节点
+  Step 4  kb_updater.parse_new_nodes()       解析大纲中的 [new] 节点（仅展示）
   Step 5  outline_gen.generate_delta()       LLM 总结专家逻辑与现有 KB 框架的差异
 
 CLI 交互:
-  - 展示大纲和 [new] 节点列表
-  - 展示 Step 5 差异总结
-  - 询问是否保存大纲模板（y/n）
-  - 若有 [new] 节点：展示修改前/后 KB 树，询问是否写入知识库（y/n）
+  - 展示大纲、[new] 节点列表、Step 5 差异总结
+  - 询问是否保存大纲模板 JSON（y/n）
 
 使用方法:
     cd backend
@@ -40,7 +38,7 @@ logger = logging.getLogger(__name__)
 from extractor import extract_from_expert
 from searcher import dual_search, build_kb_tree_text
 from outline_gen import generate_outline, generate_delta
-from kb_updater import parse_new_nodes, enrich_new_nodes, apply_updates, save_json_files, rebuild_index
+from kb_updater import parse_new_nodes
 from template_saver import save_template
 
 _EXPERT_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
@@ -71,31 +69,17 @@ def _load_kb() -> tuple:
         "[资源加载] 节点: %d, 关系: %d, FAISS 向量数: %d",
         len(nodes_dict), len(relations_list), faiss_svc.total,
     )
-    return faiss_svc, nodes_dict, children_map, nodes_list, relations_list
+    return faiss_svc, nodes_dict, children_map, nodes_list
 
 
-def _ask(prompt: str) -> str:
-    try:
-        return input(prompt).strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        return "n"
-
-
-def _build_children_map(relations_list: list) -> dict[str, list[str]]:
-    children_map: dict[str, list[str]] = {}
-    for rel in relations_list:
-        children_map.setdefault(rel["parent"], []).append(rel["child"])
-    return children_map
-
-
-async def main(expert_text: str) -> tuple[dict, str, str, list, list, list]:
+async def main(expert_text: str) -> tuple[dict, str, str, list, dict]:
     """
-    完整工作流：专家输入 → 关键词抽取 → 双路检索 → 带 id 大纲生成 → 解析 [new] 节点 → 差异分析。
+    完整工作流：专家输入 → 关键词抽取 → 双路检索 → 大纲生成 → [new] 解析 → 差异分析。
 
     Returns:
-        (extraction, outline_md, delta_text, new_nodes_raw, nodes_list, relations_list)
+        (extraction, outline_md, delta_text, new_nodes_raw, nodes_dict)
     """
-    faiss_svc, nodes_dict, children_map, nodes_list, relations_list = _load_kb()
+    faiss_svc, nodes_dict, children_map, nodes_list = _load_kb()
 
     # Step 1: 关键词抽取
     extraction = await extract_from_expert(expert_text)
@@ -117,18 +101,18 @@ async def main(expert_text: str) -> tuple[dict, str, str, list, list, list]:
     # Step 3: 带 id 标注的大纲生成
     outline_md = await generate_outline(expert_text, tree_text)
 
-    # Step 4: 解析 [new] 节点（不调用 LLM，纯解析）
+    # Step 4: 解析 [new] 节点（仅展示，不写入 KB）
     new_nodes_raw = parse_new_nodes(outline_md)
 
     # Step 5: 分析专家逻辑与现有 KB 框架的差异
     delta_text = await generate_delta(expert_text, tree_text, outline_md)
 
-    return extraction, outline_md, delta_text, new_nodes_raw, nodes_list, relations_list
+    return extraction, outline_md, delta_text, new_nodes_raw, nodes_dict
 
 
 async def cli_main(expert_text: str) -> None:
-    """CLI 交互流程：运行工作流，展示差异分析，两步确认（模板保存 + 知识库更新）。"""
-    extraction, outline_md, delta_text, new_nodes_raw, nodes_list, relations_list = await main(expert_text)
+    """CLI 交互流程：运行工作流，询问是否保存大纲模板 JSON。"""
+    extraction, outline_md, delta_text, new_nodes_raw, nodes_dict = await main(expert_text)
 
     # 展示大纲
     print("\n" + "=" * 60)
@@ -138,7 +122,7 @@ async def cli_main(expert_text: str) -> None:
     print("=" * 60)
 
     if not new_nodes_raw:
-        print("\n[Step 4] 大纲完全引用现有知识库节点，无需新增。")
+        print("\n[Step 4] 大纲完全引用现有知识库节点。")
     else:
         print(f"\n[Step 4] 大纲中包含 {len(new_nodes_raw)} 个 [new] 节点:")
         for n in new_nodes_raw:
@@ -152,62 +136,17 @@ async def cli_main(expert_text: str) -> None:
     print(delta_text)
     print("=" * 60)
 
-    # ── 确认 1：保存大纲模板 ──────────────────────────────────────
-    ans_template = _ask("\n是否保存大纲模板到 templates/? (y/n) > ")
+    # 确认保存模板
+    try:
+        ans = input("\n是否保存大纲模板到 templates/? (y/n) > ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ans = "n"
 
-    if ans_template == "y":
-        nodes_dict = {n["id"]: n for n in nodes_list}
+    if ans == "y":
         path = save_template(extraction, outline_md, nodes_dict)
         print(f"✅ 模板已保存: {path}", flush=True)
     else:
         print("已跳过模板保存。")
-
-    # ── 确认 2：更新知识库（仅当有 [new] 节点时） ────────────────
-    if not new_nodes_raw:
-        return
-
-    print("\n[Step 4b] 正在为 [new] 节点补充元数据（调用 LLM）...", flush=True)
-    patch = await enrich_new_nodes(new_nodes_raw, expert_text)
-    updated_nodes, updated_relations, new_nodes = apply_updates(patch, nodes_list, relations_list)
-
-    if not new_nodes:
-        print("\n[Step 4c] 没有可应用的新节点（可能父节点解析失败），跳过知识库更新。")
-        return
-
-    # 构建修改前/后的树状视图
-    before_nodes_dict = {n["id"]: n for n in nodes_list}
-    before_children_map = _build_children_map(relations_list)
-
-    after_nodes_dict = {n["id"]: n for n in updated_nodes}
-    after_children_map = _build_children_map(updated_relations)
-    new_ids = {n["id"] for n in new_nodes}
-
-    before_tree = build_kb_tree_text(set(), before_nodes_dict, before_children_map)
-    after_tree = build_kb_tree_text(new_ids, after_nodes_dict, after_children_map)
-
-    print("\n" + "=" * 60)
-    print("【修改前】知识库树")
-    print("=" * 60)
-    print(before_tree)
-
-    print("\n" + "=" * 60)
-    print(f"【修改后】知识库树（★ 为新增节点，共 {len(new_nodes)} 个）")
-    print("=" * 60)
-    print(after_tree)
-    print("=" * 60)
-
-    ans_kb = _ask("\n是否将以上变更写入知识库? (y/n) > ")
-
-    if ans_kb == "y":
-        save_json_files(updated_nodes, updated_relations)
-        await rebuild_index(new_nodes)
-        print(f"\n✅ 知识库已更新，新增 {len(new_nodes)} 个节点，FAISS 索引已增量重建。", flush=True)
-
-        if ans_template == "y":
-            path = save_template(extraction, outline_md, after_nodes_dict)
-            print(f"✅ 模板已用真实节点 id 重新保存: {path}", flush=True)
-    else:
-        print("已取消，知识库未修改。")
 
 
 # ── 本地运行入口 ──────────────────────────────────────────────
