@@ -12,7 +12,10 @@ workflow.py — case_workflow_1 编排入口：专家知识沉淀到 JSON 知识
           kb_updater.save_json_files()        写回 node.json + relation.json
           kb_updater.rebuild_index()          增量追加 FAISS 向量（仅新节点）
 
-Step 4 写入操作需用户在命令行中确认（y/n）。
+交互流程（CLI 模式）:
+  1. 展示生成大纲
+  2. 询问是否保存大纲模板（y/n）
+  3. 若有 [new] 节点：展示修改前/后知识库树，询问是否写入知识库（y/n）
 
 使用方法:
     cd backend
@@ -77,16 +80,8 @@ async def main(expert_text: str) -> tuple[dict, str, list, list, list]:
     """
     完整工作流：专家输入 → 关键词抽取 → 双路检索 → 带 id 大纲生成 → 解析 [new] 节点。
 
-    Args:
-        expert_text: 专家输入的自然语言场景描述
-
     Returns:
         (extraction, outline_md, new_nodes_raw, nodes_list, relations_list)
-        extraction      : Step 1 结果（scene_name/keywords/summary/usage_conditions）
-        outline_md      : 带 [id]/[new] 标注的 Markdown 大纲
-        new_nodes_raw   : parse_new_nodes() 结果，用于展示给用户确认
-        nodes_list      : 当前 KB 节点列表（供 confirm_and_save 使用）
-        relations_list  : 当前 KB 关系列表（供 confirm_and_save 使用）
     """
     faiss_svc, nodes_dict, children_map, nodes_list, relations_list = _load_kb()
 
@@ -116,40 +111,95 @@ async def main(expert_text: str) -> tuple[dict, str, list, list, list]:
     return extraction, outline_md, new_nodes_raw, nodes_list, relations_list
 
 
-async def confirm_and_save(
-    new_nodes_raw: list,
-    expert_text: str,
-    extraction: dict,
-    outline_md: str,
-    nodes_list: list,
-    relations_list: list,
-) -> None:
-    """
-    应用 KB 更新（若有新节点）并保存模板 JSON 到 templates/ 目录。
+def _build_children_map(relations_list: list) -> dict[str, list[str]]:
+    children_map: dict[str, list[str]] = {}
+    for rel in relations_list:
+        children_map.setdefault(rel["parent"], []).append(rel["child"])
+    return children_map
 
-    Args:
-        new_nodes_raw  : parse_new_nodes() 返回的 [new] 节点列表
-        expert_text    : 专家输入原文（供 enrich LLM 使用）
-        extraction     : Step 1 元数据（scene_name/keywords/summary/usage_conditions）
-        outline_md     : 带 [id]/[new] 标注的 Markdown 大纲
-        nodes_list     : main() 返回的当前节点列表
-        relations_list : main() 返回的当前关系列表
-    """
-    # KB 更新（仅当有 [new] 节点时）
-    if new_nodes_raw:
-        patch = await enrich_new_nodes(new_nodes_raw, expert_text)
-        updated_nodes, updated_relations, new_nodes = apply_updates(patch, nodes_list, relations_list)
+
+async def cli_main(expert_text: str) -> None:
+    """CLI 交互流程：运行工作流，两步确认（模板保存 + 知识库更新）。"""
+    extraction, outline_md, new_nodes_raw, nodes_list, relations_list = await main(expert_text)
+
+    # 展示大纲
+    print("\n" + "=" * 60)
+    print("生成大纲（带 id 标注）")
+    print("=" * 60)
+    print(outline_md)
+    print("=" * 60)
+
+    if not new_nodes_raw:
+        print("\n[Step 4] 大纲完全引用现有知识库节点，无需新增。")
+    else:
+        print(f"\n[Step 4] 大纲中包含 {len(new_nodes_raw)} 个 [new] 节点:")
+        for n in new_nodes_raw:
+            parent_label = n.get("parent_id") or n.get("parent_name") or "未知"
+            print(f"  L{n['level']} 「{n['name']}」→ 父节点: {parent_label}")
+
+    # ── 确认 1：保存大纲模板 ──────────────────────────────────────
+    try:
+        ans_template = input("\n是否保存大纲模板到 templates/? (y/n) > ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ans_template = "n"
+
+    if ans_template == "y":
+        nodes_dict = {n["id"]: n for n in nodes_list}
+        path = save_template(extraction, outline_md, nodes_dict)
+        print(f"✅ 模板已保存: {path}", flush=True)
+    else:
+        print("已跳过模板保存。")
+
+    # ── 确认 2：更新知识库（仅当有 [new] 节点时） ────────────────
+    if not new_nodes_raw:
+        return
+
+    print("\n[Step 4b] 正在为 [new] 节点补充元数据（调用 LLM）...", flush=True)
+    patch = await enrich_new_nodes(new_nodes_raw, expert_text)
+    updated_nodes, updated_relations, new_nodes = apply_updates(patch, nodes_list, relations_list)
+
+    if not new_nodes:
+        print("\n[Step 4c] 没有可应用的新节点（可能父节点解析失败），跳过知识库更新。")
+        return
+
+    # 构建修改前/后的树状视图
+    before_nodes_dict = {n["id"]: n for n in nodes_list}
+    before_children_map = _build_children_map(relations_list)
+
+    after_nodes_dict = {n["id"]: n for n in updated_nodes}
+    after_children_map = _build_children_map(updated_relations)
+    new_ids = {n["id"] for n in new_nodes}
+
+    before_tree = build_kb_tree_text(set(), before_nodes_dict, before_children_map)
+    after_tree = build_kb_tree_text(new_ids, after_nodes_dict, after_children_map)
+
+    print("\n" + "=" * 60)
+    print("【修改前】知识库树")
+    print("=" * 60)
+    print(before_tree)
+
+    print("\n" + "=" * 60)
+    print(f"【修改后】知识库树（★ 为新增节点，共 {len(new_nodes)} 个）")
+    print("=" * 60)
+    print(after_tree)
+    print("=" * 60)
+
+    try:
+        ans_kb = input("\n是否将以上变更写入知识库? (y/n) > ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ans_kb = "n"
+
+    if ans_kb == "y":
         save_json_files(updated_nodes, updated_relations)
         await rebuild_index(new_nodes)
         print(f"\n✅ 知识库已更新，新增 {len(new_nodes)} 个节点，FAISS 索引已增量重建。", flush=True)
-        # 用更新后的节点字典保存模板（新节点已有真实 id）
-        nodes_dict = {n["id"]: n for n in updated_nodes}
-    else:
-        nodes_dict = {n["id"]: n for n in nodes_list}
 
-    # 保存模板 JSON
-    path = save_template(extraction, outline_md, nodes_dict)
-    print(f"✅ 模板已保存: {path}", flush=True)
+        # 若模板已保存但使用的是旧节点字典，重新保存一份包含新 id 的版本
+        if ans_template == "y":
+            path = save_template(extraction, outline_md, after_nodes_dict)
+            print(f"✅ 模板已用真实节点 id 重新保存: {path}", flush=True)
+    else:
+        print("已取消，知识库未修改。")
 
 
 # ── 本地运行入口 ──────────────────────────────────────────────
@@ -171,28 +221,4 @@ if __name__ == "__main__":
         print("错误: 输入不能为空")
         sys.exit(1)
 
-    extraction, outline, new_nodes_raw, nodes_list, relations_list = asyncio.run(main(text))
-
-    print("\n" + "=" * 60)
-    print("生成大纲（带 id 标注）")
-    print("=" * 60)
-    print(outline)
-    print("=" * 60)
-
-    if not new_nodes_raw:
-        print("\n[Step 4] 大纲完全引用现有知识库节点，无需新增。")
-    else:
-        print(f"\n[Step 4] 大纲中包含 {len(new_nodes_raw)} 个 [new] 节点:")
-        for n in new_nodes_raw:
-            parent_label = n.get("parent_id") or n.get("parent_name") or "未知"
-            print(f"  L{n['level']} 「{n['name']}」→ 父节点: {parent_label}")
-
-    try:
-        ans = input("\n是否保存模板并沉淀新知识到知识库? (y/n) > ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        ans = "n"
-
-    if ans == "y":
-        asyncio.run(confirm_and_save(new_nodes_raw, text, extraction, outline, nodes_list, relations_list))
-    else:
-        print("已取消，知识库和模板均未修改。")
+    asyncio.run(cli_main(text))
