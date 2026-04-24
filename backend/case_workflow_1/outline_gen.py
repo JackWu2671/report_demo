@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 _PROMPT_DIR = Path(__file__).parent / "prompts"
 OUTLINE_PROMPT: str = (_PROMPT_DIR / "outline.txt").read_text(encoding="utf-8")
+DELTA_PROMPT: str = (_PROMPT_DIR / "delta.txt").read_text(encoding="utf-8")
 
 
 async def generate_outline(expert_text: str, tree_text: str) -> str:
@@ -66,3 +67,43 @@ async def generate_outline(expert_text: str, tree_text: str) -> str:
     print("\n" + "-" * 50, flush=True)
     logger.info("[Step 3] 大纲生成完成 (%d 字符)", len(outline_md))
     return outline_md
+
+
+async def generate_delta(expert_text: str, tree_text: str, outline_md: str) -> str:
+    """
+    LLM 分析专家逻辑与现有知识库框架的差异，输出一段纯文字总结。
+
+    Args:
+        expert_text : 专家输入的原始文本
+        tree_text   : 知识库完整树状结构
+        outline_md  : 本次生成的带标注大纲
+
+    Returns:
+        3~5 句话的差异描述
+    """
+    llm = LLMService.from_env()
+
+    user_content = (
+        f"## 专家描述\n{expert_text}\n\n"
+        f"## 知识库现有框架\n{tree_text}\n\n"
+        f"## 本次生成大纲\n{outline_md}"
+    )
+
+    messages = [
+        {"role": "system", "content": DELTA_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+    logger.info(
+        "[Step 5] Delta Prompt:\n[SYSTEM]\n%s\n\n[USER]\n%s",
+        messages[0]["content"],
+        messages[1]["content"],
+    )
+
+    print("\n[Step 5] LLM 分析逻辑差异 ↓", flush=True)
+    print("-" * 50, flush=True)
+
+    delta = await llm.stream_and_collect(messages)
+
+    print("\n" + "-" * 50, flush=True)
+    return delta
