@@ -37,7 +37,7 @@ async def parse_patch(user_request: str, outline_tree: dict) -> list[dict]:
 
     LLM 看到当前大纲（含节点 id）后判断是否需要修改：
     - 无修改意图 → 返回 []
-    - 有修改意图 → 返回 [{op, node_id, ...}, ...]
+    - 有修改意图 → 返回 [{op, ...}, ...]
 
     Args:
         user_request : 用户的自然语言问题或修改指令
@@ -79,6 +79,9 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> dict:
     """
     将 patch 操作列表应用到大纲树，返回修改后的新树（原树不变）。
 
+    keep_only 操作汇总后统一处理：收集所有 keep_only node_id 组成 keep_set，
+    按层级从高到低依次删除各节点的非 keep_set 兄弟节点。
+
     Args:
         outline_tree : 当前大纲树 dict
         ops          : parse_patch() 返回的操作列表
@@ -87,10 +90,20 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> dict:
         deepcopy 后修改过的新树 dict
     """
     tree = copy.deepcopy(outline_tree)
+
+    # 先收集所有 keep_only node_id，统一批量处理
+    keep_ids = [op["node_id"] for op in ops if op.get("op") == "keep_only" and op.get("node_id")]
+    if keep_ids:
+        reasons = [op.get("reason", "") for op in ops if op.get("op") == "keep_only"]
+        _keep_only_nodes(tree, keep_ids)
+        logger.info("[Step 9] keep_only: 保留节点 %s | 原因: %s", keep_ids, " / ".join(r for r in reasons if r))
+
     for op in ops:
         node_id = op.get("node_id", "")
         reason = op.get("reason", "")
-        if op["op"] == "delete":
+        if op["op"] == "keep_only":
+            continue  # 已批量处理
+        elif op["op"] == "delete":
             removed = _delete_node(tree, node_id)
             if removed:
                 logger.info("[Step 9] delete: 已删除节点 %s | 原因: %s", node_id, reason)
@@ -123,6 +136,43 @@ def tree_to_id_text(node: dict, depth: int = 0) -> str:
     line = f"{indent}[id={node['id']} L{node['level']}] {node['name']}{desc}"
     child_lines = [tree_to_id_text(c, depth + 1) for c in node.get("children", [])]
     return "\n".join([line] + child_lines)
+
+
+def _keep_only_nodes(tree: dict, node_ids: list[str]) -> None:
+    """
+    对每个 node_id，删除其兄弟节点中不在 keep_set 内的节点。
+    按层级从高（L2）到低（L5）处理，确保高层删除后低层无需重复处理。
+    """
+    keep_set = set(node_ids)
+
+    id_to_level: dict[str, int] = {}
+
+    def _collect(node: dict) -> None:
+        id_to_level[node["id"]] = node.get("level", 0)
+        for c in node.get("children", []):
+            _collect(c)
+
+    _collect(tree)
+
+    sorted_ids = sorted(
+        (nid for nid in node_ids if nid in id_to_level),
+        key=lambda nid: id_to_level[nid],
+    )
+
+    for node_id in sorted_ids:
+        _prune_siblings(tree, node_id, keep_set)
+
+
+def _prune_siblings(tree: dict, target_id: str, keep_set: set) -> bool:
+    """找到 target_id 的父节点，将父节点的 children 过滤为只保留 keep_set 内的节点。"""
+    children = tree.get("children", [])
+    for child in children:
+        if child["id"] == target_id:
+            tree["children"] = [c for c in children if c["id"] in keep_set]
+            return True
+        if _prune_siblings(child, target_id, keep_set):
+            return True
+    return False
 
 
 def _delete_node(tree: dict, node_id: str) -> bool:
