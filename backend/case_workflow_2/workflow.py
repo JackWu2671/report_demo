@@ -74,17 +74,18 @@ async def main(question: str) -> tuple[dict, str]:
     if selected:
         print(f"\n[Step 0] 复用已有模板：{selected['scene_name']}", flush=True)
         tree = selected["outline"]
-    else:
-        # Steps 1~7: KB 实时生成
-        faiss_svc, nodes_dict, children_map = load_resources()
+        return tree, render_outline(tree)
 
-        hits = search_nodes(query_embedding, faiss_svc)
-        if not hits:
-            return {}, f"未找到与'{question}'相关的知识节点，请检查索引或降低 FAISS_SCORE_THRESHOLD。"
+    # Steps 1~7: KB 实时生成
+    faiss_svc, nodes_dict, children_map = load_resources()
 
-        candidates = build_candidate_paths(hits, nodes_dict, children_map)
-        anchor = await select_anchor(question, candidates)
-        tree = build_subtree(anchor["selected_id"], nodes_dict, children_map)
+    hits = search_nodes(query_embedding, faiss_svc)
+    if not hits:
+        return {}, f"未找到与'{question}'相关的知识节点，请检查索引或降低 FAISS_SCORE_THRESHOLD。"
+
+    candidates = build_candidate_paths(hits, nodes_dict, children_map)
+    anchor = await select_anchor(question, candidates)
+    tree = build_subtree(anchor["selected_id"], nodes_dict, children_map)
 
     # Step 7: 渲染初版大纲
     outline = render_outline(tree)
