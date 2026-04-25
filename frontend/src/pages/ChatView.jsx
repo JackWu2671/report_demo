@@ -81,6 +81,9 @@ export default function ChatView() {
             } else if (evt.type === 'outline') {
               setOutline(evt.content)
 
+            } else if (evt.type === 'duration') {
+              updateLast(msg => ({ ...msg, duration: evt.seconds }))
+
             } else if (evt.type === 'error') {
               updateLast(msg => ({ ...msg, content: `请求失败: ${evt.error}` }))
 

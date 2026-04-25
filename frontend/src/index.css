@@ -492,6 +492,14 @@ body {
   line-height: 1.4;
 }
 
+/* 耗时标签 */
+.msg-duration {
+  font-size: 11px;
+  color: var(--color-text-placeholder);
+  margin-top: 4px;
+  padding-left: 2px;
+}
+
 /* 共用旋转动画 */
 .wf-steps__spin,
 .wf-step__spin {

@@ -19,7 +19,7 @@ const AssistantAvatar = () => (
 
 export default function ChatMessage({ message, isStreaming }) {
   const isUser = message.role === 'user'
-  const { content = '', steps = [] } = message
+  const { content = '', steps = [], duration } = message
 
   const hasSteps = steps.length > 0
   const hasContent = content.trim().length > 0
@@ -41,6 +41,11 @@ export default function ChatMessage({ message, isStreaming }) {
               ? <span className="msg-typing"><span /><span /><span /></span>
               : content}
           </div>
+        )}
+
+        {/* 耗时 */}
+        {!isUser && duration != null && (
+          <div className="msg-duration">耗时 {duration} 秒</div>
         )}
       </div>
       {isUser && <UserAvatar />}

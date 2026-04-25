@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+import time
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -152,6 +153,7 @@ async def _run_workflow1(messages: list[dict]):
     """Agent 1 — 专家知识沉淀 5步工作流，流式推送步骤进度。"""
     expert_text = messages[-1]["content"]
     logger.info("[WF1] 启动 | 输入 %d 字", len(expert_text))
+    _t0 = time.time()
 
     try:
         faiss_svc, nodes_dict, children_map = _get_kb1_resources()
@@ -198,6 +200,9 @@ async def _run_workflow1(messages: list[dict]):
         yield _sse({"type": "error", "error": str(e)})
 
     finally:
+        elapsed = round(time.time() - _t0, 1)
+        logger.info("[WF1] 总耗时 %.1f 秒", elapsed)
+        yield _sse({"type": "duration", "seconds": elapsed})
         yield "data: [DONE]\n\n"
 
 
@@ -207,6 +212,7 @@ async def _run_workflow2(messages: list[dict]):
     """Agent 2 — 大纲对话生成最多10步工作流，流式推送步骤进度。"""
     question = messages[-1]["content"]
     logger.info("[WF2] 启动 | 问题: %s", question)
+    _t0 = time.time()
 
     try:
         # Step 1: 向量化问题
@@ -293,6 +299,9 @@ async def _run_workflow2(messages: list[dict]):
         yield _sse({"type": "error", "error": str(e)})
 
     finally:
+        elapsed = round(time.time() - _t0, 1)
+        logger.info("[WF2] 总耗时 %.1f 秒", elapsed)
+        yield _sse({"type": "duration", "seconds": elapsed})
         yield "data: [DONE]\n\n"
 
 
