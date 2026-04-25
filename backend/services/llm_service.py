@@ -88,11 +88,20 @@ class LLMService:
         print_stream: bool = False,
     ) -> str:
         cfg = config or LLMConfig()
+        model = cfg.model or self.default_model
+        temperature = cfg.temperature if cfg.temperature is not None else self._temperature
+
+        logger.info(
+            "[LLM] 调用 model=%s temperature=%.2f messages=%d条",
+            model, temperature, len(messages),
+        )
+        for m in messages:
+            logger.info("[LLM Prompt][%s]\n%s", m["role"], m["content"])
 
         stream = await self._client.chat.completions.create(
-            model=cfg.model or self.default_model,
+            model=model,
             messages=messages,
-            temperature=cfg.temperature if cfg.temperature is not None else self._temperature,
+            temperature=temperature,
             top_p=cfg.top_p if cfg.top_p is not None else self._top_p,
             max_tokens=cfg.max_tokens,
             stream=True,
@@ -123,6 +132,10 @@ class LLMService:
                 if print_stream:
                     print(content, end="", flush=True)
 
+        logger.info(
+            "[LLM Output] (%d字):\n%s",
+            len(answer_content), answer_content,
+        )
         return answer_content
 
     @staticmethod

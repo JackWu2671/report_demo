@@ -1,4 +1,5 @@
 import React from 'react'
+import WorkflowSteps from './WorkflowSteps'
 
 const UserAvatar = () => (
   <div className="msg-avatar msg-avatar--user">
@@ -16,26 +17,31 @@ const AssistantAvatar = () => (
   </div>
 )
 
-function extractChat(text) {
-  const idx = text.indexOf('---OUTLINE---')
-  return idx >= 0 ? text.slice(0, idx).trim() : text
-}
-
 export default function ChatMessage({ message, isStreaming }) {
   const isUser = message.role === 'user'
-  const content = isUser ? message.content : extractChat(message.content)
+  const { content = '', steps = [] } = message
+
+  const hasSteps = steps.length > 0
+  const hasContent = content.trim().length > 0
+  const showTyping = !isUser && isStreaming && !hasContent && !hasSteps
 
   return (
     <div className={`msg-row msg-row--${isUser ? 'user' : 'assistant'}`}>
       {!isUser && <AssistantAvatar />}
       <div className="msg-bubble-wrap">
-        <div className={`msg-bubble msg-bubble--${isUser ? 'user' : 'assistant'}`}>
-          {content || (
-            !isUser && isStreaming
+        {/* 工作流步骤进度（仅 assistant） */}
+        {!isUser && hasSteps && (
+          <WorkflowSteps steps={steps} />
+        )}
+
+        {/* 消息内容气泡 */}
+        {(hasContent || showTyping) && (
+          <div className={`msg-bubble msg-bubble--${isUser ? 'user' : 'assistant'}`}>
+            {showTyping
               ? <span className="msg-typing"><span /><span /><span /></span>
-              : '…'
-          )}
-        </div>
+              : content}
+          </div>
+        )}
       </div>
       {isUser && <UserAvatar />}
     </div>

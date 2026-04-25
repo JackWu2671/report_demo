@@ -10,11 +10,6 @@ const AGENT_DESCS = {
   '2': '根据分析需求实时生成报告大纲，支持聚焦方向、删减章节、设置参数等修改。',
 }
 
-function extractOutline(text) {
-  const idx = text.indexOf('---OUTLINE---')
-  return idx >= 0 ? text.slice(idx + 13).trim() : ''
-}
-
 export default function ChatView() {
   const { agentId } = useParams()
   const navigate = useNavigate()
@@ -28,6 +23,15 @@ export default function ChatView() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // 更新最后一条 assistant 消息
+  function updateLast(updater) {
+    setMessages(prev => {
+      const updated = [...prev]
+      updated[updated.length - 1] = updater(updated[updated.length - 1])
+      return updated
+    })
+  }
+
   async function send() {
     const text = input.trim()
     if (!text || streaming) return
@@ -37,7 +41,8 @@ export default function ChatView() {
     setMessages(newMessages)
     setInput('')
     setStreaming(true)
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+    // 添加空 assistant 消息占位
+    setMessages(prev => [...prev, { role: 'assistant', content: '', steps: [] }])
 
     try {
       const res = await fetch('/api/chat', {
@@ -48,36 +53,46 @@ export default function ChatView() {
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let full = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         for (const line of decoder.decode(value).split('\n')) {
           if (!line.startsWith('data: ')) continue
-          const data = line.slice(6)
-          if (data === '[DONE]') break
+          const raw = line.slice(6)
+          if (raw === '[DONE]') break
           try {
-            const { text } = JSON.parse(data)
-            if (text) {
-              full += text
-              setMessages(prev => {
-                const updated = [...prev]
-                updated[updated.length - 1] = { role: 'assistant', content: full }
-                return updated
+            const evt = JSON.parse(raw)
+
+            if (evt.type === 'step') {
+              // 更新/追加步骤
+              updateLast(msg => {
+                const steps = [...(msg.steps || [])]
+                const idx = steps.findIndex(s => s.step === evt.step)
+                const entry = { step: evt.step, name: evt.name, status: evt.status, detail: evt.detail || '' }
+                if (idx >= 0) steps[idx] = entry
+                else steps.push(entry)
+                return { ...msg, steps }
               })
-              const ol = extractOutline(full)
-              if (ol) setOutline(ol)
+
+            } else if (evt.type === 'text') {
+              updateLast(msg => ({ ...msg, content: (msg.content || '') + evt.text }))
+
+            } else if (evt.type === 'outline') {
+              setOutline(evt.content)
+
+            } else if (evt.type === 'error') {
+              updateLast(msg => ({ ...msg, content: `请求失败: ${evt.error}` }))
+
+            } else if (evt.text) {
+              // 兼容旧格式 {"text": "..."}
+              updateLast(msg => ({ ...msg, content: (msg.content || '') + evt.text }))
             }
           } catch {}
         }
       }
     } catch (e) {
-      setMessages(prev => {
-        const updated = [...prev]
-        updated[updated.length - 1] = { role: 'assistant', content: `请求失败: ${e.message}` }
-        return updated
-      })
+      updateLast(msg => ({ ...msg, content: `请求失败: ${e.message}` }))
     }
 
     setStreaming(false)
