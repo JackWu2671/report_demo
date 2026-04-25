@@ -21,6 +21,10 @@ from llm.config import LLMConfig
 
 logger = logging.getLogger(__name__)
 
+# 绕过代理直连 LLM 服务，避免内网地址被代理拦截
+os.environ.setdefault("NO_PROXY", "oneapi.rnd.huawei.com")
+os.environ.setdefault("no_proxy", "oneapi.rnd.huawei.com")
+
 
 class LLMService:
     def __init__(
@@ -106,7 +110,7 @@ class LLMService:
             max_tokens=cfg.max_tokens,
             stream=True,
             stream_options={"include_usage": True},
-            extra_body={"enable_thinking": self.enable_thinking},
+            extra_body={"chat_template_kwargs": {"enable_thinking": self.enable_thinking}},
         )
 
         reasoning_content = ""
