@@ -63,12 +63,38 @@ def _print_help() -> None:
 """)
 
 
+def _read_input() -> str | None:
+    """Read a slash-command (single line) or multi-line expert text (end with '---')."""
+    try:
+        first = input("你 > ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+    # Commands and empty lines: return immediately
+    if not first or first.startswith("/"):
+        return first if first else None
+
+    # Multi-line mode for expert descriptions
+    print("  (继续输入，单独一行输入 --- 结束多行输入)")
+    lines = [first]
+    while True:
+        try:
+            line = input("... ").rstrip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if line == "---":
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
+
 async def repl(initial_text: str = "") -> None:
     agent = Agent1()
     print(f"\n{'=' * 56}")
     print("  专家知识沉淀 Agent — 交互测试")
     print(f"{'=' * 56}")
-    print("输入专家场景描述，或 /help 查看命令。\n")
+    print("输入专家场景描述，或 /help 查看命令。")
+    print("多行输入请换行继续，最后一行单独输入 --- 结束。\n")
 
     first_input = initial_text
 
@@ -78,15 +104,13 @@ async def repl(initial_text: str = "") -> None:
             first_input = ""
             print(f"你 > {user_input}")
         else:
-            try:
-                user_input = input("你 > ").strip()
-            except (EOFError, KeyboardInterrupt):
+            user_input = _read_input()
+            if user_input is None:
                 print("\n退出。")
                 break
 
         if not user_input:
-            print("退出。")
-            break
+            continue
 
         if user_input == "/help":
             _print_help(); continue
