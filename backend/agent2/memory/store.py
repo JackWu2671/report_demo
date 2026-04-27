@@ -50,16 +50,18 @@ class AgentMemory:
     def build_messages(self, system_prompt: str) -> list[dict]:
         """
         Assemble the full messages list for an LLM call:
-          [system_prompt] + history + [current outline context if exists]
+          [system_prompt (+ outline if exists)] + history
 
-        The outline is injected as a trailing system message so the LLM always
-        sees the latest node IDs without the outline growing inside history.
+        The current outline is appended to the system prompt (not as a separate
+        system message) because many models require all system messages to be
+        at the beginning of the conversation.
         """
-        messages: list[dict] = [{"role": "system", "content": system_prompt}]
-        messages.extend(self._history)
         if self.has_outline:
-            messages.append({
-                "role": "system",
-                "content": f"## 当前大纲（可通过节点ID引用）\n\n{self.md_with_ids}",
-            })
-        return messages
+            system_content = (
+                f"{system_prompt}\n\n"
+                f"## 当前大纲（可通过节点ID引用）\n\n{self.md_with_ids}"
+            )
+        else:
+            system_content = system_prompt
+
+        return [{"role": "system", "content": system_content}, *self._history]
