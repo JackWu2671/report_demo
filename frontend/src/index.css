@@ -286,6 +286,20 @@ body {
   border: 1px solid var(--color-border);
   border-bottom-left-radius: 4px;
 }
+.msg-bubble--info {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  border-bottom-left-radius: 4px;
+  font-size: 13px;
+}
+.msg-bubble--success {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+  border-bottom-left-radius: 4px;
+  font-size: 13px;
+}
 
 /* =========================================
    Typing indicator

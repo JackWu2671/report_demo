@@ -27,7 +27,7 @@ export default function WorkflowSteps({ steps }) {
       {!collapsed && (
         <div className="wf-steps__list">
           {steps.map(s => (
-            <div key={s.step} className={`wf-step wf-step--${s.status}`}>
+            <div key={s.name} className={`wf-step wf-step--${s.status}`}>
               <span className="wf-step__icon">
                 {s.status === 'running' && <span className="wf-step__spin" />}
                 {s.status === 'done' && '✓'}
@@ -36,7 +36,6 @@ export default function WorkflowSteps({ steps }) {
               </span>
               <span className="wf-step__body">
                 <span className="wf-step__name">{s.name}</span>
-                {s.detail && <span className="wf-step__detail">{s.detail}</span>}
               </span>
             </div>
           ))}

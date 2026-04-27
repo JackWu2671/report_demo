@@ -18,9 +18,33 @@ const AssistantAvatar = () => (
 )
 
 export default function ChatMessage({ message, isStreaming }) {
-  const isUser = message.role === 'user'
-  const { content = '', steps = [], duration } = message
+  const { role, content = '', steps = [], duration } = message
 
+  // Info bubble: new_nodes discovered
+  if (role === 'info') {
+    return (
+      <div className="msg-row msg-row--assistant">
+        <AssistantAvatar />
+        <div className="msg-bubble-wrap">
+          <div className="msg-bubble msg-bubble--info">{content}</div>
+        </div>
+      </div>
+    )
+  }
+
+  // Success bubble: template saved
+  if (role === 'success') {
+    return (
+      <div className="msg-row msg-row--assistant">
+        <AssistantAvatar />
+        <div className="msg-bubble-wrap">
+          <div className="msg-bubble msg-bubble--success">{content}</div>
+        </div>
+      </div>
+    )
+  }
+
+  const isUser = role === 'user'
   const hasSteps = steps.length > 0
   const hasContent = content.trim().length > 0
   const showTyping = !isUser && isStreaming && !hasContent && !hasSteps
@@ -29,12 +53,8 @@ export default function ChatMessage({ message, isStreaming }) {
     <div className={`msg-row msg-row--${isUser ? 'user' : 'assistant'}`}>
       {!isUser && <AssistantAvatar />}
       <div className="msg-bubble-wrap">
-        {/* 工作流步骤进度（仅 assistant） */}
-        {!isUser && hasSteps && (
-          <WorkflowSteps steps={steps} />
-        )}
+        {!isUser && hasSteps && <WorkflowSteps steps={steps} />}
 
-        {/* 消息内容气泡 */}
         {(hasContent || showTyping) && (
           <div className={`msg-bubble msg-bubble--${isUser ? 'user' : 'assistant'}`}>
             {showTyping
@@ -43,7 +63,6 @@ export default function ChatMessage({ message, isStreaming }) {
           </div>
         )}
 
-        {/* 耗时 */}
         {!isUser && duration != null && (
           <div className="msg-duration">耗时 {duration} 秒</div>
         )}

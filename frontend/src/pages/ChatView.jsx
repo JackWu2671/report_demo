@@ -17,13 +17,36 @@ export default function ChatView() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [outline, setOutline] = useState('')
+  const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
+
+  // Create a fresh session each time agentId changes
+  useEffect(() => {
+    sessionIdRef.current = null
+    setMessages([])
+    setOutline('')
+
+    fetch('/api/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: parseInt(agentId) }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        sessionIdRef.current = d.session_id
+        logger(`Session created: ${d.session_id}`)
+      })
+      .catch(e => console.error('[ChatView] 创建 session 失败', e))
+  }, [agentId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // 更新最后一条 assistant 消息
+  function logger(msg) {
+    if (process.env.NODE_ENV !== 'production') console.log('[ChatView]', msg)
+  }
+
   function updateLast(updater) {
     setMessages(prev => {
       const updated = [...prev]
@@ -32,65 +55,52 @@ export default function ChatView() {
     })
   }
 
+  function appendMsg(msg) {
+    setMessages(prev => [...prev, msg])
+  }
+
   async function send() {
     const text = input.trim()
-    if (!text || streaming) return
+    if (!text || streaming || !sessionIdRef.current) return
 
-    const userMsg = { role: 'user', content: text }
-    const newMessages = [...messages, userMsg]
-    setMessages(newMessages)
+    appendMsg({ role: 'user', content: text })
     setInput('')
     setStreaming(true)
-    // 添加空 assistant 消息占位
-    setMessages(prev => [...prev, { role: 'assistant', content: '', steps: [] }])
+    appendMsg({ role: 'assistant', content: '', steps: [] })
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: parseInt(agentId), messages: newMessages }),
+        body: JSON.stringify({ session_id: sessionIdRef.current, message: text }),
       })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        updateLast(msg => ({ ...msg, content: `请求失败: ${err.detail}` }))
+        setStreaming(false)
+        return
+      }
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
+      let buffer = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        for (const line of decoder.decode(value).split('\n')) {
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() // keep incomplete line
+
+        for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const raw = line.slice(6)
           if (raw === '[DONE]') break
           try {
             const evt = JSON.parse(raw)
-
-            if (evt.type === 'step') {
-              // 更新/追加步骤
-              updateLast(msg => {
-                const steps = [...(msg.steps || [])]
-                const idx = steps.findIndex(s => s.step === evt.step)
-                const entry = { step: evt.step, name: evt.name, status: evt.status, detail: evt.detail || '' }
-                if (idx >= 0) steps[idx] = entry
-                else steps.push(entry)
-                return { ...msg, steps }
-              })
-
-            } else if (evt.type === 'text') {
-              updateLast(msg => ({ ...msg, content: (msg.content || '') + evt.text }))
-
-            } else if (evt.type === 'outline') {
-              setOutline(evt.content)
-
-            } else if (evt.type === 'duration') {
-              updateLast(msg => ({ ...msg, duration: evt.seconds }))
-
-            } else if (evt.type === 'error') {
-              updateLast(msg => ({ ...msg, content: `请求失败: ${evt.error}` }))
-
-            } else if (evt.text) {
-              // 兼容旧格式 {"text": "..."}
-              updateLast(msg => ({ ...msg, content: (msg.content || '') + evt.text }))
-            }
+            handleEvent(evt)
           } catch {}
         }
       }
@@ -99,6 +109,53 @@ export default function ChatView() {
     }
 
     setStreaming(false)
+  }
+
+  function handleEvent(evt) {
+    switch (evt.type) {
+      case 'step':
+        updateLast(msg => {
+          const steps = [...(msg.steps || [])]
+          const idx = steps.findIndex(s => s.name === evt.name)
+          const entry = { name: evt.name, status: evt.status }
+          if (idx >= 0) steps[idx] = entry
+          else steps.push(entry)
+          return { ...msg, steps }
+        })
+        break
+
+      case 'text':
+        updateLast(msg => ({
+          ...msg,
+          content: (msg.content || '') + (evt.chunk ?? evt.text ?? ''),
+        }))
+        break
+
+      case 'outline':
+        setOutline(evt.markdown ?? evt.content ?? '')
+        break
+
+      case 'done':
+        updateLast(msg => ({ ...msg, duration: evt.seconds }))
+        break
+
+      case 'new_nodes': {
+        const names = (evt.nodes || []).map(n => n.name).join('、')
+        appendMsg({
+          role: 'info',
+          content: `发现 ${evt.nodes.length} 个新知识节点：${names}`,
+        })
+        break
+      }
+
+      case 'saved':
+        appendMsg({ role: 'success', content: `模板已保存：${evt.scene_name}` })
+        break
+
+      case 'error':
+        updateLast(msg => ({ ...msg, content: `[错误] ${evt.message}` }))
+        break
+    }
   }
 
   return (
