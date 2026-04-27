@@ -3,7 +3,7 @@ template_saver.py — 将大纲模板保存为 JSON 文件。
 
 保存内容：
   - 场景元数据（来自 Step 1 extraction）：scene_name, keywords, summary, usage_conditions
-  - 大纲 JSON 树（从带 id 标注的 Markdown 解析）：每个节点含 id, level, name, description, children
+  - 大纲 JSON 树（从带 [Lx id] 标注的文本解析）
   - 创建时间戳
 
 输出目录: backend/templates/{scene_name}.json
@@ -24,46 +24,47 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATE_DIR = os.path.join(_BACKEND_DIR, "templates")
 
+# Matches: optional indent, [Lx node_ref] name（：description optional）
+_NODE_RE = re.compile(r"^\s*\[L(\d+)\s+([^\]]+)\]\s+(.+)$")
+
 
 def outline_md_to_json(outline_md: str, nodes_dict: dict) -> list[dict]:
     """
-    将带 [id] 标注的 Markdown 大纲转换为 JSON 树列表。
+    将带 [Lx id] 标注的大纲文本转换为 JSON 树列表。
 
     - 已有 id 节点：从 nodes_dict 取 name / description
-    - [new] 节点：使用大纲中的内联名称和描述（格式: name: description）
-    - children 按缩进层级嵌套
+    - [new] 节点：使用大纲中的内联名称和描述（格式: name：description）
+    - children 按 [Lx] 层级嵌套
 
     Args:
-        outline_md : generate_outline() 输出的带标注 Markdown
+        outline_md : generate_outline() 输出的带 [Lx id] 标注文本
         nodes_dict : {node_id -> node_dict}（含 KB 节点的 name/description）
 
     Returns:
         顶层节点列表（通常只有一个根节点，但允许多个并列顶层）
     """
-    stack: list[tuple[int, dict]] = []  # (depth, node_dict)
+    stack: list[tuple[int, dict]] = []  # (level, node_dict)
     roots: list[dict] = []
 
-    for line in outline_md.strip().split("\n"):
-        line = line.strip()
-        m = re.match(r"^(#+)\s+\[([^\]]+)\]\s+(.+)$", line)
+    for line in outline_md.splitlines():
+        m = _NODE_RE.match(line)
         if not m:
             continue
 
-        depth = len(m.group(1))
+        level = int(m.group(1))
         node_ref = m.group(2).strip()
         raw_text = m.group(3).strip()
 
-        if node_ref.lower() == "new" and ": " in raw_text:
-            name, inline_desc = raw_text.split(": ", 1)
+        if node_ref.lower() == "new" and "：" in raw_text:
+            name, inline_desc = raw_text.split("：", 1)
             name, inline_desc = name.strip(), inline_desc.strip()
         else:
-            name = raw_text
-            inline_desc = ""
+            name, inline_desc = raw_text, ""
 
         if node_ref.lower() == "new":
             node: dict = {
                 "id": "new",
-                "level": depth,
+                "level": level,
                 "name": name,
                 "description": inline_desc,
                 "children": [],
@@ -72,14 +73,13 @@ def outline_md_to_json(outline_md: str, nodes_dict: dict) -> list[dict]:
             kb = nodes_dict.get(node_ref, {})
             node = {
                 "id": node_ref,
-                "level": depth,
+                "level": level,
                 "name": kb.get("name", name),
                 "description": kb.get("description", ""),
                 "children": [],
             }
 
-        # 找父节点：弹出深度 >= 当前的所有层级
-        while stack and stack[-1][0] >= depth:
+        while stack and stack[-1][0] >= level:
             stack.pop()
 
         if stack:
@@ -87,7 +87,7 @@ def outline_md_to_json(outline_md: str, nodes_dict: dict) -> list[dict]:
         else:
             roots.append(node)
 
-        stack.append((depth, node))
+        stack.append((level, node))
 
     return roots
 
@@ -101,9 +101,9 @@ def save_template(
     将场景元数据 + 大纲 JSON 树保存到 templates/{scene_name}.json。
 
     Args:
-        extraction : extract_from_expert() 的输出（含 scene_name, keywords, summary, usage_conditions）
-        outline_md : 带 [id]/[new] 标注的 Markdown 大纲
-        nodes_dict : 当前（或更新后）的知识库节点字典
+        extraction : extract_from_expert() 的输出
+        outline_md : 带 [Lx id] 标注的大纲文本
+        nodes_dict : 知识库节点字典
 
     Returns:
         保存的文件路径
