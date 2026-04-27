@@ -1,10 +1,11 @@
 """
-generate.py — Tool implementation for generate_outline.
+generate.py — Tool: generate_outline
 
-Calls the full case_workflow_2 pipeline (Steps 0-10) and returns:
-  - outline_tree : dict  (source of truth, stored in agent state)
-  - markdown     : str   (human-readable)
-  - md_with_ids  : str   (LLM-readable, used as tool result injected into messages)
+KB-only outline generation (Steps 1-7 of case_workflow_2, no template search).
+Called when search_outline_template returns not_found.
+
+Returns {status, outline_tree, markdown, md_with_ids}.
+status="not_found" when the KB has no relevant nodes → agent LLM should reject.
 """
 
 import logging
@@ -19,49 +20,76 @@ for _p in [_BACKEND_DIR, _WF2_DIR]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from case_workflow_2.workflow import main as _wf2_main
-from outline_utils import to_markdown, to_markdown_with_ids, to_clean_json
+from retriever import embed_query, search_nodes, build_candidate_paths
+from anchor import select_anchor
+from subtree import build_subtree
+from renderer import render_outline
+from patcher import parse_patch, apply_patch
+from loader import load_resources
+from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 
 logger = logging.getLogger(__name__)
 
 
 async def generate_outline(question: str) -> dict:
     """
-    Run the full case_workflow_2 pipeline and return all three representations.
+    Run the KB retrieval + build pipeline and return all three representations.
 
     Returns:
         {
-            "outline_tree": dict,      # clean JSON tree (source of truth)
-            "markdown": str,           # human-readable Markdown
-            "md_with_ids": str,        # LLM-context Markdown with [Lx id] prefixes
+            "status"      : "success" | "not_found",
+            "outline_tree": dict,
+            "markdown"    : str,
+            "md_with_ids" : str,
+            "message"     : str,  # human-readable reason when not_found
         }
     """
     logger.info("[Tool:generate_outline] question=%r", question)
 
-    raw_tree, _ = await _wf2_main(question)
+    query_embedding = await embed_query(question)
+    faiss_svc, nodes_dict, children_map = load_resources()
 
-    if not raw_tree:
-        return {
-            "outline_tree": {},
-            "markdown": f"未能为「{question}」生成大纲，请检查知识库索引。",
-            "md_with_ids": "",
-        }
+    hits = search_nodes(query_embedding, faiss_svc)
+    if not hits:
+        logger.info("[Tool:generate_outline] FAISS 无命中")
+        return _not_found(f"知识库中未检索到与「{question}」相关的节点，系统暂不支持该分析场景。")
 
-    clean_tree = to_clean_json(raw_tree)
+    candidates = build_candidate_paths(hits, nodes_dict, children_map)
+    anchor = await select_anchor(question, candidates)
+
+    try:
+        tree = build_subtree(anchor["selected_id"], nodes_dict, children_map)
+    except ValueError as e:
+        logger.warning("[Tool:generate_outline] build_subtree 失败: %s", e)
+        return _not_found(str(e))
+
+    # Apply initial param patch from the question itself
+    ops = await parse_patch(question, tree)
+    if ops:
+        tree = apply_patch(tree, ops)
+
+    clean_tree = to_clean_json(tree)
     markdown = to_markdown(clean_tree)
     md_with_ids = to_markdown_with_ids(clean_tree)
 
     logger.info(
-        "[Tool:generate_outline] 完成，节点数=%d，Markdown %d 字",
-        _count_nodes(clean_tree),
+        "[Tool:generate_outline] 完成，Markdown %d 字",
         len(markdown),
     )
     return {
+        "status": "success",
         "outline_tree": clean_tree,
         "markdown": markdown,
         "md_with_ids": md_with_ids,
+        "message": "",
     }
 
 
-def _count_nodes(node: dict) -> int:
-    return 1 + sum(_count_nodes(c) for c in node.get("children", []))
+def _not_found(message: str) -> dict:
+    return {
+        "status": "not_found",
+        "outline_tree": {},
+        "markdown": "",
+        "md_with_ids": "",
+        "message": message,
+    }
