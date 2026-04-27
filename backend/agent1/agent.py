@@ -5,7 +5,6 @@ Same ReAct loop structure as Agent2, different tools and memory.
 chat_stream() yields typed events:
   {"type": "step",    "name": str, "status": "running"|"done"}
   {"type": "outline", "markdown": str}     ← emitted immediately by tool
-  {"type": "delta",   "text": str}         ← delta analysis result
   {"type": "saved",   "scene_name": str, "path": str}
   {"type": "text",    "chunk": str}        ← LLM brief acknowledgment
   {"type": "done",    "seconds": float}
@@ -65,9 +64,6 @@ class Agent1:
                         yield {"type": "outline", "markdown": result_dict["markdown"]}
                         if result_dict.get("new_nodes"):
                             yield {"type": "new_nodes", "nodes": result_dict["new_nodes"]}
-
-                    elif name == "analyze_kb_delta" and result_dict.get("delta_text"):
-                        yield {"type": "delta", "text": result_dict["delta_text"]}
 
                     elif name == "modify_outline" and result_dict.get("outline_tree"):
                         yield {"type": "outline", "markdown": result_dict["markdown"]}

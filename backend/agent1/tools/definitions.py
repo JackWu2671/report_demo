@@ -1,11 +1,10 @@
 """
 definitions.py — OpenAI tool schemas for agent1.
 
-Four tools for the expert knowledge → template pipeline:
+Three tools for the expert knowledge → template pipeline:
   1. analyze_expert_knowledge  — Steps 1-4: metadata + outline + new nodes
-  2. analyze_kb_delta          — Step 5: delta analysis vs KB (on demand)
-  3. modify_outline            — shared: patch current outline
-  4. save_outline_template     — Step 7: persist confirmed template
+  2. modify_outline            — shared: patch current outline
+  3. save_outline_template     — persist confirmed template
 """
 
 TOOLS: list[dict] = [
@@ -27,21 +26,6 @@ TOOLS: list[dict] = [
                     }
                 },
                 "required": ["expert_text"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "analyze_kb_delta",
-            "description": (
-                "分析当前大纲与现有知识库框架的差异，总结专家逻辑对知识库的增量贡献。"
-                "仅在已生成大纲后、且专家需要了解差异时调用。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
             },
         },
     },

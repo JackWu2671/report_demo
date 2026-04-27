@@ -7,10 +7,6 @@
 - 同时识别大纲中知识库尚未收录的新概念（[new]节点）
 - 专家提供场景描述后首先调用
 
-**analyze_kb_delta()**
-- 分析当前大纲与现有知识库框架的差异
-- 按需调用：专家明确想了解"和知识库有什么不同"时才调用
-
 **modify_outline(instruction)**
 - 对当前大纲进行修改（删节、调整结构、补充维度等）
 - 仅在已有大纲时可用
@@ -23,7 +19,6 @@
 
 专家输入场景描述 → analyze_expert_knowledge → 告知场景名称、[new]节点情况
 专家要修改 → modify_outline → 展示新大纲
-专家要看差异分析 → analyze_kb_delta → 展示差异
 专家确认 → save_outline_template → 告知保存成功
 
 ## 回复规范

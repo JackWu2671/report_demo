@@ -9,7 +9,6 @@ import logging
 
 from agent1.memory import Agent1Memory
 from tools.analyze_expert import analyze_expert_knowledge
-from tools.analyze_delta import analyze_kb_delta
 from tools.modify_outline import modify_outline
 from tools.save_template import save_outline_template
 
@@ -38,19 +37,6 @@ async def handle_analyze_expert_knowledge(args: dict, memory: Agent1Memory) -> t
     else:
         llm_str = f"[analyze_expert_knowledge] status=error  message={result['message']}"
 
-    return result, llm_str
-
-
-async def handle_analyze_kb_delta(args: dict, memory: Agent1Memory) -> tuple[dict, str]:
-    result = await analyze_kb_delta(
-        memory.expert_text,
-        memory.tree_text,
-        memory.outline_md_annotated,
-    )
-    if result["status"] == "success":
-        llm_str = f"[analyze_kb_delta] status=success\n\n{result['delta_text']}"
-    else:
-        llm_str = f"[analyze_kb_delta] status=error  message={result['message']}"
     return result, llm_str
 
 
@@ -83,7 +69,6 @@ async def handle_save_outline_template(args: dict, memory: Agent1Memory) -> tupl
 
 HANDLERS: dict = {
     "analyze_expert_knowledge": handle_analyze_expert_knowledge,
-    "analyze_kb_delta": handle_analyze_kb_delta,
     "modify_outline": handle_modify_outline,
     "save_outline_template": handle_save_outline_template,
 }

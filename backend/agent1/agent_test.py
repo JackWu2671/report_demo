@@ -117,8 +117,6 @@ async def repl(initial_text: str = "") -> None:
                     nodes = event["nodes"]
                     print(f"\n  ⚠ [new] 节点 ({len(nodes)}个): "
                           + ", ".join(n["name"] for n in nodes))
-                elif etype == "delta":
-                    print(f"\n{_DIV}\n【差异分析】\n{event['text']}\n{_DIV}")
                 elif etype == "saved":
                     print(f"\n  ✅ 模板已保存: {event['scene_name']}  →  {event['path']}")
                 elif etype == "text":
