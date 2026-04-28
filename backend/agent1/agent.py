@@ -61,12 +61,18 @@ class Agent1:
 
                     # Emit typed events based on which tool ran
                     if name == "analyze_expert_knowledge" and result_dict.get("outline_tree"):
-                        yield {"type": "outline", "markdown": result_dict["markdown"]}
+                        yield {"type": "outline",
+                               "markdown": result_dict["markdown"],
+                               "md_with_ids": result_dict["md_with_ids"],
+                               "outline_tree": result_dict["outline_tree"]}
                         if result_dict.get("new_nodes"):
                             yield {"type": "new_nodes", "nodes": result_dict["new_nodes"]}
 
                     elif name == "modify_outline" and result_dict.get("outline_tree"):
-                        yield {"type": "outline", "markdown": result_dict["markdown"]}
+                        yield {"type": "outline",
+                               "markdown": result_dict["markdown"],
+                               "md_with_ids": result_dict["md_with_ids"],
+                               "outline_tree": result_dict["outline_tree"]}
 
                     elif name == "save_outline_template" and result_dict.get("status") == "success":
                         yield {"type": "saved",

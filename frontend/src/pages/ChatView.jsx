@@ -18,6 +18,10 @@ export default function ChatView() {
   const [streaming, setStreaming] = useState(false)
   const [outline, setOutline] = useState('')
   const [quickReplies, setQuickReplies] = useState([])
+  const [outlineMd, setOutlineMd] = useState('')
+  const [outlineLlm, setOutlineLlm] = useState('')
+  const [outlineJson, setOutlineJson] = useState(null)
+  const [outlineTab, setOutlineTab] = useState('md')  // 'md' | 'llm' | 'json'
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
 
@@ -25,6 +29,10 @@ export default function ChatView() {
     sessionIdRef.current = null
     setMessages([])
     setOutline('')
+    setOutlineMd('')
+    setOutlineLlm('')
+    setOutlineJson(null)
+    setOutlineTab('md')
     setQuickReplies([])
 
     fetch('/api/session', {
@@ -128,9 +136,14 @@ export default function ChatView() {
         }))
         break
 
-      case 'outline':
-        setOutline(evt.markdown ?? evt.content ?? '')
+      case 'outline': {
+        const md = evt.markdown ?? evt.content ?? ''
+        setOutline(md)
+        setOutlineMd(md)
+        if (evt.md_with_ids) setOutlineLlm(evt.md_with_ids)
+        if (evt.outline_tree) setOutlineJson(evt.outline_tree)
         break
+      }
 
       case 'confirm':
         setQuickReplies(evt.options || [])
@@ -217,10 +230,34 @@ export default function ChatView() {
       <div className="outline-panel">
         <div className="outline-panel__header">
           <span className="outline-panel__title">大纲预览</span>
-          {outline && <span className="outline-panel__badge">已生成</span>}
+          {outline && (
+            <div className="outline-tabs">
+              {[
+                { key: 'md',   label: '人' },
+                { key: 'llm',  label: 'LLM' },
+                { key: 'json', label: 'JSON' },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  className={`outline-tab${outlineTab === tab.key ? ' outline-tab--active' : ''}`}
+                  onClick={() => setOutlineTab(tab.key)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="outline-panel__body">
-          <MarkdownOutline markdown={outline} />
+          {outlineTab === 'md' && <MarkdownOutline markdown={outlineMd} />}
+          {outlineTab === 'llm' && (
+            <pre className="outline-raw">{outlineLlm || '（暂无数据）'}</pre>
+          )}
+          {outlineTab === 'json' && (
+            <pre className="outline-raw">
+              {outlineJson ? JSON.stringify(outlineJson, null, 2) : '（暂无数据）'}
+            </pre>
+          )}
         </div>
       </div>
     </div>

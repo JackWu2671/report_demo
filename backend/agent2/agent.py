@@ -80,7 +80,10 @@ class Agent2:
 
                     # Emit outline event immediately — no LLM round-trip needed
                     if result_dict.get("outline_tree"):
-                        yield {"type": "outline", "markdown": result_dict["markdown"]}
+                        yield {"type": "outline",
+                               "markdown": result_dict["markdown"],
+                               "md_with_ids": result_dict["md_with_ids"],
+                               "outline_tree": result_dict["outline_tree"]}
 
                     # Template found but needs user confirmation before committing
                     if result_dict.get("status") == "pending_confirm":
