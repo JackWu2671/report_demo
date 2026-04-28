@@ -233,7 +233,7 @@ export default function ChatView() {
           {outline && (
             <div className="outline-tabs">
               {[
-                { key: 'md',   label: '人' },
+                { key: 'md',   label: '用户' },
                 { key: 'llm',  label: 'LLM' },
                 { key: 'json', label: 'JSON' },
               ].map(tab => (
