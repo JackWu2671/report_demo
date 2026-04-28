@@ -1,340 +1,408 @@
-# Agent2 设计文档
+# Agent 设计文档
 
 > 面向零基础 Agent 开发人员
 >
-> 本文档解释 `backend/agent2/` 的设计思路、每个模块的职责，以及关键设计决策背后的原因。
+> 本文档覆盖 `backend/agent1/` 和 `backend/agent2/` 的设计思路、每个模块的职责，
+> 以及关键设计决策背后的原因。
 
 ---
 
-## 1. 什么是 Agent？
+## 1. Workflow vs Agent：为什么要改
 
-传统程序的执行路径是固定的：`A → B → C → 结束`。
-
-Agent 的执行路径是**由大模型在运行时动态决定的**：大模型根据当前对话状态，自主选择"下一步调用哪个工具"，直到任务完成。
-
-```
-用户输入
-  ↓
-大模型思考：我应该做什么？
-  ↓
-选择并调用工具（或直接回答）
-  ↓
-看到工具结果后，再次思考
-  ↓
-... 循环直到任务完成 ...
-  ↓
-输出最终回复
-```
-
-这个"思考 → 行动 → 观察 → 再思考"的循环就是 **ReAct 模式**（Reason + Act）。
-
----
-
-## 2. 本项目的业务背景
-
-用户需要生成网络分析报告大纲，这个过程：
-
-1. **有知识库**：已有结构化的网络分析节点，存储在 FAISS 向量索引里
-2. **有模板**：过去积累的大纲可以复用，不必每次从零生成
-3. **需要多轮修改**：用户看到大纲后，会说"删掉这一节"、"加个阈值参数"
-4. **大纲是结构化数据**：不只是文字，需要以 JSON 形式存储供下游执行
-
-Agent 的价值在于：**让大模型决定走"复用模板"还是"从知识库生成"**，而不是写死 if/else。
-
----
-
-## 3. 整体架构
-
-```
-backend/agent2/
-├── agent.py           ← Agent 主循环（ReAct loop）
-├── prompt.txt         ← 系统提示词（告诉大模型有哪些工具）
-├── agent_test.py      ← 命令行交互测试入口
-│
-├── memory/
-│   └── store.py       ← 状态管理（大纲 + 对话历史）
-│
-└── tools/
-    ├── definitions.py     ← 工具的 JSON Schema（大模型看到的工具说明）
-    ├── search_template.py ← 工具实现：检索预制大纲模板
-    ├── generate.py        ← 工具实现：从知识库生成大纲
-    ├── modify.py          ← 工具实现：修改现有大纲
-    └── handlers.py        ← 工具调度表 + 状态写入
-```
-
----
-
-## 4. 核心概念：工具调用（Tool Calling）
-
-大模型原生只能输出文字。**工具调用**是一种约定：
-
-- 我们把工具描述（名称 + 参数 + 用途说明）以 JSON Schema 的形式传给大模型
-- 大模型可以在回复里说"我想调用 `generate_outline`，参数是 `question=政企OTN升级`"
-- 我们的代码检测到这个意图，真正执行函数，把结果返回给大模型
-- 大模型看到结果，决定继续调工具还是直接回答用户
+**Workflow（旧做法）** — 代码写死执行顺序：
 
 ```python
-# tools/definitions.py — 大模型看到的工具说明（不是实现，只是描述）
+# 每次请求必定跑这 4 步，顺序固定，大模型只是被调用的工具
+extraction = await extract_from_expert(expert_text)   # Step 1
+hits       = await dual_search(extraction, ...)        # Step 2
+outline_md = await generate_outline(expert_text, ...)  # Step 3
+new_nodes  = parse_new_nodes(outline_md)               # Step 4
+```
+
+问题：流程由代码控制，无法多轮修改，每次请求从头跑，没有记忆。
+
+**Agent（现做法）** — 大模型自己决定调哪个工具：
+
+```
+用户说"分析 fgOTN 部署情况"  →  大模型决定调 analyze_expert_knowledge
+用户说"把第二节删掉"          →  大模型决定调 modify_outline
+用户说"好，保存"              →  大模型决定调 save_outline_template
+```
+
+流程不是 Python if/else 写死的，是大模型根据对话上下文推理出来的。
+
+---
+
+## 2. 目录结构
+
+```
+backend/
+├── memory/
+│   └── store.py          ← 共享状态管理（AgentMemory 基类）
+│
+├── tools/                ← 共享工具实现（agent1 / agent2 都可以用）
+│   ├── analyze_expert.py     Steps 1-4: 提取 + 检索 + 生成大纲 + 解析新节点
+│   ├── generate_outline.py   从知识库生成大纲（agent2 用）
+│   ├── search_template.py    检索预制模板（agent2 用）
+│   ├── modify_outline.py     修改大纲（agent1 / agent2 共用）
+│   └── save_template.py      保存模板（agent1 用）
+│
+├── agent1/               ← 专家知识沉淀 Agent
+│   ├── agent.py              主循环
+│   ├── memory.py             Agent1Memory（继承 AgentMemory，扩展专家字段）
+│   ├── prompt.txt            系统提示词
+│   ├── agent_test.py         命令行交互测试
+│   └── tools/
+│       ├── definitions.py    工具 JSON Schema（大模型看到的工具说明）
+│       ├── handlers.py       工具调度表 + memory 写入
+│       └── __init__.py
+│
+└── agent2/               ← 大纲对话生成 Agent
+    ├── agent.py              主循环
+    ├── prompt.txt            系统提示词
+    ├── agent_test.py         命令行交互测试
+    ├── DESIGN.md             本文档
+    └── tools/
+        ├── definitions.py    工具 JSON Schema
+        ├── handlers.py       工具调度表 + memory 写入
+        └── __init__.py
+```
+
+`backend/tools/` 里是工具的**实现**，`agentX/tools/` 里是工具的**定义和调度**，两者分离，实现可跨 agent 复用。
+
+---
+
+## 3. 核心概念：工具调用（Function Calling）
+
+大模型原生只能输出文字。**Function Calling** 是 OpenAI 定义的一种协议，让大模型可以表达"我想调用某个函数"。
+
+### 3.1 如何告诉大模型有哪些工具
+
+调 API 时多传一个 `tools` 参数（JSON Schema 格式的工具说明）：
+
+```python
+# agent2/agent.py
+await llm._client.chat.completions.create(
+    model=llm.default_model,
+    messages=messages,
+    tools=TOOLS,          # ← 工具说明书，来自 agent2/tools/definitions.py
+    tool_choice="auto",   # ← 让大模型自己决定要不要调
+)
+```
+
+`TOOLS` 里每个工具长这样（`agent2/tools/definitions.py`）：
+
+```python
 {
     "type": "function",
     "function": {
         "name": "generate_outline",
-        "description": "从知识库实时检索并生成报告大纲...",
+        "description": "从知识库实时检索并生成报告大纲...",   # ← 大模型靠这句理解用途
         "parameters": {
             "type": "object",
             "properties": {
-                "question": {"type": "string", "description": "用户需求"}
-            }
+                "question": {
+                    "type": "string",
+                    "description": "用户的分析需求，原文传入"
+                }
+            },
+            "required": ["question"]
         }
     }
 }
 ```
 
-工具的**实际执行代码**在 `tools/generate.py`，两者通过 `tools/handlers.py` 连接。
+### 3.2 大模型输出什么
+
+大模型判断"这轮需要调工具"时，输出的**不是文字**，而是：
+
+```json
+{
+  "role": "assistant",
+  "content": null,
+  "finish_reason": "tool_calls",
+  "tool_calls": [
+    {
+      "id": "call_abc123",
+      "type": "function",
+      "function": {
+        "name": "generate_outline",
+        "arguments": "{\"question\": \"帮我分析 fgOTN 的部署情况\"}"
+      }
+    }
+  ]
+}
+```
+
+关键字段：
+- `finish_reason = "tool_calls"` — 告诉我们大模型没说完，要调工具
+- `tool_calls[].function.name` — 调哪个工具
+- `tool_calls[].function.arguments` — 参数，是一个 **JSON 字符串**（需要 `json.loads()` 解析）
+- `tool_calls[].id` — 这次调用的唯一 ID，执行完要原样带回
+
+大模型判断"直接回答用户"时，输出普通文字：
+
+```json
+{
+  "role": "assistant",
+  "content": "已根据您的需求生成大纲，共发现 2 个新节点。",
+  "finish_reason": "stop",
+  "tool_calls": null
+}
+```
+
+> 想亲眼看这两种输出：`cd backend && python tests/tool_test.py "你的问题"`
+
+### 3.3 prompt.txt 和 tools 参数的区别
+
+两者都在"告诉大模型工具的信息"，但各司其职：
+
+| | 作用 |
+|---|---|
+| `tools` 参数（JSON Schema） | 告诉大模型工具的**结构**：名称、参数类型、required 字段，大模型按此格式输出 |
+| `prompt.txt`（自然语言） | 告诉大模型工具的**语义**：什么场景用、什么时候不用、先后顺序 |
+
+`tools` 控制格式，`prompt.txt` 控制决策。
 
 ---
 
-## 5. Agent 主循环（agent.py）
+## 4. Agent 主循环（agent.py）
 
-这是整个系统的心脏，代码逻辑只有一件事：**循环调用大模型，直到它不再要求调用工具为止**。
-
-```
-while 未达到最大轮数:
-    调用大模型（携带对话历史 + 工具列表）
-    
-    if 大模型想调用工具:
-        执行工具
-        把工具结果追加到对话历史
-        continue（让大模型再次思考）
-    
-    else（大模型直接回答）:
-        输出最终文字
-        break
-```
-
-对应代码中的 `chat_stream()` 方法，是一个 **async generator**（异步生成器），每发生一件事就 `yield` 一个事件出去，而不是等全部完成再返回。
-
-### 为什么用 async generator？
-
-因为整个流程耗时较长（向量检索、多次 LLM 调用），用户需要实时看到进度。Generator 允许我们边执行边推送事件，前端可以即时渲染。
-
----
-
-## 6. 三种工具的设计
-
-### 6.1 search_outline_template — 检索预制模板
-
-```
-embed_query(question)        → 把问题转成向量
-search_templates(vec, top_k) → 向量相似度检索，找最像的模板
-select_template(question, candidates) → 内部 LLM 判断：这些模板够用吗？
-
-返回: {"status": "found" | "not_found", ...}
-```
-
-注意：`select_template` 内部有一次 LLM 调用，它是一个**专注于单一判断任务**的小 LLM 调用，不是 Agent 主循环里的那个 LLM。
-
-**为什么不让外层 Agent LLM 自己判断？**
-
-如果让 Agent LLM 看到原始候选列表自己决定，它需要同时处理"选工具"和"评估模板质量"两件事，容易出错。内部封装一个专注的 judge LLM 更可靠，对外只暴露 `found/not_found` 这个干净的结论。
-
-### 6.2 generate_outline — 从知识库生成
-
-```
-embed_query(question)                  → 问题向量化
-load_resources()                       → 加载 FAISS 索引 + 知识图谱 JSON
-search_nodes(vec, faiss_svc)           → 检索相关节点
-build_candidate_paths(hits, ...)       → 补全祖先路径
-select_anchor(question, candidates)    → LLM 选锚节点
-build_subtree(anchor_id, ...)         → 递归构建子树
-parse_patch(question, tree)           → LLM 解析参数修改意图
-apply_patch(tree, ops)                → 应用修改
-
-返回: {"status": "success" | "not_found", ...}
-```
-
-`not_found` 意味着知识库里没有相关节点，这时 Agent 应该告知用户"系统暂不支持该分析场景"，**不应重试**。
-
-### 6.3 modify_outline — 修改现有大纲
-
-```
-parse_patch(instruction, tree)   → LLM 把自然语言指令转成结构化操作
-apply_patch(tree, ops)           → 纯 Python 执行操作（不再调用 LLM）
-
-支持的操作: delete（删节点）、set_param（设参数）、keep_only（只保留指定节点）
-```
-
----
-
-## 7. 大纲的三种表示
-
-大纲数据有三种形态，服务不同的消费者：
-
-| 表示 | 格式 | 用途 | 谁使用 |
-|------|------|------|------|
-| `outline_tree` | JSON dict | 程序执行的数据结构 | 代码、下游系统 |
-| `markdown` | `# 标题\n## 子章节` | 人类阅读 | 用户界面 |
-| `md_with_ids` | `[L1 L1_001] 传送网：描述` | 带节点 ID 的引用视图 | LLM 上下文 |
-
-三者由 `outline_utils.py` 中的函数互相转化，`outline_tree` 是唯一的数据源：
-
-```
-outline_tree → to_markdown()        → markdown
-outline_tree → to_markdown_with_ids() → md_with_ids
-```
-
-**为什么 LLM 不能直接看普通 Markdown？**
-
-因为修改大纲时，LLM 需要精确引用节点（"把 `L2_003` 节点删掉"），普通 Markdown 没有节点 ID，LLM 只能用名称描述，容易出错或定位歧义。
-
----
-
-## 8. Memory（状态管理）
-
-`AgentMemory` 管理两件事：
-
-### 8.1 大纲状态（不进入对话历史）
+两个 agent 的主循环结构完全一致，都在 `chat_stream()` 里：
 
 ```python
-memory.outline_tree   # JSON 树（源数据）
-memory.markdown       # 给用户看的 Markdown
-memory.md_with_ids    # 给 LLM 看的带 ID Markdown
+async def chat_stream(self, user_message: str):
+    self.memory.add_message({"role": "user", "content": user_message})
+
+    for _round in range(_MAX_TOOL_ROUNDS):   # 最多 6 轮，防止死循环
+        response = await self._call_llm()
+        choice = response.choices[0]
+        msg = choice.message
+
+        self.memory.add_message(msg.model_dump(exclude_none=True))  # 记录大模型回复
+
+        if choice.finish_reason == "tool_calls":
+            for tc in msg.tool_calls:
+                yield {"type": "step", "name": tc.function.name, "status": "running"}
+
+                result_dict, llm_str = await self._execute_tool(tc)  # 真正执行工具
+
+                # 工具产出了大纲 → 立刻推送给前端，不等 LLM
+                if result_dict.get("outline_tree"):
+                    yield {"type": "outline", "markdown": result_dict["markdown"]}
+
+                yield {"type": "step", "name": tc.function.name, "status": "done"}
+
+                # 把执行结果告诉大模型，让它继续推理
+                self.memory.add_message({
+                    "role": "tool",
+                    "tool_call_id": tc.id,   # 对应上面的 call_abc123
+                    "content": llm_str,       # 工具执行结果的文字摘要
+                })
+            continue  # 回到循环顶部，让大模型再推理一轮
+
+        # finish_reason == "stop"：大模型直接回答
+        if msg.content:
+            yield {"type": "text", "chunk": msg.content}
+        yield {"type": "done", "seconds": round(time.time() - t0, 1)}
+        return
 ```
 
-大纲不存进对话历史消息里，原因：
-- 大纲可能很长（数千字），每轮都放在历史里会浪费 token
-- 大纲会被修改，历史里保存的是"旧版本"，容易混淆
-
-### 8.2 对话历史（精简版）
-
-历史里存的 tool 结果只包含 `md_with_ids`（带 ID 的紧凑视图），不包含完整 Markdown。这样历史始终保持较小体积。
-
-### 8.3 上下文注入
-
-每次调用 LLM 前，`build_messages()` 把当前 `md_with_ids` 拼进系统提示词里：
-
-```python
-def build_messages(self, system_prompt):
-    if self.has_outline:
-        system_content = system_prompt + "\n\n## 当前大纲\n" + self.md_with_ids
-    else:
-        system_content = system_prompt
-    
-    return [{"role": "system", "content": system_content}, *self._history]
-```
-
-**为什么不追加一条新的 system 消息？**
-
-许多模型（如 Qwen）要求 system 消息只能出现在最前面，追加到末尾会报错 `400: System message must be at the beginning`。把内容拼进第一条 system 消息是更兼容的做法。
+这个"调 LLM → 执行工具 → 把结果喂回 LLM → 再调"的循环就是 **ReAct 模式**（Reason + Act）。
 
 ---
 
-## 9. 事件协议（Event Protocol）
+## 5. 工具调度（handlers.py）
 
-`chat_stream()` 是一个 async generator，yield 以下类型的事件：
-
-```python
-{"type": "step",    "name": "search_outline_template", "status": "running"}
-{"type": "step",    "name": "search_outline_template", "status": "done"}
-{"type": "outline", "markdown": "# fgOTN部署\n## 传送网络覆盖..."}
-{"type": "text",    "chunk": "已找到匹配大纲，共3个章节。"}
-{"type": "done",    "seconds": 3.2}
-{"type": "error",   "message": "工具执行失败: ..."}
-```
-
-### 为什么不让 LLM 直接输出大纲文字？
-
-大纲由工具计算得出，是**已完成的数据**，不需要 LLM "逐字生成"。如果让 LLM 在文字回复里输出 2000 字的大纲，用户要等几十秒看 LLM 吐字。而 `outline` 事件是工具执行完后**立即推送**的，前端可以瞬间渲染。
-
-LLM 的文字职责只有一件事：**用 1-2 句话说明刚才做了什么**，引导用户下一步操作。
-
----
-
-## 10. 工具与 Handler 的关系
-
-```
-tools/definitions.py   ← 大模型看到的"菜单"（只有描述，没有实现）
-tools/search_template.py / generate.py / modify.py  ← 实际执行函数
-tools/handlers.py      ← 连接两者的调度表
-```
-
-Handler 的职责（以 `handle_generate_outline` 为例）：
+`_execute_tool()` 按工具名查 `HANDLERS` 字典，找到对应的 handler 函数执行：
 
 ```python
-async def handle_generate_outline(args, memory):
-    # 1. 调用工具函数
+# agent2/tools/handlers.py
+HANDLERS = {
+    "search_outline_template": handle_search_outline_template,
+    "generate_outline":         handle_generate_outline,
+    "modify_outline":           handle_modify_outline,
+}
+```
+
+每个 handler 做三件事：
+
+```python
+async def handle_generate_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    # 1. 调工具实现（在 backend/tools/ 里）
     result = await generate_outline(args["question"])
-    
-    # 2. 如果成功，更新 memory（outline_tree / markdown / md_with_ids）
+
+    # 2. 成功就更新 memory
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
-    
-    # 3. 返回两份数据：
-    #    result      → agent 检查是否有大纲，决定是否 yield outline 事件
-    #    llm_str     → 注入对话历史的简洁版（只含 md_with_ids，不含完整 markdown）
-    llm_str = f"[generate_outline] status=success\n\n{result['md_with_ids']}"
+
+    # 3. 返回两份数据
+    #    result   → agent 检查是否有大纲，决定是否 yield outline 事件
+    #    llm_str  → 喂给大模型历史的精简版（只含 md_with_ids，不含完整 Markdown）
+    llm_str = f"[generate_outline] status={result['status']}\n\n{result.get('md_with_ids', '')}"
     return result, llm_str
 ```
 
+**为什么返回两份数据？**
+
+- `result`（完整）给 agent.py 用，agent 从里面取 `outline_tree` 和 `markdown` 推送前端
+- `llm_str`（精简）放进对话历史给大模型看，只含带 ID 的紧凑大纲，不含大段 Markdown，节省 token
+
 ---
 
-## 11. 大纲在对话中的流转
+## 6. 大纲的三种表示
 
-以"生成大纲 → 修改大纲"两轮对话为例：
+大纲数据在系统中以三种形态存在，服务不同消费者：
+
+| 字段 | 格式示例 | 谁用 |
+|------|---------|------|
+| `outline_tree` | JSON dict（有 id/name/level/children） | 代码逻辑（修改、保存） |
+| `markdown` | `# fgOTN部署\n## 传送网络覆盖分析` | 前端渲染给用户看 |
+| `md_with_ids` | `[L2 L2_001] fgOTN部署\n  [L3 L3_001] ...` | LLM 上下文（可精确引用节点 ID） |
+
+三者由 `backend/outline_utils.py` 从同一个 `outline_tree` 派生：
 
 ```
-第一轮：用户说"政企OTN升级"
+outline_tree  →  to_markdown()          →  markdown
+outline_tree  →  to_markdown_with_ids() →  md_with_ids
+```
 
-  Agent → LLM（2条消息: system + user）
-  LLM → tool_call: search_outline_template("政企OTN升级")
+**为什么 LLM 不能直接看普通 Markdown？**
+修改大纲时，LLM 需要精确引用节点（"把 `L3_002` 删掉"），普通 Markdown 没有节点 ID，LLM 只能用名称描述，容易定位错。
+
+---
+
+## 7. Memory（状态管理）
+
+`backend/memory/store.py` 定义 `AgentMemory` 基类，agent1 的 `Agent1Memory` 在此基础上扩展了专家输入相关字段。
+
+### 7.1 大纲不进对话历史
+
+```python
+class AgentMemory:
+    def __init__(self):
+        self.outline_tree: dict = {}   # 程序用的 JSON 树
+        self.markdown: str = ""        # 用户看的 Markdown
+        self.md_with_ids: str = ""     # LLM 看的带 ID 版本
+        self._history: list = []       # 对话历史（不包含大纲）
+```
+
+大纲单独存，不放进 `_history`，原因：
+- 大纲会被修改，历史里存的是旧版本，LLM 会被旧版本误导
+- 大纲可能很长，每轮都放历史里浪费 token
+
+### 7.2 大纲如何注入 LLM 上下文
+
+每次调 LLM 前，`build_messages()` 把最新的 `md_with_ids` 拼进 **第一条 system 消息** 里：
+
+```python
+def build_messages(self, system_prompt: str) -> list[dict]:
+    content = system_prompt
+    if self.has_outline:
+        content += f"\n\n## 当前大纲（可通过节点ID引用）\n\n{self.md_with_ids}"
+    return [{"role": "system", "content": content}, *self._history]
+```
+
+**为什么不追加一条新的 system 消息？**
+Qwen 等模型要求 system 消息只能出现在最开头，追加到末尾会报错：
+`400 Bad Request: System message must be at the beginning`
+
+---
+
+## 8. 事件协议（SSE Events）
+
+`chat_stream()` 是一个 async generator，每发生一件事就 `yield` 一个字典，由 `api_server.py` 序列化成 SSE 推给前端：
+
+```python
+{"type": "step",      "name": "generate_outline", "status": "running"}
+{"type": "step",      "name": "generate_outline", "status": "done"}
+{"type": "outline",   "markdown": "# fgOTN部署\n## ..."}   # 工具完成后立刻推
+{"type": "text",      "chunk": "已生成大纲，共 3 个分析维度。"}
+{"type": "done",      "seconds": 4.1}
+{"type": "error",     "message": "工具执行失败: ..."}
+
+# Agent1 额外有：
+{"type": "new_nodes", "nodes": [{"name": "高价值行业覆盖缺口", "level": 4, ...}]}
+{"type": "saved",     "scene_name": "fgOTN部署", "path": "templates/fgOTN部署.json"}
+```
+
+**为什么 outline 走独立事件，不让 LLM 逐字输出？**
+大纲是工具计算出来的**已有数据**，没有理由让 LLM 再"重新打一遍"。`outline` 事件在工具执行完后立刻推送，前端瞬间渲染；如果让 LLM 流式输出 2000 字大纲，用户要等几十秒看 LLM 逐字吐出来。
+
+LLM 的文字职责只有一件事：**用 1-2 句话说明刚才做了什么**。
+
+---
+
+## 9. 两个 Agent 的对比
+
+| | Agent1（专家知识沉淀） | Agent2（大纲对话生成） |
+|---|---|---|
+| 使用者 | 专家，输入业务场景描述 | 普通用户，提出分析需求 |
+| 核心工具 | `analyze_expert_knowledge`（Steps 1-4 打包）| `search_outline_template` + `generate_outline` |
+| 额外工具 | `save_outline_template` | — |
+| Memory 类 | `Agent1Memory`（扩展了 extraction / new_nodes） | `AgentMemory`（基类） |
+| 额外事件 | `new_nodes`、`saved` | — |
+| 输出 | 大纲模板保存到 `templates/` | 大纲用于当轮展示 |
+
+---
+
+## 10. 一次完整对话的消息流
+
+以 Agent2「生成大纲 → 修改大纲」两轮为例：
+
+```
+第一轮：用户说"分析 fgOTN 部署"
+
+  messages 传给 LLM:
+    [system: prompt + (无大纲)]
+    [user: "分析 fgOTN 部署"]
+
+  LLM 输出:  finish_reason=tool_calls
+    tool_calls: search_outline_template(question="分析 fgOTN 部署")
+
   handler 执行 → memory.set_outline(tree, markdown, md_with_ids)
-  agent → yield {"type": "outline", "markdown": "..."}   ← 大纲直接推送
-  Agent → LLM（5条消息: system+outline注入, user, assistant工具调用, tool结果）
-  LLM → "已找到匹配大纲，共3个章节。"
-  agent → yield {"type": "text", "chunk": "已找到..."}
+  agent yield: outline event  ← 前端立刻渲染大纲
 
-------------------------------------------------------
+  messages 追加 tool 结果后再调 LLM:
+    [system: prompt + md_with_ids]
+    [user: ...]
+    [assistant: tool_call]
+    [tool: "status=found, [L2 L2_001] fgOTN部署 ..."]
+
+  LLM 输出:  finish_reason=stop
+    content: "已找到匹配大纲，共 2 个分析维度。"
+
+───────────────────────────────────────────────────────
 
 第二轮：用户说"删掉传送网络容量分析"
 
-  Agent → LLM（系统提示词里已含最新 md_with_ids，共4条消息）
-  LLM → tool_call: modify_outline("删掉传送网络容量分析")
-  handler 执行 → memory.set_outline(new_tree, ...)       ← memory 更新
-  agent → yield {"type": "outline", "markdown": "..."}   ← 新大纲推送
-  Agent → LLM（看到修改后的 md_with_ids）
-  LLM → "已删除传送网络容量分析章节，大纲现有2个一级章节。"
+  messages 传给 LLM（system 里已含最新 md_with_ids）:
+    [system: prompt + 最新 md_with_ids]
+    [user: "分析 fgOTN 部署"]
+    [assistant: tool_call]
+    [tool: "status=found ..."]
+    [assistant: "已找到匹配大纲..."]
+    [user: "删掉传送网络容量分析"]
+
+  LLM 输出:  finish_reason=tool_calls
+    tool_calls: modify_outline(instruction="删掉传送网络容量分析")
+
+  handler 执行 → memory.set_outline(new_tree, ...)
+  agent yield: outline event  ← 前端渲染修改后的大纲
+
+  LLM 输出:  "已删除传送网络容量分析，大纲现有 1 个分析维度。"
 ```
 
 ---
 
-## 12. 设计决策总结
+## 11. 设计决策速查
 
 | 决策 | 原因 |
 |------|------|
-| 大纲不进对话历史，通过 memory 注入 | 避免 token 浪费，确保 LLM 始终看到最新版本 |
-| outline 走独立事件通道 | 大纲是计算结果，不应流式逐字输出 |
-| search_template 内部封装 LLM 判断 | 专注的 judge LLM 比让 Agent LLM "兼职"更可靠 |
-| 工具返回 status 字段 | 让 Agent LLM 做路由决策（found→展示，not_found→改走KB） |
-| handlers 返回 (result, llm_str) 两份 | result 给 agent 处理，llm_str（精简版）给 LLM 历史 |
-| outline context 拼入 system prompt | 避免多 system 消息导致模型报错 |
-
----
-
-## 13. 后续扩展方向
-
-**render_report（未实现）**
-
-当用户确认大纲后，可以新增一个 `render_report` 工具：
-- 读取 `memory.outline_tree`（JSON 结构）
-- 按节点逐一执行 L5 数据查询，生成各章节内容
-- 每完成一个章节 yield `{"type": "report_section", "title": "...", "content": "..."}`
-
-整个事件协议无需修改，只是新增一种 type。
-
-**工具内部子步骤可见性**
-
-当前 `generate_outline` 内部有 5-6 个子步骤，对用户显示为一个大的 `step`。若要让用户看到内部进度，可以把工具改为 async generator，yield 子步骤事件。这会增加复杂度，适合工具耗时超过 30 秒时再考虑。
-
-**模板沉淀**
-
-用户确认过的大纲可以保存为新模板（写入 `templates/` 目录），下次遇到相似需求直接复用，无需再走 KB 生成。
+| 大纲不进对话历史，通过 memory 注入 system prompt | 避免旧版本误导 LLM，节省 token |
+| outline 走独立事件通道 | 大纲是计算结果，无需 LLM 逐字输出，前端可瞬间渲染 |
+| `search_template` 内部封装一个 judge LLM | 专注判断一件事比让 Agent LLM 兼职更可靠 |
+| 工具返回 `status` 字段 | 让 Agent LLM 做路由决策（found→展示，not_found→走 KB） |
+| handler 返回 `(result, llm_str)` 两份数据 | result 给 agent 处理，llm_str（精简版）给 LLM 历史，避免历史膨胀 |
+| outline context 拼入 system prompt 而非追加 system 消息 | Qwen 不允许多条 system 消息 |
+| agent1 把 Steps 1-4 打包成一个工具 | 各步骤紧耦合（搜索结果是生成大纲的输入），拆开对 LLM 没有意义 |
