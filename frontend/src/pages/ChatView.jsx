@@ -24,6 +24,7 @@ export default function ChatView() {
   const [outlineTab, setOutlineTab] = useState('md')  // 'md' | 'llm' | 'json'
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
+  const assistantMsgIdxRef = useRef(-1)
 
   useEffect(() => {
     sessionIdRef.current = null
@@ -49,10 +50,12 @@ export default function ChatView() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  function updateLast(updater) {
+  function updateAssistant(updater) {
     setMessages(prev => {
+      const idx = assistantMsgIdxRef.current
+      if (idx < 0 || idx >= prev.length) return prev
       const updated = [...prev]
-      updated[updated.length - 1] = updater(updated[updated.length - 1])
+      updated[idx] = updater(updated[idx])
       return updated
     })
   }
@@ -68,7 +71,10 @@ export default function ChatView() {
     setQuickReplies([])
     appendMsg({ role: 'user', content: t })
     setStreaming(true)
-    appendMsg({ role: 'assistant', content: '', steps: [] })
+    setMessages(prev => {
+      assistantMsgIdxRef.current = prev.length
+      return [...prev, { role: 'assistant', content: '', steps: [] }]
+    })
 
     try {
       const res = await fetch('/api/chat', {
@@ -79,7 +85,7 @@ export default function ChatView() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
-        updateLast(msg => ({ ...msg, content: `请求失败: ${err.detail}` }))
+        updateAssistant(msg => ({ ...msg, content: `请求失败: ${err.detail}` }))
         setStreaming(false)
         return
       }
@@ -104,7 +110,7 @@ export default function ChatView() {
         }
       }
     } catch (e) {
-      updateLast(msg => ({ ...msg, content: `请求失败: ${e.message}` }))
+      updateAssistant(msg => ({ ...msg, content: `请求失败: ${e.message}` }))
     }
 
     setStreaming(false)
@@ -119,7 +125,7 @@ export default function ChatView() {
   function handleEvent(evt) {
     switch (evt.type) {
       case 'step':
-        updateLast(msg => {
+        updateAssistant(msg => {
           const steps = [...(msg.steps || [])]
           const idx = steps.findIndex(s => s.name === evt.name)
           const entry = { name: evt.name, status: evt.status }
@@ -130,7 +136,7 @@ export default function ChatView() {
         break
 
       case 'text':
-        updateLast(msg => ({
+        updateAssistant(msg => ({
           ...msg,
           content: (msg.content || '') + (evt.chunk ?? evt.text ?? ''),
         }))
@@ -150,7 +156,7 @@ export default function ChatView() {
         break
 
       case 'done':
-        updateLast(msg => ({ ...msg, duration: evt.seconds }))
+        updateAssistant(msg => ({ ...msg, duration: evt.seconds }))
         break
 
       case 'extraction':
@@ -173,7 +179,7 @@ export default function ChatView() {
         break
 
       case 'error':
-        updateLast(msg => ({ ...msg, content: `[错误] ${evt.message}` }))
+        updateAssistant(msg => ({ ...msg, content: `[错误] ${evt.message}` }))
         break
     }
   }
