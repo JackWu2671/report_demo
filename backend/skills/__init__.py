@@ -1,3 +1,10 @@
-from .generate_outline import GenerateOutlineSkill, SKILL_NAME, SKILL_DESCRIPTION
+from skills.base import BaseSkill
+from skills.generate_outline import GenerateOutlineSkill
 
-__all__ = ["GenerateOutlineSkill", "SKILL_NAME", "SKILL_DESCRIPTION"]
+# Registry: skill name → skill class.
+# A future orchestrator imports this dict to discover all available skills.
+SKILL_REGISTRY: dict[str, type[BaseSkill]] = {
+    GenerateOutlineSkill.name: GenerateOutlineSkill,
+}
+
+__all__ = ["BaseSkill", "GenerateOutlineSkill", "SKILL_REGISTRY"]
