@@ -168,13 +168,7 @@ export default function ChatView() {
         })
         break
 
-      case 'new_nodes': {
-        const names = (evt.nodes || []).map(n => n.name).join('、')
-        appendMsg({ role: 'info', content: `发现 ${evt.nodes.length} 个新知识节点：${names}` })
-        break
-      }
-
-      case 'saved':
+case 'saved':
         appendMsg({ role: 'success', content: `模板已保存：${evt.scene_name}` })
         break
 
