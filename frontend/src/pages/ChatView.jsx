@@ -153,6 +153,15 @@ export default function ChatView() {
         updateLast(msg => ({ ...msg, duration: evt.seconds }))
         break
 
+      case 'extraction':
+        appendMsg({
+          role: 'extraction',
+          scene_name: evt.scene_name,
+          keywords: evt.keywords || [],
+          summary: evt.summary || '',
+        })
+        break
+
       case 'new_nodes': {
         const names = (evt.nodes || []).map(n => n.name).join('、')
         appendMsg({ role: 'info', content: `发现 ${evt.nodes.length} 个新知识节点：${names}` })

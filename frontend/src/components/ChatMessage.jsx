@@ -20,6 +20,31 @@ const AssistantAvatar = () => (
 export default function ChatMessage({ message, isStreaming }) {
   const { role, content = '', steps = [], duration } = message
 
+  // Extraction card: scene_name + keywords + summary
+  if (role === 'extraction') {
+    const { scene_name = '', keywords = [], summary = '' } = message
+    return (
+      <div className="msg-row msg-row--assistant">
+        <AssistantAvatar />
+        <div className="msg-bubble-wrap">
+          <div className="extraction-card">
+            <div className="extraction-card__scene">{scene_name}</div>
+            {keywords.length > 0 && (
+              <div className="extraction-card__keywords">
+                {keywords.map(k => (
+                  <span key={k} className="keyword-tag">{k}</span>
+                ))}
+              </div>
+            )}
+            {summary && (
+              <div className="extraction-card__summary">{summary}</div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Info bubble: new_nodes discovered
   if (role === 'info') {
     return (

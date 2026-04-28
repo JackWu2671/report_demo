@@ -61,6 +61,13 @@ class Agent1:
 
                     # Emit typed events based on which tool ran
                     if name == "analyze_expert_knowledge" and result_dict.get("outline_tree"):
+                        ext = result_dict.get("extraction", {})
+                        yield {
+                            "type": "extraction",
+                            "scene_name": ext.get("scene_name", ""),
+                            "keywords": ext.get("keywords", []),
+                            "summary": ext.get("summary", ""),
+                        }
                         yield {"type": "outline",
                                "markdown": result_dict["markdown"],
                                "md_with_ids": result_dict["md_with_ids"],

@@ -286,6 +286,34 @@ body {
   border: 1px solid var(--color-border);
   border-bottom-left-radius: 4px;
 }
+/* Extraction card */
+.extraction-card {
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  border-bottom-left-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+}
+.extraction-card__scene {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+.extraction-card__keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.extraction-card__summary {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
 .msg-bubble--info {
   background: #eff6ff;
   color: #1d4ed8;
