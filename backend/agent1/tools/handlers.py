@@ -23,15 +23,9 @@ async def handle_analyze_expert_knowledge(args: dict, memory: Agent1Memory) -> t
         result["expert_text"] = expert_text
         memory.set_analysis_result(result)
 
-        new_summary = (
-            f"{len(result['new_nodes'])} 个 [new] 节点: "
-            + ", ".join(n["name"] for n in result["new_nodes"][:5])
-            if result["new_nodes"] else "无 [new] 节点"
-        )
         llm_str = (
             f"[analyze_expert_knowledge] status=success\n"
-            f"场景: {result['extraction'].get('scene_name')}\n"
-            f"{new_summary}\n\n"
+            f"场景: {result['extraction'].get('scene_name')}\n\n"
             f"{result['md_with_ids']}"
         )
     else:

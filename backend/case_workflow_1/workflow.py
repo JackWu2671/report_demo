@@ -1,16 +1,15 @@
 """
 workflow.py — case_workflow_1 编排入口：专家知识沉淀到模板 JSON。
 
-完整流程（5 步）:
+完整流程（4 步）:
   Step 1  extractor.extract_from_expert()    LLM 抽取关键词 + 摘要 + 场景名称
   Step 2  searcher.dual_search()             双路 FAISS 检索，得到命中 id 集合
           searcher.build_kb_tree_text()      渲染完整 KB 树（★ 标命中节点）
   Step 3  outline_gen.generate_outline()     LLM 生成带 [id]/[new] 标注的 Markdown 大纲
   Step 4  kb_updater.parse_new_nodes()       解析大纲中的 [new] 节点（仅展示）
-  Step 5  outline_gen.generate_delta()       LLM 总结专家逻辑与现有 KB 框架的差异
 
 CLI 交互:
-  - 展示大纲、[new] 节点列表、Step 5 差异总结
+  - 展示大纲、[new] 节点列表
   - 询问是否保存大纲模板 JSON（y/n）
 
 使用方法:
@@ -37,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 from extractor import extract_from_expert
 from searcher import dual_search, build_kb_tree_text
-from outline_gen import generate_outline, generate_delta
+from outline_gen import generate_outline
 from kb_updater import parse_new_nodes
 from template_saver import save_template
 
@@ -72,12 +71,12 @@ def _load_kb() -> tuple:
     return faiss_svc, nodes_dict, children_map, nodes_list
 
 
-async def main(expert_text: str) -> tuple[dict, str, str, list, dict]:
+async def main(expert_text: str) -> tuple[dict, str, list, dict]:
     """
-    完整工作流：专家输入 → 关键词抽取 → 双路检索 → 大纲生成 → [new] 解析 → 差异分析。
+    完整工作流：专家输入 → 关键词抽取 → 双路检索 → 大纲生成 → [new] 解析。
 
     Returns:
-        (extraction, outline_md, delta_text, new_nodes_raw, nodes_dict)
+        (extraction, outline_md, new_nodes_raw, nodes_dict)
     """
     faiss_svc, nodes_dict, children_map, nodes_list = _load_kb()
 
@@ -104,15 +103,12 @@ async def main(expert_text: str) -> tuple[dict, str, str, list, dict]:
     # Step 4: 解析 [new] 节点（仅展示，不写入 KB）
     new_nodes_raw = parse_new_nodes(outline_md)
 
-    # Step 5: 分析专家逻辑与现有 KB 框架的差异
-    delta_text = await generate_delta(expert_text, tree_text, outline_md)
-
-    return extraction, outline_md, delta_text, new_nodes_raw, nodes_dict
+    return extraction, outline_md, new_nodes_raw, nodes_dict
 
 
 async def cli_main(expert_text: str) -> None:
     """CLI 交互流程：运行工作流，询问是否保存大纲模板 JSON。"""
-    extraction, outline_md, delta_text, new_nodes_raw, nodes_dict = await main(expert_text)
+    extraction, outline_md, new_nodes_raw, nodes_dict = await main(expert_text)
 
     # 展示大纲
     print("\n" + "=" * 60)
@@ -128,13 +124,6 @@ async def cli_main(expert_text: str) -> None:
         for n in new_nodes_raw:
             parent_label = n.get("parent_id") or n.get("parent_name") or "未知"
             print(f"  L{n['level']} 「{n['name']}」→ 父节点: {parent_label}")
-
-    # 展示差异分析
-    print("\n" + "=" * 60)
-    print("【Step 5】与现有知识库的逻辑差异")
-    print("=" * 60)
-    print(delta_text)
-    print("=" * 60)
 
     # 确认保存模板
     try:

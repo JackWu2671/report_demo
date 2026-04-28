@@ -2,15 +2,14 @@
 memory.py — Agent1Memory: extends AgentMemory with expert-knowledge state.
 
 Extra fields beyond the base class:
-  expert_text           : original expert input text (for delta analysis)
+  expert_text           : original expert input text
   extraction            : {scene_name, keywords, summary, usage_conditions}
   outline_md_annotated  : [id]/[new]-marked Markdown from Step 3
-  tree_text             : KB tree text from Step 2 (for delta analysis)
+  tree_text             : KB tree text from Step 2
   new_nodes             : [{name, level, parent_id, ...}] from Step 4
-  nodes_dict            : KB node dict (needed if save path calls template_saver)
+  nodes_dict            : KB node dict (needed by save_outline_template)
 
-build_messages() injects extraction metadata + new_nodes summary
-alongside the current outline, giving the LLM full context.
+build_messages() injects extraction metadata alongside the current outline.
 """
 
 import os
@@ -70,11 +69,5 @@ class Agent1Memory(AgentMemory):
 
         if self.has_outline:
             content += f"\n\n## 当前大纲（可通过节点ID引用）\n\n{self.md_with_ids}"
-
-        if self.new_nodes:
-            new_list = "\n".join(
-                f"- L{n['level']} {n['name']}" for n in self.new_nodes
-            )
-            content += f"\n\n## [new] 节点（知识库暂未收录，共{len(self.new_nodes)}个）\n{new_list}"
 
         return [{"role": "system", "content": content}, *self._history]
