@@ -506,6 +506,39 @@ body {
   line-height: 1.4;
 }
 
+/* =========================================
+   Quick Reply Buttons (confirm event)
+   ========================================= */
+.quick-replies {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.quick-reply-btn {
+  padding: 7px 16px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-primary);
+  background: var(--color-bg);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: var(--font-family);
+}
+.quick-reply-btn:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: #fff;
+}
+.quick-reply-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* 耗时标签 */
 .msg-duration {
   font-size: 11px;

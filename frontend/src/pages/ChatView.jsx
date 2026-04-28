@@ -17,14 +17,15 @@ export default function ChatView() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [outline, setOutline] = useState('')
+  const [quickReplies, setQuickReplies] = useState([])
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
 
-  // Create a fresh session each time agentId changes
   useEffect(() => {
     sessionIdRef.current = null
     setMessages([])
     setOutline('')
+    setQuickReplies([])
 
     fetch('/api/session', {
       method: 'POST',
@@ -32,20 +33,13 @@ export default function ChatView() {
       body: JSON.stringify({ agent_id: parseInt(agentId) }),
     })
       .then(r => r.json())
-      .then(d => {
-        sessionIdRef.current = d.session_id
-        logger(`Session created: ${d.session_id}`)
-      })
+      .then(d => { sessionIdRef.current = d.session_id })
       .catch(e => console.error('[ChatView] 创建 session 失败', e))
   }, [agentId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  function logger(msg) {
-    if (process.env.NODE_ENV !== 'production') console.log('[ChatView]', msg)
-  }
 
   function updateLast(updater) {
     setMessages(prev => {
@@ -59,12 +53,12 @@ export default function ChatView() {
     setMessages(prev => [...prev, msg])
   }
 
-  async function send() {
-    const text = input.trim()
-    if (!text || streaming || !sessionIdRef.current) return
+  async function sendText(text) {
+    const t = text.trim()
+    if (!t || streaming || !sessionIdRef.current) return
 
-    appendMsg({ role: 'user', content: text })
-    setInput('')
+    setQuickReplies([])
+    appendMsg({ role: 'user', content: t })
     setStreaming(true)
     appendMsg({ role: 'assistant', content: '', steps: [] })
 
@@ -72,7 +66,7 @@ export default function ChatView() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionIdRef.current, message: text }),
+        body: JSON.stringify({ session_id: sessionIdRef.current, message: t }),
       })
 
       if (!res.ok) {
@@ -92,16 +86,13 @@ export default function ChatView() {
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        buffer = lines.pop() // keep incomplete line
+        buffer = lines.pop()
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const raw = line.slice(6)
           if (raw === '[DONE]') break
-          try {
-            const evt = JSON.parse(raw)
-            handleEvent(evt)
-          } catch {}
+          try { handleEvent(JSON.parse(raw)) } catch {}
         }
       }
     } catch (e) {
@@ -109,6 +100,12 @@ export default function ChatView() {
     }
 
     setStreaming(false)
+  }
+
+  async function send() {
+    const text = input.trim()
+    setInput('')
+    await sendText(text)
   }
 
   function handleEvent(evt) {
@@ -135,16 +132,17 @@ export default function ChatView() {
         setOutline(evt.markdown ?? evt.content ?? '')
         break
 
+      case 'confirm':
+        setQuickReplies(evt.options || [])
+        break
+
       case 'done':
         updateLast(msg => ({ ...msg, duration: evt.seconds }))
         break
 
       case 'new_nodes': {
         const names = (evt.nodes || []).map(n => n.name).join('、')
-        appendMsg({
-          role: 'info',
-          content: `发现 ${evt.nodes.length} 个新知识节点：${names}`,
-        })
+        appendMsg({ role: 'info', content: `发现 ${evt.nodes.length} 个新知识节点：${names}` })
         break
       }
 
@@ -190,6 +188,22 @@ export default function ChatView() {
           ))}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* 快捷回复按钮（pending_confirm 时显示） */}
+        {quickReplies.length > 0 && (
+          <div className="quick-replies">
+            {quickReplies.map(opt => (
+              <button
+                key={opt}
+                className="quick-reply-btn"
+                disabled={streaming}
+                onClick={() => sendText(opt)}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
 
         <QueryInput
           value={input}

@@ -19,10 +19,15 @@ logger = logging.getLogger(__name__)
 
 async def handle_search_outline_template(args: dict, memory: AgentMemory) -> tuple[dict, str]:
     result = await search_outline_template(args.get("question", ""))
-    if result["status"] == "found":
+    if result["status"] == "pending_confirm":
+        # Store outline in memory so the right panel previews it immediately.
+        # If user later chooses to regenerate, generate_outline will overwrite it.
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
-        llm_str = (f"[search_outline_template] status=found  scene={result['scene_name']}\n\n"
-                   f"{result['md_with_ids']}")
+        llm_str = (
+            f"[search_outline_template] status=pending_confirm  scene={result['scene_name']}\n"
+            f"大纲已预览，请询问用户：使用此模板还是重新从知识库生成？\n\n"
+            f"{result['md_with_ids']}"
+        )
     else:
         llm_str = f"[search_outline_template] status=not_found  reason={result['reason']}"
     return result, llm_str

@@ -82,6 +82,13 @@ class Agent2:
                     if result_dict.get("outline_tree"):
                         yield {"type": "outline", "markdown": result_dict["markdown"]}
 
+                    # Template found but needs user confirmation before committing
+                    if result_dict.get("status") == "pending_confirm":
+                        yield {
+                            "type": "confirm",
+                            "options": ["使用此模板", "重新从知识库生成"],
+                        }
+
                     yield {"type": "step", "name": name, "status": "done"}
 
                     self.memory.add_message({

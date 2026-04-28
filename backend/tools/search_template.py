@@ -27,16 +27,16 @@ logger = logging.getLogger(__name__)
 
 async def search_outline_template(question: str) -> dict:
     """
-    Search pre-built templates and let an internal LLM judge if any match.
+    Search pre-built templates and let an internal LLM judge pick the best one.
 
     Returns:
-        {status: "found"|"not_found", outline_tree, markdown, md_with_ids,
-         scene_name, reason}
+        status="pending_confirm"  — found a candidate; caller should preview and ask user
+        status="not_found"        — no relevant template exists
     """
     logger.info("[Tool:search_outline_template] question=%r", question)
 
     query_embedding = await embed_query(question)
-    candidates = await search_templates(query_embedding, top_k=10)
+    candidates = await search_templates(query_embedding, top_k=3)
 
     if not candidates:
         return _not_found("模板库为空，请走知识库生成")
@@ -50,10 +50,10 @@ async def search_outline_template(question: str) -> dict:
         return _not_found("模板存在但缺少 outline 字段")
 
     clean_tree = to_clean_json(raw_tree)
-    logger.info("[Tool:search_outline_template] 命中: %s (score=%.3f)",
+    logger.info("[Tool:search_outline_template] 候选: %s (score=%.3f)",
                 selected.get("scene_name"), selected.get("_score", 0))
     return {
-        "status": "found",
+        "status": "pending_confirm",
         "outline_tree": clean_tree,
         "markdown": to_markdown(clean_tree),
         "md_with_ids": to_markdown_with_ids(clean_tree),
