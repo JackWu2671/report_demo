@@ -1,7 +1,7 @@
 """
-generate_outline.py — generate_outline tool implementation (KB-only path).
+build_outline_from_anchor.py — build_outline_from_anchor tool implementation.
 
-Runs the full case_workflow_2 KB retrieval pipeline.
+KB retrieval pipeline: FAISS search → anchor node selection → subtree expansion → patch.
 Called when search_outline_template returns not_found.
 Used by: agent2
 """
@@ -28,14 +28,14 @@ from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 logger = logging.getLogger(__name__)
 
 
-async def generate_outline(question: str) -> dict:
+async def build_outline_from_anchor(question: str) -> dict:
     """
-    KB retrieval + subtree build + initial patch from question.
+    KB retrieval + anchor selection + subtree expansion + initial patch.
 
     Returns:
         {status: "success"|"not_found", outline_tree, markdown, md_with_ids, message}
     """
-    logger.info("[Tool:generate_outline] question=%r", question)
+    logger.info("[Tool:build_outline_from_anchor] question=%r", question)
 
     query_embedding = await embed_query(question)
     faiss_svc, nodes_dict, children_map = load_resources()
@@ -57,7 +57,7 @@ async def generate_outline(question: str) -> dict:
         tree = apply_patch(tree, ops)
 
     clean_tree = to_clean_json(tree)
-    logger.info("[Tool:generate_outline] 完成，%d 字", len(to_markdown(clean_tree)))
+    logger.info("[Tool:build_outline_from_anchor] 完成，%d 字", len(to_markdown(clean_tree)))
     return {
         "status": "success",
         "outline_tree": clean_tree,

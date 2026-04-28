@@ -15,7 +15,7 @@
 # 每次请求必定跑这 4 步，顺序固定，大模型只是被调用的工具
 extraction = await extract_from_expert(expert_text)   # Step 1
 hits       = await dual_search(extraction, ...)        # Step 2
-outline_md = await generate_outline(expert_text, ...)  # Step 3
+outline_md = await build_outline_from_anchor(expert_text, ...)  # Step 3
 new_nodes  = parse_new_nodes(outline_md)               # Step 4
 ```
 
@@ -42,7 +42,7 @@ backend/
 │
 ├── tools/                ← 共享工具实现（agent1 / agent2 都可以用）
 │   ├── analyze_expert.py     Steps 1-4: 提取 + 检索 + 生成大纲 + 解析新节点
-│   ├── generate_outline.py   从知识库生成大纲（agent2 用）
+│   ├── build_outline_from_anchor.py   从知识库生成大纲（agent2 用）
 │   ├── search_template.py    检索预制模板（agent2 用）
 │   ├── modify_outline.py     修改大纲（agent1 / agent2 共用）
 │   └── save_template.py      保存模板（agent1 用）
@@ -96,7 +96,7 @@ await llm._client.chat.completions.create(
 {
     "type": "function",
     "function": {
-        "name": "generate_outline",
+        "name": "build_outline_from_anchor",
         "description": "从知识库实时检索并生成报告大纲...",   # ← 大模型靠这句理解用途
         "parameters": {
             "type": "object",
@@ -126,7 +126,7 @@ await llm._client.chat.completions.create(
       "id": "call_abc123",
       "type": "function",
       "function": {
-        "name": "generate_outline",
+        "name": "build_outline_from_anchor",
         "arguments": "{\"question\": \"帮我分析 fgOTN 的部署情况\"}"
       }
     }
@@ -220,7 +220,7 @@ async def chat_stream(self, user_message: str):
 # agent2/tools/handlers.py
 HANDLERS = {
     "search_outline_template": handle_search_outline_template,
-    "generate_outline":         handle_generate_outline,
+    "build_outline_from_anchor":         handle_build_outline_from_anchor,
     "modify_outline":           handle_modify_outline,
 }
 ```
@@ -228,9 +228,9 @@ HANDLERS = {
 每个 handler 做三件事：
 
 ```python
-async def handle_generate_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+async def handle_build_outline_from_anchor(args: dict, memory: AgentMemory) -> tuple[dict, str]:
     # 1. 调工具实现（在 backend/tools/ 里）
-    result = await generate_outline(args["question"])
+    result = await build_outline_from_anchor(args["question"])
 
     # 2. 成功就更新 memory
     if result["status"] == "success":
@@ -239,7 +239,7 @@ async def handle_generate_outline(args: dict, memory: AgentMemory) -> tuple[dict
     # 3. 返回两份数据
     #    result   → agent 检查是否有大纲，决定是否 yield outline 事件
     #    llm_str  → 喂给大模型历史的精简版（只含 md_with_ids，不含完整 Markdown）
-    llm_str = f"[generate_outline] status={result['status']}\n\n{result.get('md_with_ids', '')}"
+    llm_str = f"[build_outline_from_anchor] status={result['status']}\n\n{result.get('md_with_ids', '')}"
     return result, llm_str
 ```
 
@@ -314,8 +314,8 @@ Qwen 等模型要求 system 消息只能出现在最开头，追加到末尾会�
 `chat_stream()` 是一个 async generator，每发生一件事就 `yield` 一个字典，由 `api_server.py` 序列化成 SSE 推给前端：
 
 ```python
-{"type": "step",      "name": "generate_outline", "status": "running"}
-{"type": "step",      "name": "generate_outline", "status": "done"}
+{"type": "step",      "name": "build_outline_from_anchor", "status": "running"}
+{"type": "step",      "name": "build_outline_from_anchor", "status": "done"}
 {"type": "outline",   "markdown": "# fgOTN部署\n## ..."}   # 工具完成后立刻推
 {"type": "text",      "chunk": "已生成大纲，共 3 个分析维度。"}
 {"type": "done",      "seconds": 4.1}
@@ -338,7 +338,7 @@ LLM 的文字职责只有一件事：**用 1-2 句话说明刚才做了什么**�
 | | Agent1（专家知识沉淀） | Agent2（大纲对话生成） |
 |---|---|---|
 | 使用者 | 专家，输入业务场景描述 | 普通用户，提出分析需求 |
-| 核心工具 | `analyze_expert_knowledge`（Steps 1-4 打包）| `search_outline_template` + `generate_outline` |
+| 核心工具 | `analyze_expert_knowledge`（Steps 1-4 打包）| `search_outline_template` + `build_outline_from_anchor` |
 | 额外工具 | `save_outline_template` | — |
 | Memory 类 | `Agent1Memory`（扩展了 extraction / new_nodes） | `AgentMemory`（基类） |
 | 额外事件 | `new_nodes`、`saved` | — |

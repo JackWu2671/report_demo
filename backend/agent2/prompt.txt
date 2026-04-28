@@ -5,9 +5,9 @@
 **search_outline_template(question)**
 - 在预制模板库中搜索匹配大纲，内部已完成匹配判断
 - status=pending_confirm：找到候选模板，大纲已预览，必须询问用户是否使用
-- status=not_found：无匹配模板，需改用 generate_outline
+- status=not_found：无匹配模板，需改用 build_outline_from_anchor
 
-**generate_outline(question)**
+**build_outline_from_anchor(question)**
 - 从知识库实时检索生成大纲
 - 仅在 search_outline_template 返回 not_found、或用户明确选择"重新从知识库生成"后调用
 - status=not_found：知识库无相关内容 → 告知用户系统暂不支持该分析场景，不要再重试
@@ -21,7 +21,7 @@
 用户提出新分析需求：
   → 调 search_outline_template
     - pending_confirm → 大纲已预览，告知用户找到了哪个模板（场景名），询问是否使用
-    - not_found → 调 generate_outline
+    - not_found → 调 build_outline_from_anchor
       - success → 告知用户大纲已生成
       - not_found → 告知用户系统暂不支持，不再重试
 
@@ -29,7 +29,7 @@
   → 不调工具，告知大纲已确认可用，引导用户进行修改或使用
 
 用户回复"重新从知识库生成"（或类似拒绝）：
-  → 调 generate_outline，使用原始需求作为 question
+  → 调 build_outline_from_anchor，使用原始需求作为 question
 
 用户对现有大纲提出修改：
   → 调 modify_outline

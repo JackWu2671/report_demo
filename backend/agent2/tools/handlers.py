@@ -11,7 +11,7 @@ import logging
 
 from memory.store import AgentMemory
 from tools.search_template import search_outline_template
-from tools.generate_outline import generate_outline
+from tools.build_outline_from_anchor import build_outline_from_anchor
 from tools.modify_outline import modify_outline
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ async def handle_search_outline_template(args: dict, memory: AgentMemory) -> tup
     result = await search_outline_template(args.get("question", ""))
     if result["status"] == "pending_confirm":
         # Store outline in memory so the right panel previews it immediately.
-        # If user later chooses to regenerate, generate_outline will overwrite it.
+        # If user later chooses to regenerate, build_outline_from_anchor will overwrite it.
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
         llm_str = (
             f"[search_outline_template] status=pending_confirm  scene={result['scene_name']}\n"
@@ -33,13 +33,13 @@ async def handle_search_outline_template(args: dict, memory: AgentMemory) -> tup
     return result, llm_str
 
 
-async def handle_generate_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
-    result = await generate_outline(args.get("question", ""))
+async def handle_build_outline_from_anchor(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    result = await build_outline_from_anchor(args.get("question", ""))
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
-        llm_str = f"[generate_outline] status=success\n\n{result['md_with_ids']}"
+        llm_str = f"[build_outline_from_anchor] status=success\n\n{result['md_with_ids']}"
     else:
-        llm_str = f"[generate_outline] status=not_found  message={result['message']}"
+        llm_str = f"[build_outline_from_anchor] status=not_found  message={result['message']}"
     return result, llm_str
 
 
@@ -57,6 +57,6 @@ async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, 
 
 HANDLERS: dict = {
     "search_outline_template": handle_search_outline_template,
-    "generate_outline": handle_generate_outline,
+    "build_outline_from_anchor": handle_build_outline_from_anchor,
     "modify_outline": handle_modify_outline,
 }
