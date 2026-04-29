@@ -3,6 +3,10 @@ name: generate-outline
 description: 根据用户描述生成报告大纲，支持多轮对话式修改。
 version: 1.0.0
 author: report_demo
+metadata:
+  hermes:
+    category: report
+    tags: [outline, report, knowledge-base]
 ---
 
 ## SOP：生成报告大纲

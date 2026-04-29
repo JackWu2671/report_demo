@@ -1,12 +1,8 @@
 """
-agent.py — 单一 agent，内置 skill 渐进式加载。
+agent.py — 单一 agent，hermes-agent 风格三级渐进式 skill 加载。
 
-流程：
-  1. 启动：discover_skills() 只读 frontmatter，构建 skill 列表注入 system prompt
-  2. 用户发消息：LLM 判断意图，决定调用哪个 skill
-  3. LLM 调用 load_skill(skill_name)：读取完整 SKILL.md SOP，注入对话历史
-  4. LLM 按 SOP 调用工具（search_outline_template / build_outline_from_anchor / modify_outline）
-  5. 已加载的 skill 无需重复加载，后续轮次直接调工具
+启动时注入 Level 0 skill 列表（只有 name/description/category，~极少 token）。
+LLM 按需调用 skill_view 加载完整 SOP（Level 1），或加载支持文件（Level 2）。
 """
 
 import json
@@ -26,45 +22,56 @@ from memory.store import AgentMemory
 from services.llm_service import LLMService
 from agent2.tools.definitions import TOOLS as _OUTLINE_TOOLS
 from agent2.tools.handlers import HANDLERS as _OUTLINE_HANDLERS
-from agent_with_skills.skill_loader import discover_skills, load_skill_content
+from agent_with_skills.skill_loader import discover_skills, skill_view as _skill_view
 
 logger = logging.getLogger(__name__)
 
 _SKILLS_DIR = Path(_AGENT_DIR) / "skills"
 _MAX_ROUNDS = 8
 
-# load_skill 是元工具，让 LLM 按需拉取 skill SOP
-_LOAD_SKILL_TOOL = {
+# ── Skill 元工具定义 ──────────────────────────────────────────────
+
+_SKILLS_LIST_TOOL = {
     "type": "function",
     "function": {
-        "name": "load_skill",
+        "name": "skills_list",
+        "description": "列出所有可用 skill 的名称、描述和分类（Level 0）。不确定有哪些能力时调用。",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+}
+
+_SKILL_VIEW_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "skill_view",
         "description": (
-            "加载指定 skill 的完整 SOP 操作流程。"
-            "使用某个 skill 前必须先调用此工具获取流程说明，已加载的 skill 无需重复加载。"
+            "加载指定 skill 的完整 SOP（Level 1），或其内部支持文件（Level 2）。"
+            "决定使用某个 skill 前必须先加载其 SOP，已加载的 skill 无需重复加载。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "skill_name": {
+                "name": {"type": "string", "description": "skill 名称，如 generate-outline"},
+                "path": {
                     "type": "string",
-                    "description": "skill 名称，如 generate-outline",
-                }
+                    "description": "可选。skill 文件夹内的支持文件路径，如 references/faq.md（Level 2）",
+                },
             },
-            "required": ["skill_name"],
+            "required": ["name"],
         },
     },
 }
 
-TOOLS = [_LOAD_SKILL_TOOL] + _OUTLINE_TOOLS
+TOOLS = [_SKILLS_LIST_TOOL, _SKILL_VIEW_TOOL] + _OUTLINE_TOOLS
 
 
 class AgentWithSkills:
     def __init__(self) -> None:
         self._skill_meta = discover_skills(_SKILLS_DIR)
-        self._loaded: set[str] = set()   # 已加载 SOP 的 skill，避免重复注入
+        self._loaded: set[str] = set()  # 已加载 SOP 的 skill，避免重复注入
         self.memory = AgentMemory()
         logger.info(
-            "[AgentWithSkills] skills: %s", [m["name"] for m in self._skill_meta]
+            "[AgentWithSkills] discovered: %s", [m["name"] for m in self._skill_meta]
         )
 
     # ── Public ────────────────────────────────────────────────────
@@ -117,16 +124,18 @@ class AgentWithSkills:
     # ── Internal ──────────────────────────────────────────────────
 
     def _build_system_prompt(self) -> str:
-        skill_list = "\n".join(
-            f"- {m['name']}: {m['description']}" for m in self._skill_meta
-        )
+        # Level 0：只注入 name + description + category，极少 token
+        lines = []
+        for m in self._skill_meta:
+            cat = f"[{m['category']}] " if m.get("category") else ""
+            lines.append(f"- {cat}{m['name']}: {m.get('description', '')}")
+        skill_index = "\n".join(lines)
         return (
             "你是一个报告生成助手。\n\n"
-            "## 可用 Skill\n\n"
-            "遇到用户请求时，先判断需要哪个 skill，"
-            "调用 load_skill 获取详细 SOP，再按 SOP 步骤调用工具。\n"
-            "已加载过的 skill 无需重复加载，直接按流程操作。\n\n"
-            f"{skill_list}"
+            "## 可用 Skill（Level 0 索引）\n\n"
+            f"{skill_index}\n\n"
+            "遇到用户请求时，调用 skill_view 加载对应 skill 的完整 SOP，再按 SOP 操作。"
+            "已加载过的 skill 无需重复加载。不确定有哪些 skill 时调用 skills_list。"
         )
 
     async def _call_llm(self):
@@ -148,11 +157,12 @@ class AgentWithSkills:
         except json.JSONDecodeError as e:
             return {}, f"参数解析失败: {e}"
 
-        # 元工具：渐进式加载 skill SOP
-        if name == "load_skill":
-            return self._handle_load_skill(args)
+        if name == "skills_list":
+            return self._handle_skills_list()
 
-        # 业务工具：路由到 outline handlers
+        if name == "skill_view":
+            return self._handle_skill_view(args)
+
         handler = _OUTLINE_HANDLERS.get(name)
         if handler is None:
             return {}, f"未知工具: {name}"
@@ -162,14 +172,25 @@ class AgentWithSkills:
             logger.exception("[AgentWithSkills] tool %r failed", name)
             return {}, f"工具执行失败: {e}"
 
-    def _handle_load_skill(self, args: dict) -> tuple[dict, str]:
-        skill_name = args.get("skill_name", "")
+    def _handle_skills_list(self) -> tuple[dict, str]:
+        items = [
+            {"name": m["name"], "description": m.get("description", ""), "category": m.get("category", "")}
+            for m in self._skill_meta
+        ]
+        return {}, f"[skills_list]\n{json.dumps(items, ensure_ascii=False, indent=2)}"
+
+    def _handle_skill_view(self, args: dict) -> tuple[dict, str]:
+        skill_name = args.get("name", "")
+        ref_path = args.get("path")
         meta = next((m for m in self._skill_meta if m["name"] == skill_name), None)
         if meta is None:
-            return {}, f"[load_skill] skill 不存在: {skill_name}"
-        if skill_name in self._loaded:
-            return {}, f"[load_skill] {skill_name} 已加载，请直接按 SOP 操作"
-        content = load_skill_content(meta["_path"])
-        self._loaded.add(skill_name)
-        logger.info("[AgentWithSkills] loaded skill SOP: %s", skill_name)
-        return {}, f"[load_skill] {skill_name} SOP 已加载：\n\n{content}"
+            return {}, f"[skill_view] skill 不存在: {skill_name}"
+        if not ref_path and skill_name in self._loaded:
+            return {}, f"[skill_view] {skill_name} SOP 已加载，请直接按流程操作"
+        content = _skill_view(meta["_path"], ref_path)
+        if not ref_path:
+            self._loaded.add(skill_name)
+            logger.info("[AgentWithSkills] loaded skill SOP: %s", skill_name)
+        level = "2" if ref_path else "1"
+        label = f"{skill_name}/{ref_path}" if ref_path else skill_name
+        return {}, f"[skill_view Level {level}] {label}:\n\n{content}"
