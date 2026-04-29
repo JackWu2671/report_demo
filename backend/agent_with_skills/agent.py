@@ -63,7 +63,8 @@ _SKILL_VIEW_TOOL = {
     },
 }
 
-TOOLS = [_SKILLS_LIST_TOOL, _SKILL_VIEW_TOOL] + _OUTLINE_TOOLS
+_META_TOOLS = [_SKILLS_LIST_TOOL, _SKILL_VIEW_TOOL]
+_BUSINESS_TOOLS = _OUTLINE_TOOLS
 
 
 class AgentWithSkills:
@@ -133,13 +134,20 @@ class AgentWithSkills:
         skill_index = "\n".join(lines)
         return f"{_SYSTEM_PROMPT}\n\n## Skill 索引（Level 0）\n\n{skill_index}"
 
+    def _current_tools(self) -> list[dict]:
+        # 没有任何 skill 加载时只暴露元工具，强迫 LLM 先调 skill_view
+        # 一旦有 skill 加载完成，业务工具才可见
+        if self._loaded:
+            return _META_TOOLS + _BUSINESS_TOOLS
+        return _META_TOOLS
+
     async def _call_llm(self):
         llm = LLMService.from_env()
         messages = self.memory.build_messages(self._build_system_prompt())
         return await llm._client.chat.completions.create(
             model=llm.default_model,
             messages=messages,
-            tools=TOOLS,
+            tools=self._current_tools(),
             tool_choice="auto",
             temperature=llm._temperature,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
