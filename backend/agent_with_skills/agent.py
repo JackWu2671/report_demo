@@ -27,6 +27,7 @@ from agent_with_skills.skill_loader import discover_skills, skill_view as _skill
 logger = logging.getLogger(__name__)
 
 _SKILLS_DIR = Path(_AGENT_DIR) / "skills"
+_SYSTEM_PROMPT = (Path(_AGENT_DIR) / "prompt.txt").read_text(encoding="utf-8")
 _MAX_ROUNDS = 8
 
 # ── Skill 元工具定义 ──────────────────────────────────────────────
@@ -124,19 +125,13 @@ class AgentWithSkills:
     # ── Internal ──────────────────────────────────────────────────
 
     def _build_system_prompt(self) -> str:
-        # Level 0：只注入 name + description + category，极少 token
+        # Level 0 索引动态拼接在 prompt.txt 之后
         lines = []
         for m in self._skill_meta:
             cat = f"[{m['category']}] " if m.get("category") else ""
             lines.append(f"- {cat}{m['name']}: {m.get('description', '')}")
         skill_index = "\n".join(lines)
-        return (
-            "你是一个报告生成助手。\n\n"
-            "## 可用 Skill（Level 0 索引）\n\n"
-            f"{skill_index}\n\n"
-            "遇到用户请求时，调用 skill_view 加载对应 skill 的完整 SOP，再按 SOP 操作。"
-            "已加载过的 skill 无需重复加载。不确定有哪些 skill 时调用 skills_list。"
-        )
+        return f"{_SYSTEM_PROMPT}\n\n## Skill 索引（Level 0）\n\n{skill_index}"
 
     async def _call_llm(self):
         llm = LLMService.from_env()
