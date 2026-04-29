@@ -1,10 +1,3 @@
-"""
-Skill: 生成大纲
-
-根据用户描述生成报告大纲，支持多轮对话式修改。
-内部封装 Agent2，对外暴露统一的 BaseSkill 接口。
-"""
-
 from typing import AsyncGenerator
 
 from agent2.agent import Agent2
