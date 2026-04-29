@@ -96,6 +96,7 @@ async def repl() -> None:
     print(f"已发现 {len(agent._skill_meta)} 个 skill，输入需求开始，/help 查看命令。\n")
 
     while True:
+        sys.stdout.flush()
         try:
             user_input = input("你 > ").strip()
         except (EOFError, KeyboardInterrupt):
@@ -123,6 +124,7 @@ async def repl() -> None:
             print("✓ 会话已重置（对话历史 + skill 加载状态已清空）。\n")
             continue
 
+        sys.stdout.flush()
         t0 = time.time()
         try:
             async for event in agent.chat_stream(user_input):

@@ -58,12 +58,8 @@ async def generate_outline(expert_text: str, tree_text: str) -> str:
         messages[1]["content"],
     )
 
-    print("\n[Step 3] LLM 大纲生成 ↓", flush=True)
-    print("-" * 50, flush=True)
+    outline_md = await llm.complete(messages)
 
-    outline_md = await llm.stream_and_collect(messages)
-
-    print("\n" + "-" * 50, flush=True)
     logger.info("[Step 3] 大纲生成完成 (%d 字符)", len(outline_md))
     return outline_md
 

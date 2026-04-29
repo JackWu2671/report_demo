@@ -61,12 +61,8 @@ async def select_anchor(question: str, candidates: list[dict]) -> dict:
         messages[1]["content"],
     )
 
-    print("\n[Step 5] LLM 流式输出 ↓", flush=True)
-    print("-" * 50, flush=True)
-
     try:
-        answer = await llm.stream_and_collect(messages)
-        print("\n" + "-" * 50, flush=True)
+        answer = await llm.complete(messages)
         logger.info("[Step 5] LLM 完整输出:\n%s", answer)
         anchor = LLMService._parse_json(answer)
     except Exception as e:

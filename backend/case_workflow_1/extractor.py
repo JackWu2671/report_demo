@@ -44,12 +44,8 @@ async def extract_from_expert(expert_text: str) -> dict:
         messages[1]["content"],
     )
 
-    print("\n[Step 1] LLM 关键词抽取 ↓", flush=True)
-    print("-" * 50, flush=True)
+    answer = await llm.complete(messages)
 
-    answer = await llm.stream_and_collect(messages)
-
-    print("\n" + "-" * 50, flush=True)
     logger.info("[Step 1] LLM 完整输出:\n%s", answer)
 
     result = LLMService._parse_json(answer)

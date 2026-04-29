@@ -60,11 +60,7 @@ async def parse_patch(user_request: str, outline_tree: dict) -> list[dict]:
         messages[1]["content"],
     )
 
-    print("\n[Step 8] LLM Patch 流式输出 ↓", flush=True)
-    print("-" * 50, flush=True)
-
-    answer = await llm.stream_and_collect(messages)
-    print("\n" + "-" * 50, flush=True)
+    answer = await llm.complete(messages)
     logger.info("[Step 8] LLM 完整输出:\n%s", answer)
 
     raw = LLMService._parse_json(answer)

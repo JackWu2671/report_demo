@@ -132,12 +132,8 @@ async def select_template(
         messages[1]["content"],
     )
 
-    print("\n[Step 0] LLM 模板选择 ↓", flush=True)
-    print("-" * 50, flush=True)
+    answer = await llm.complete(messages)
 
-    answer = await llm.stream_and_collect(messages)
-
-    print("\n" + "-" * 50, flush=True)
     logger.info("[Step 0] LLM 完整输出:\n%s", answer)
 
     result = LLMService._parse_json(answer)

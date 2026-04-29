@@ -22,7 +22,7 @@ TOOLS: list[dict] = [
                 "properties": {
                     "expert_text": {
                         "type": "string",
-                        "description": "专家的业务场景描述，原文传入",
+                        "description": "专家的业务场景描述，必须将用户原始输入完整传入，禁止裁剪、摘要或改写",
                     }
                 },
                 "required": ["expert_text"],
