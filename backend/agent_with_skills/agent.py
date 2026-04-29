@@ -3,6 +3,10 @@ agent.py — 单一 agent，hermes-agent 风格三级渐进式 skill 加载。
 
 启动时注入 Level 0 skill 列表（只有 name/description/category，~极少 token）。
 LLM 按需调用 skill_view 加载完整 SOP（Level 1），或加载支持文件（Level 2）。
+
+支持两个 skill：
+  generate-report    — 面向普通用户，生成分析报告
+  consolidate-expert — 面向专家，沉淀知识为可复用模板
 """
 
 import json
@@ -18,10 +22,12 @@ _BACKEND_DIR = os.path.dirname(_AGENT_DIR)
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
-from memory.store import AgentMemory
+from agent1.memory import Agent1Memory
 from services.llm_service import LLMService
-from agent2.tools.definitions import TOOLS as _OUTLINE_TOOLS
-from agent2.tools.handlers import HANDLERS as _OUTLINE_HANDLERS
+from agent1.tools.definitions import TOOLS as _AGENT1_TOOLS
+from agent1.tools.handlers import HANDLERS as _AGENT1_HANDLERS
+from agent2.tools.definitions import TOOLS as _AGENT2_TOOLS
+from agent2.tools.handlers import HANDLERS as _AGENT2_HANDLERS
 from agent_with_skills.skill_loader import discover_skills, skill_view as _skill_view
 
 logger = logging.getLogger(__name__)
@@ -29,6 +35,14 @@ logger = logging.getLogger(__name__)
 _SKILLS_DIR = Path(_AGENT_DIR) / "skills"
 _SYSTEM_PROMPT = (Path(_AGENT_DIR) / "prompt.txt").read_text(encoding="utf-8")
 _MAX_ROUNDS = 8
+
+# ── 合并业务工具（agent2 优先，agent1 补充独有工具，modify_outline 去重）──────
+_business_tools: dict[str, dict] = {t["function"]["name"]: t for t in _AGENT2_TOOLS}
+_business_tools.update({t["function"]["name"]: t for t in _AGENT1_TOOLS})
+_BUSINESS_TOOLS = list(_business_tools.values())
+
+# agent1 handlers 覆盖 agent2 同名 handler（modify_outline 两者逻辑一致）
+_BUSINESS_HANDLERS = {**_AGENT2_HANDLERS, **_AGENT1_HANDLERS}
 
 # ── Skill 元工具定义 ──────────────────────────────────────────────
 
@@ -52,10 +66,10 @@ _SKILL_VIEW_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "skill 名称，如 generate-outline"},
+                "name": {"type": "string", "description": "skill 名称，如 generate-report"},
                 "path": {
                     "type": "string",
-                    "description": "可选。skill 文件夹内的支持文件路径，如 references/faq.md（Level 2）",
+                    "description": "可选。skill 文件夹内的支持文件路径（Level 2）",
                 },
             },
             "required": ["name"],
@@ -63,7 +77,7 @@ _SKILL_VIEW_TOOL = {
     },
 }
 
-TOOLS = [_SKILLS_LIST_TOOL, _SKILL_VIEW_TOOL] + _OUTLINE_TOOLS
+TOOLS = [_SKILLS_LIST_TOOL, _SKILL_VIEW_TOOL] + _BUSINESS_TOOLS
 
 _SKILL_SYSTEM_TEMPLATE = """\
 <skill_system>
@@ -79,8 +93,8 @@ _SKILL_SYSTEM_TEMPLATE = """\
 class AgentWithSkills:
     def __init__(self) -> None:
         self._skill_meta = discover_skills(_SKILLS_DIR)
-        self._loaded: set[str] = set()  # 已加载 SOP 的 skill，避免重复注入
-        self.memory = AgentMemory()
+        self._loaded: set[str] = set()
+        self.memory = Agent1Memory()  # 超集，兼容两个 skill 所需的所有状态字段
         logger.info(
             "[AgentWithSkills] discovered: %s", [m["name"] for m in self._skill_meta]
         )
@@ -104,6 +118,7 @@ class AgentWithSkills:
 
                     result_dict, llm_str = await self._execute_tool(tc)
 
+                    # generate-report 事件
                     if result_dict.get("outline_tree"):
                         yield {
                             "type": "outline",
@@ -113,6 +128,22 @@ class AgentWithSkills:
                         }
                     if result_dict.get("status") == "pending_confirm":
                         yield {"type": "confirm", "options": ["使用此模板", "重新从知识库生成"]}
+
+                    # consolidate-expert 额外事件
+                    if name == "analyze_expert_knowledge" and result_dict.get("extraction"):
+                        ext = result_dict["extraction"]
+                        yield {
+                            "type": "extraction",
+                            "scene_name": ext.get("scene_name", ""),
+                            "keywords": ext.get("keywords", []),
+                            "summary": ext.get("summary", ""),
+                        }
+                        if result_dict.get("new_nodes"):
+                            yield {"type": "new_nodes", "nodes": result_dict["new_nodes"]}
+                    if name == "save_outline_template" and result_dict.get("status") == "success":
+                        yield {"type": "saved",
+                               "scene_name": result_dict["scene_name"],
+                               "path": result_dict["path"]}
 
                     yield {"type": "step", "name": name, "status": "done"}
                     self.memory.add_message(
@@ -164,11 +195,10 @@ class AgentWithSkills:
 
         if name == "skills_list":
             return self._handle_skills_list()
-
         if name == "skill_view":
             return self._handle_skill_view(args)
 
-        handler = _OUTLINE_HANDLERS.get(name)
+        handler = _BUSINESS_HANDLERS.get(name)
         if handler is None:
             return {}, f"未知工具: {name}"
         try:
