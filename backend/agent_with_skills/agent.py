@@ -65,6 +65,16 @@ _SKILL_VIEW_TOOL = {
 
 TOOLS = [_SKILLS_LIST_TOOL, _SKILL_VIEW_TOOL] + _OUTLINE_TOOLS
 
+_SKILL_SYSTEM_TEMPLATE = """\
+<skill_system>
+调用工具时，遇到复杂任务先用 skill_view(<skill_name>) 阅读工作流指导。
+只在需要时读取，不要预先读取所有技能。
+
+<available_skills>
+{skill_entries}
+</available_skills>
+</skill_system>"""
+
 
 class AgentWithSkills:
     def __init__(self) -> None:
@@ -125,13 +135,13 @@ class AgentWithSkills:
     # ── Internal ──────────────────────────────────────────────────
 
     def _build_system_prompt(self) -> str:
-        # Level 0 索引动态拼接在 prompt.txt 之后
         lines = []
         for m in self._skill_meta:
             cat = f"[{m['category']}] " if m.get("category") else ""
             lines.append(f"- {cat}{m['name']}: {m.get('description', '')}")
-        skill_index = "\n".join(lines)
-        return f"{_SYSTEM_PROMPT}\n\n## Skill 索引（Level 0）\n\n{skill_index}"
+        skill_entries = "\n".join(lines)
+        skill_block = _SKILL_SYSTEM_TEMPLATE.format(skill_entries=skill_entries)
+        return f"{_SYSTEM_PROMPT}\n\n{skill_block}"
 
     async def _call_llm(self):
         llm = LLMService.from_env()
