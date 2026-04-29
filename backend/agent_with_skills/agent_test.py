@@ -87,11 +87,12 @@ def _print_help() -> None:
 
 
 async def repl() -> None:
-    agent = AgentWithSkills()
-
     print(f"\n{'=' * 56}")
     print("  AgentWithSkills — 交互测试")
     print(f"{'=' * 56}")
+
+    agent = AgentWithSkills()  # 在 header 之后创建，日志不会和提示符交错
+
     print(f"已发现 {len(agent._skill_meta)} 个 skill，输入需求开始，/help 查看命令。\n")
 
     while True:
