@@ -36,6 +36,7 @@ if _DIR not in sys.path:
 
 from agent1.agent import Agent1
 from agent2.agent import Agent2
+from agent_with_skills.agent import AgentWithSkills
 
 app = FastAPI()
 app.add_middleware(
@@ -48,8 +49,8 @@ app.add_middleware(
 _KB_DIR = os.path.join(_DIR, "expert_knowledge")
 _TEMPLATE_DIR = os.path.join(_DIR, "templates")
 
-# session_id → Agent1 | Agent2
-_sessions: dict[str, Agent1 | Agent2] = {}
+# session_id → Agent1 | Agent2 | AgentWithSkills
+_sessions: dict[str, Agent1 | Agent2 | AgentWithSkills] = {}
 
 
 # —— 知识库 & 模板接口 ————————————————————————————————————————————
@@ -92,6 +93,8 @@ def create_session(req: SessionRequest):
         agent = Agent1()
     elif req.agent_id == 2:
         agent = Agent2()
+    elif req.agent_id == 3:
+        agent = AgentWithSkills()
     else:
         raise HTTPException(status_code=400, detail=f"未知 agent_id: {req.agent_id}")
 

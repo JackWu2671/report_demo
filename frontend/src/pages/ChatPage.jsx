@@ -14,6 +14,12 @@ const SCENARIOS = [
     title: '大纲对话生成',
     desc: '根据分析需求实时生成报告大纲，支持聚焦方向、删减章节、设置参数等修改。',
   },
+  {
+    id: 3,
+    icon: '⚡',
+    title: 'Agent with Skills',
+    desc: '渐进式 Skill 加载，自动识别场景并按需调用专家知识沉淀或报告生成工作流。',
+  },
 ]
 
 export default function ChatPage() {
