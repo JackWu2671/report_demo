@@ -32,7 +32,7 @@ from agent_with_skills.skill_registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
-_SKILLS_DIR = Path(_AGENT_DIR) / "skills"
+_SKILLS_DIR = Path(_BACKEND_DIR) / "skills"
 _SYSTEM_PROMPT = (Path(_AGENT_DIR) / "prompt.txt").read_text(encoding="utf-8")
 _MAX_ROUNDS = 8
 
