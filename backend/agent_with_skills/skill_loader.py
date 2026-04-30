@@ -2,8 +2,8 @@
 skill_loader.py — hermes-agent 风格的三级渐进式 skill 加载。
 
 Level 0  skills_list()            → [{name, description, category}, ...]
-Level 1  skill_view(name)         → 完整 SKILL.md 正文（SOP）
-Level 2  skill_view(name, path)   → skills/<name>/<path> 指定文件内容
+Level 1  read_skill(name)         → 完整 SKILL.md 正文（SOP）
+Level 2  read_skill(name, path)   → skills/<name>/<path> 指定文件内容
 """
 
 import re
@@ -53,7 +53,7 @@ def discover_skills(skills_dir: Path) -> list[dict]:
     return skills
 
 
-def skill_view(skill_path: Path, ref_path: str | None = None) -> str:
+def read_skill(skill_path: Path, ref_path: str | None = None) -> str:
     """
     Level 1: ref_path=None  → 返回 SKILL.md 正文（frontmatter 之后的部分）
     Level 2: ref_path 指定  → 返回 skill 文件夹内的指定文件内容

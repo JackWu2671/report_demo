@@ -2,7 +2,7 @@
 agent.py — 单一 agent，hermes-agent 风格三级渐进式 skill 加载。
 
 启动时注入 Level 0 skill 列表（只有 name/description/category，~极少 token）。
-LLM 按需调用 skill_view 加载完整 SOP（Level 1），或加载支持文件（Level 2）。
+LLM 按需调用 read_skill 加载完整 SOP（Level 1），或加载支持文件（Level 2）。
 
 支持两个 skill：
   generate-report    — 面向普通用户，生成分析报告
@@ -28,7 +28,7 @@ from agent1.tools.definitions import TOOLS as _AGENT1_TOOLS
 from agent1.tools.handlers import HANDLERS as _AGENT1_HANDLERS
 from agent2.tools.definitions import TOOLS as _AGENT2_TOOLS
 from agent2.tools.handlers import HANDLERS as _AGENT2_HANDLERS
-from agent_with_skills.skill_loader import discover_skills, skill_view as _skill_view
+from agent_with_skills.skill_loader import discover_skills, read_skill as _read_skill
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ _SKILLS_LIST_TOOL = {
 _SKILL_VIEW_TOOL = {
     "type": "function",
     "function": {
-        "name": "skill_view",
+        "name": "read_skill",
         "description": (
             "加载指定 skill 的完整 SOP（Level 1），或其内部支持文件（Level 2）。"
             "决定使用某个 skill 前必须先加载其 SOP，已加载的 skill 无需重复加载。"
@@ -81,7 +81,7 @@ TOOLS = [_SKILLS_LIST_TOOL, _SKILL_VIEW_TOOL] + _BUSINESS_TOOLS
 
 _SKILL_SYSTEM_TEMPLATE = """\
 <skill_system>
-调用工具时，遇到复杂任务先用 skill_view(<skill_name>) 阅读工作流指导。
+调用工具时，遇到复杂任务先用 read_skill(<skill_name>) 阅读工作流指导。
 只在需要时读取，不要预先读取所有技能。
 
 <available_skills>
@@ -195,8 +195,8 @@ class AgentWithSkills:
 
         if name == "skills_list":
             return self._handle_skills_list()
-        if name == "skill_view":
-            return self._handle_skill_view(args)
+        if name == "read_skill":
+            return self._handle_read_skill(args)
 
         handler = _BUSINESS_HANDLERS.get(name)
         if handler is None:
@@ -214,18 +214,18 @@ class AgentWithSkills:
         ]
         return {}, f"[skills_list]\n{json.dumps(items, ensure_ascii=False, indent=2)}"
 
-    def _handle_skill_view(self, args: dict) -> tuple[dict, str]:
+    def _handle_read_skill(self, args: dict) -> tuple[dict, str]:
         skill_name = args.get("name", "")
         ref_path = args.get("path")
         meta = next((m for m in self._skill_meta if m["name"] == skill_name), None)
         if meta is None:
-            return {}, f"[skill_view] skill 不存在: {skill_name}"
+            return {}, f"[read_skill] skill 不存在: {skill_name}"
         if not ref_path and skill_name in self._loaded:
-            return {}, f"[skill_view] {skill_name} SOP 已加载，请直接按流程操作"
-        content = _skill_view(meta["_path"], ref_path)
+            return {}, f"[read_skill] {skill_name} SOP 已加载，请直接按流程操作"
+        content = _read_skill(meta["_path"], ref_path)
         if not ref_path:
             self._loaded.add(skill_name)
             logger.info("[AgentWithSkills] loaded skill SOP: %s", skill_name)
         level = "2" if ref_path else "1"
         label = f"{skill_name}/{ref_path}" if ref_path else skill_name
-        return {}, f"[skill_view Level {level}] {label}:\n\n{content}"
+        return {}, f"[read_skill Level {level}] {label}:\n\n{content}"
