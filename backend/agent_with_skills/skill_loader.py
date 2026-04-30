@@ -7,32 +7,32 @@ Level 2  read_skill(name, path)   → skills/<name>/<path> 指定文件内容
 """
 
 import re
+import yaml
 from pathlib import Path
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\s*", re.DOTALL)
 
 
 def _parse_frontmatter(text: str) -> dict:
+    """使用 PyYAML 解析 frontmatter，正确处理 > 折叠标量和嵌套块。"""
     m = _FRONTMATTER_RE.match(text)
     if not m:
         return {}
+    try:
+        data = yaml.safe_load(m.group(1)) or {}
+    except yaml.YAMLError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+
     result: dict = {}
-    current_key: str | None = None
-    hermes_block = False
-    for line in m.group(1).splitlines():
-        if line.strip() == "hermes:":
-            hermes_block = True
-            continue
-        if hermes_block:
-            if line.startswith("    ") and ":" in line:
-                k, _, v = line.strip().partition(":")
-                result[f"hermes.{k.strip()}"] = v.strip().strip('"')
-                continue
-            else:
-                hermes_block = False
-        if ":" in line and not line.startswith(" "):
-            current_key, _, val = line.partition(":")
-            result[current_key.strip()] = val.strip().strip('"')
+    for k, v in data.items():
+        if k == "metadata" and isinstance(v, dict):
+            hermes = v.get("hermes", {}) or {}
+            for hk, hv in hermes.items():
+                result[f"hermes.{hk}"] = hv
+        else:
+            result[k] = str(v).strip() if v is not None else ""
     return result
 
 

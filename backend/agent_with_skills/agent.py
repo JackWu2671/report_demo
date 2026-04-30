@@ -188,6 +188,7 @@ class AgentWithSkills:
             messages=messages,
             tools=TOOLS,
             tool_choice="auto",
+            parallel_tool_calls=False,
             temperature=llm._temperature,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
