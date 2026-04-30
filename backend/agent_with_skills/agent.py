@@ -111,6 +111,7 @@ class AgentWithSkills:
             if choice.finish_reason == "tool_calls" and msg.tool_calls:
                 for tc in msg.tool_calls:
                     name = tc.function.name
+                    logger.info("[AgentWithSkills] LLM decided: %s(%s)", name, tc.function.arguments)
                     yield {"type": "step", "name": name, "status": "running"}
 
                     result_dict, llm_str = await self._execute_tool(tc)
@@ -174,6 +175,14 @@ class AgentWithSkills:
     async def _call_llm(self):
         llm = LLMService.from_env()
         messages = self.memory.build_messages(self._build_system_prompt())
+        logger.info(
+            "[AgentWithSkills._call_llm] messages=%d\n%s",
+            len(messages),
+            "\n---\n".join(
+                f"[{m['role']}]\n{m['content'] if isinstance(m.get('content'), str) else m.get('content')}"
+                for m in messages
+            ),
+        )
         return await llm._client.chat.completions.create(
             model=llm.default_model,
             messages=messages,
