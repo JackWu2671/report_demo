@@ -28,7 +28,7 @@ from agent1.tools.definitions import TOOLS as _AGENT1_TOOLS
 from agent1.tools.handlers import HANDLERS as _AGENT1_HANDLERS
 from agent2.tools.definitions import TOOLS as _AGENT2_TOOLS
 from agent2.tools.handlers import HANDLERS as _AGENT2_HANDLERS
-from agent_with_skills.skill_loader import discover_skills, read_skill as _read_skill
+from agent_with_skills.skill_registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +92,9 @@ _SKILL_SYSTEM_TEMPLATE = """\
 
 class AgentWithSkills:
     def __init__(self) -> None:
-        self._skill_meta = discover_skills(_SKILLS_DIR)
+        self.registry = SkillRegistry(_SKILLS_DIR)
         self._loaded: set[str] = set()
         self.memory = Agent1Memory()  # 超集，兼容两个 skill 所需的所有状态字段
-        logger.info(
-            "[AgentWithSkills] discovered: %s", [m["name"] for m in self._skill_meta]
-        )
 
     # ── Public ────────────────────────────────────────────────────
 
@@ -167,7 +164,7 @@ class AgentWithSkills:
 
     def _build_system_prompt(self) -> str:
         lines = []
-        for m in self._skill_meta:
+        for m in self.registry.list_all():
             cat = f"[{m['category']}] " if m.get("category") else ""
             lines.append(f"- {cat}{m['name']}: {m.get('description', '')}")
         skill_entries = "\n".join(lines)
@@ -210,19 +207,18 @@ class AgentWithSkills:
     def _handle_skills_list(self) -> tuple[dict, str]:
         items = [
             {"name": m["name"], "description": m.get("description", ""), "category": m.get("category", "")}
-            for m in self._skill_meta
+            for m in self.registry.list_all()
         ]
         return {}, f"[skills_list]\n{json.dumps(items, ensure_ascii=False, indent=2)}"
 
     def _handle_read_skill(self, args: dict) -> tuple[dict, str]:
         skill_name = args.get("name", "")
         ref_path = args.get("path")
-        meta = next((m for m in self._skill_meta if m["name"] == skill_name), None)
-        if meta is None:
+        if self.registry.get(skill_name) is None:
             return {}, f"[read_skill] skill 不存在: {skill_name}"
         if not ref_path and skill_name in self._loaded:
             return {}, f"[read_skill] {skill_name} SOP 已加载，请直接按流程操作"
-        content = _read_skill(meta["_path"], ref_path)
+        content = self.registry.read_sop(skill_name, ref_path)
         if not ref_path:
             self._loaded.add(skill_name)
             logger.info("[AgentWithSkills] loaded skill SOP: %s", skill_name)

@@ -67,7 +67,7 @@ def _print_outline(markdown: str) -> None:
 
 def _print_skills(agent: AgentWithSkills) -> None:
     print("\n已发现的 Skill：")
-    for m in agent._skill_meta:
+    for m in agent.registry.list_all():
         loaded = "✓ 已加载" if m["name"] in agent._loaded else "  未加载"
         cat = f"[{m['category']}] " if m.get("category") else ""
         print(f"  {loaded}  {cat}{m['name']} — {m.get('description', '')[:40]}")
@@ -93,7 +93,7 @@ async def repl() -> None:
 
     agent = AgentWithSkills()  # 在 header 之后创建，日志不会和提示符交错
 
-    print(f"已发现 {len(agent._skill_meta)} 个 skill，输入需求开始，/help 查看命令。\n")
+    print(f"已发现 {agent.registry.total} 个 skill，输入需求开始，/help 查看命令。\n")
 
     while True:
         sys.stdout.flush()
