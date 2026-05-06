@@ -10,7 +10,7 @@ Each handler returns (result_dict, llm_str):
 import logging
 
 from memory.store import AgentMemory
-from tools.search_template import match_outline_template, search_outline_templates
+from tools.search_template import match_outline_template, search_outline_templates, load_template_outline
 from tools.build_outline_from_anchor import build_outline_from_anchor
 from tools.modify_outline import modify_outline
 
@@ -44,6 +44,20 @@ async def handle_search_outline_templates(args: dict, memory: AgentMemory) -> tu
     return result, llm_str
 
 
+async def handle_load_template_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    result = load_template_outline(args.get("scene_name", ""))
+    if result["status"] == "success":
+        memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
+        llm_str = (
+            f"[load_template_outline] status=success  scene={result['scene_name']}\n"
+            f"大纲已加载，请询问用户是否满意或需要调整。\n\n"
+            f"{result['md_with_ids']}"
+        )
+    else:
+        llm_str = f"[load_template_outline] status=not_found  reason={result['reason']}"
+    return result, llm_str
+
+
 async def handle_build_outline_from_anchor(args: dict, memory: AgentMemory) -> tuple[dict, str]:
     result = await build_outline_from_anchor(args.get("question", ""))
     if result["status"] == "success":
@@ -69,6 +83,7 @@ async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, 
 HANDLERS: dict = {
     "match_outline_template": handle_match_outline_template,
     "search_outline_templates": handle_search_outline_templates,
+    "load_template_outline": handle_load_template_outline,
     "build_outline_from_anchor": handle_build_outline_from_anchor,
     "modify_outline": handle_modify_outline,
 }

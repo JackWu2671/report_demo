@@ -1,11 +1,12 @@
 """
 definitions.py — OpenAI tool schemas for agent2.
 
-Four tools, in the order the agent should try them for a new outline request:
+Five tools, in the order the agent should try them for a new outline request:
   1. match_outline_template    — vector search + LLM judge on pre-built templates
   2. search_outline_templates  — vector search only, returns top-N candidates (no LLM)
-  3. build_outline_from_anchor — FAISS → anchor → subtree (when no template matches)
-  4. modify_outline            — patch current outline via natural-language instruction
+  3. load_template_outline     — load full outline for a specific template by scene_name
+  4. build_outline_from_anchor — FAISS → anchor → subtree (when no template matches)
+  5. modify_outline            — patch current outline via natural-language instruction
 """
 
 TOOLS: list[dict] = [
@@ -51,6 +52,27 @@ TOOLS: list[dict] = [
                     },
                 },
                 "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "load_template_outline",
+            "description": (
+                "按模板名称直接加载指定模板的完整大纲内容，跳过向量检索和 LLM 判断。"
+                "当用户已从候选列表中看到某个模板名称，想查看其具体大纲结构时调用。"
+                "scene_name 必须与 search_outline_templates 返回的候选名称完全一致。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scene_name": {
+                        "type": "string",
+                        "description": "模板场景名称，与候选列表中的 scene_name 完全一致",
+                    },
+                },
+                "required": ["scene_name"],
             },
         },
     },
