@@ -219,8 +219,9 @@ async def search_graph_tree(question: str) -> list[dict]:
     hit_ids = {c["id"] for c in candidates}
     score_by_id = {c["id"]: c["score"] for c in candidates}
 
-    # 反查表：name → id（从完整 nodes_dict 中建，覆盖祖先节点）
+    # 反查表：name → (id, description)（从完整 nodes_dict 中建，覆盖祖先节点）
     name_to_id = {n["name"]: n["id"] for n in nodes_dict.values()}
+    name_to_desc = {n["name"]: n.get("description", "") for n in nodes_dict.values()}
 
     # 从 path 字符串还原 name → {id, level, children_names} 映射
     name_meta: dict[str, dict] = {}
@@ -231,7 +232,8 @@ async def search_graph_tree(question: str) -> list[dict]:
         for i, name in enumerate(parts):
             if name not in name_meta:
                 name_meta[name] = {
-                    "id": name_to_id.get(name),   # 命中节点和祖先节点都能拿到 id
+                    "id": name_to_id.get(name),
+                    "description": name_to_desc.get(name, ""),
                     "level": c["level"] if name == c["name"] else i + 1,
                     "children_names": [],
                 }
@@ -249,6 +251,7 @@ async def search_graph_tree(question: str) -> list[dict]:
             "id": node_id,
             "name": name,
             "level": meta["level"],
+            "description": meta.get("description", ""),
             "hit": node_id in hit_ids,
             "score": score_by_id.get(node_id),
             "children": [_to_dict(child) for child in meta["children_names"]],

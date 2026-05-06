@@ -35,7 +35,8 @@ def _tree_to_text(nodes: list[dict], depth: int = 0) -> str:
         hit_mark = " ★" if node.get("hit") else ""
         score_str = f" ({node['score']:.3f})" if node.get("score") is not None else ""
         id_str = f" {node['id']}" if node.get("id") else ""
-        lines.append(f"{indent}[L{node['level']}{id_str}] {node['name']}{hit_mark}{score_str}")
+        desc_str = f" — {node['description']}" if node.get("description") else ""
+        lines.append(f"{indent}[L{node['level']}{id_str}] {node['name']}{hit_mark}{score_str}{desc_str}")
         if node.get("children"):
             lines.append(_tree_to_text(node["children"], depth + 1))
     return "\n".join(lines)
