@@ -6,8 +6,8 @@ Usage:
     python agent2/agent_test.py
 
 Each user turn streams events:
-  [running] search_outline_template    ← tool executing
-  [done]    search_outline_template
+  [running] match_outline_template     ← tool executing
+  [done]    match_outline_template
   ── 大纲 ──────────────────────────    ← outline event (instant, no LLM streaming)
   # 传送网专项分析
   ...

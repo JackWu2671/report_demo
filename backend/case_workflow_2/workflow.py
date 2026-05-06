@@ -2,7 +2,7 @@
 workflow.py — 大纲生成工作流编排入口。
 
 流程:
-  Step 1  search_outline_template()  检索已沉淀模板，LLM 决策是否复用
+  Step 1  match_outline_template()   检索已沉淀模板，LLM 决策是否复用
             ├── 命中 → 直接返回模板大纲
             └── 未命中 → Step 2
   Step 2  search_graph_tree()        FAISS 检索知识图谱 → 补全祖先路径 → 返回候选树

@@ -2,7 +2,7 @@
 build_outline_from_anchor.py — build_outline_from_anchor tool implementation.
 
 KB retrieval pipeline: FAISS search → anchor node selection → subtree expansion → patch.
-Called when search_outline_template returns not_found.
+Called when match_outline_template returns not_found.
 Used by: agent2
 """
 

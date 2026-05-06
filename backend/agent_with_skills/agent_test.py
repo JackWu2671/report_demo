@@ -9,8 +9,8 @@ agent_test.py — AgentWithSkills 交互测试。
   ✓ skills_list
   ▶ read_skill                      ← Level 1：加载 generate-outline SOP
   ✓ read_skill
-  ▶ search_outline_template         ← 按 SOP 调工具
-  ✓ search_outline_template
+  ▶ match_outline_template          ← 按 SOP 调工具
+  ✓ match_outline_template
   ── 大纲 ──────────────────────────
   # fgOTN 部署分析
   ...
