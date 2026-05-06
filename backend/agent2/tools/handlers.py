@@ -12,6 +12,7 @@ import logging
 from memory.store import AgentMemory
 from tools.search_template import match_outline_template, search_outline_templates, load_template_outline
 from tools.build_outline_from_anchor import build_outline_from_anchor
+from tools.search_graph_tree import search_graph_tree
 from tools.modify_outline import modify_outline
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,15 @@ async def handle_build_outline_from_anchor(args: dict, memory: AgentMemory) -> t
     return result, llm_str
 
 
+async def handle_search_graph_tree(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    result = await search_graph_tree(args.get("question", ""))
+    if result["status"] == "success":
+        llm_str = f"[search_graph_tree] status=success\n\n{result['tree_text']}"
+    else:
+        llm_str = f"[search_graph_tree] status=not_found  message={result['message']}"
+    return result, llm_str
+
+
 async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
     result = await modify_outline(args.get("instruction", ""), memory.outline_tree)
     if result["status"] == "success":
@@ -85,5 +95,6 @@ HANDLERS: dict = {
     "search_outline_templates": handle_search_outline_templates,
     "load_template_outline": handle_load_template_outline,
     "build_outline_from_anchor": handle_build_outline_from_anchor,
+    "search_graph_tree": handle_search_graph_tree,
     "modify_outline": handle_modify_outline,
 }

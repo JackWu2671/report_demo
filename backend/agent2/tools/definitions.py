@@ -1,12 +1,13 @@
 """
 definitions.py — OpenAI tool schemas for agent2.
 
-Five tools, in the order the agent should try them for a new outline request:
+Six tools, in the order the agent should try them for a new outline request:
   1. match_outline_template    — vector search + LLM judge on pre-built templates
   2. search_outline_templates  — vector search only, returns top-N candidates (no LLM)
   3. load_template_outline     — load full outline for a specific template by scene_name
   4. build_outline_from_anchor — FAISS → anchor → subtree (when no template matches)
-  5. modify_outline            — patch current outline via natural-language instruction
+  5. search_graph_tree         — FAISS search KB → build ancestor paths → return tree
+  6. modify_outline            — patch current outline via natural-language instruction
 """
 
 TOOLS: list[dict] = [
@@ -92,6 +93,26 @@ TOOLS: list[dict] = [
                         "type": "string",
                         "description": "用户的分析需求描述，原文传入",
                     }
+                },
+                "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_graph_tree",
+            "description": (
+                "从知识图谱中检索与问题相关的节点，返回带祖先路径的树状结构（含节点 id、描述、FAISS 命中分数）。"
+                "用于查看知识库中有哪些相关节点，或作为生成大纲前的知识库探索步骤。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "用户的分析需求描述，原文传入",
+                    },
                 },
                 "required": ["question"],
             },
