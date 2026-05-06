@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 from tools.search_template import match_outline_template
 from tools.search_graph_tree import search_graph_tree
+from tools.generate_outline import generate_outline
 from patcher import parse_patch, apply_patch
 from renderer import render_outline
 from exporter import export_json
@@ -60,10 +61,13 @@ async def main(question: str) -> tuple[dict, str]:
         logger.info("[workflow] 知识图谱无命中")
         return {}, graph_result["message"]
 
-    # Step 3: TODO generate_outline(question, graph_result["graph_tree"])
-    # 暂时返回候选树文本，待 generate_outline 实现后替换
-    logger.info("[workflow] graph_tree 已就绪，等待 generate_outline 实现")
-    return graph_result["graph_tree"], graph_result["tree_text"]
+    # Step 3: LLM 基于候选树生成完整大纲
+    outline_result = await generate_outline(question, graph_result["tree_text"])
+    if outline_result["status"] != "success":
+        logger.error("[workflow] generate_outline 失败: %s", outline_result["message"])
+        return {}, outline_result["message"]
+
+    return outline_result["outline_tree"], outline_result["markdown"]
 
 
 async def modify(user_request: str, outline_tree: dict) -> tuple[dict, str]:

@@ -7,8 +7,14 @@ outline_utils.py — 大纲三种表示之间的转化工具。
   to_markdown_with_ids(tree)  → 带 id 缩进树，供 LLM 上下文使用
   to_clean_json(tree)         → 干净 JSON dict，供程序存储/执行
 
+逆向解析：
+
+  from_md_with_ids(text)      → outline_tree，将 LLM 输出的 md_with_ids 还原为树
+
 三者可从同一个 tree 独立生成，互不依赖，也不需要 node.json / relation.json。
 """
+
+import re
 
 
 # ── 纯 Markdown（用户视图）─────────────────────────────────────
@@ -84,6 +90,61 @@ def _id_md_node(node: dict, depth: int, lines: list[str]) -> None:
 
     for child in node.get("children", []):
         _id_md_node(child, depth + 1, lines)
+
+
+# ── md_with_ids → outline_tree（逆向解析）────────────────────────
+
+_LINE_RE = re.compile(r'^(\s*)\[L(\d+)\s+(\S+)\]\s+(.+)$')
+
+
+def from_md_with_ids(text: str) -> dict | None:
+    """
+    将 LLM 输出的 md_with_ids 文本解析为 outline_tree dict。
+
+    格式约定（与 to_markdown_with_ids 一致）：
+      {indent}[L{level} {id}] {name}：{description}
+      缩进每层 2 个空格，描述可省略。
+
+    Returns:
+        根节点 dict，解析失败时返回 None。
+    """
+    nodes: list[tuple[int, dict]] = []  # (depth, node)
+
+    for line in text.splitlines():
+        m = _LINE_RE.match(line)
+        if not m:
+            continue
+        indent, level, node_id, rest = m.groups()
+        depth = len(indent) // 2
+
+        if '：' in rest:
+            name, description = rest.split('：', 1)
+        else:
+            name, description = rest, ''
+
+        node = {
+            'id': node_id.strip(),
+            'name': name.strip(),
+            'level': int(level),
+            'description': description.strip(),
+            'params': {},
+            'children': [],
+        }
+
+        # 找父节点：弹出所有深度 >= 当前的栈帧
+        while nodes and nodes[-1][0] >= depth:
+            nodes.pop()
+
+        if nodes:
+            nodes[-1][1]['children'].append(node)
+
+        nodes.append((depth, node))
+
+    # 根节点是第一个 depth=0 的节点
+    for depth, node in nodes:
+        if depth == 0:
+            return node
+    return None
 
 
 # ── 干净 JSON（程序视图）─────────────────────────────────────────
