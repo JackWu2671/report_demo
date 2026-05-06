@@ -1,10 +1,12 @@
 """
 retriever.py — Step 2 / 3 / 4: 用户问题向量化、FAISS 检索、候选节点路径构建。
 
-Step 2 embed_query       : 调用 Embedding 服务将问题向量化
-Step 3 search_nodes      : 在 FAISS 索引中检索相关候选节点
+Step 2 embed_query          : 调用 Embedding 服务将问题向量化
+Step 3 search_nodes         : 在 FAISS 索引中检索相关候选节点
 Step 4 build_candidate_paths: 为候选节点补全祖先路径信息
        candidates_to_tree_text: 将候选节点渲染为树状文本，供 LLM 选锚使用
+
+search_graph_tree           : 组合函数，embed → search → build paths → 返回树状 dict 列表
 """
 
 import logging
@@ -19,6 +21,7 @@ if _BACKEND_DIR not in sys.path:
 
 from services.embedding_service import EmbeddingService
 from services.faiss_service import FAISSService
+from loader import load_resources
 
 logger = logging.getLogger(__name__)
 
@@ -179,3 +182,80 @@ def candidates_to_tree_text(candidates: list[dict]) -> str:
         _render(root, 0)
 
     return "\n".join(lines)
+
+
+# ── 组合接口 ──────────────────────────────────────────────────
+
+async def search_graph_tree(question: str) -> list[dict]:
+    """
+    搜索知识图谱并返回树状结构，供 LLM 生成大纲时作为上下文。
+
+    流程: embed_query → search_nodes → build_candidate_paths → 组装树 dict
+
+    每个节点格式:
+        {
+            "id"      : str | None,   # 知识图谱节点 id，祖先补全节点可能为 None
+            "name"    : str,
+            "level"   : int,
+            "hit"     : bool,         # True = FAISS 直接命中
+            "score"   : float | None, # FAISS 相似度，祖先节点为 None
+            "children": [...]
+        }
+
+    Args:
+        question: 用户的自然语言问题
+
+    Returns:
+        根节点列表（通常 1～3 个），每个根节点下挂完整子树
+    """
+    faiss_svc, nodes_dict, children_map = load_resources()
+    query_embedding = await embed_query(question)
+    hits = search_nodes(query_embedding, faiss_svc)
+    if not hits:
+        logger.info("[search_graph_tree] 无命中节点，返回空树")
+        return []
+
+    candidates = build_candidate_paths(hits, nodes_dict, children_map)
+    hit_ids = {c["id"] for c in candidates}
+    score_by_id = {c["id"]: c["score"] for c in candidates}
+
+    # 从 path 字符串还原 name → {id, level, children_names} 映射
+    name_meta: dict[str, dict] = {}
+    roots: list[str] = []
+
+    for c in candidates:
+        parts = [p.strip() for p in c["path"].split(">")]
+        for i, name in enumerate(parts):
+            if name not in name_meta:
+                name_meta[name] = {
+                    "id": c["id"] if name == c["name"] else None,
+                    "level": c["level"] if name == c["name"] else i + 1,
+                    "children_names": [],
+                }
+            if i > 0:
+                parent = parts[i - 1]
+                if name not in name_meta[parent]["children_names"]:
+                    name_meta[parent]["children_names"].append(name)
+            elif name not in roots:
+                roots.append(name)
+
+    def _to_dict(name: str) -> dict:
+        meta = name_meta[name]
+        node_id = meta["id"]
+        return {
+            "id": node_id,
+            "name": name,
+            "level": meta["level"],
+            "hit": node_id in hit_ids,
+            "score": score_by_id.get(node_id),
+            "children": [_to_dict(child) for child in meta["children_names"]],
+        }
+
+    tree = [_to_dict(r) for r in roots]
+    total = sum(_count_tree(r) for r in tree)
+    logger.info("[search_graph_tree] 返回 %d 棵根树，共 %d 个节点", len(tree), total)
+    return tree
+
+
+def _count_tree(node: dict) -> int:
+    return 1 + sum(_count_tree(c) for c in node.get("children", []))
