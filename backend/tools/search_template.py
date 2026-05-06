@@ -1,9 +1,12 @@
 """
-search_template.py — search_outline_template tool implementation.
+search_template.py — template search and matching tools.
 
-Encapsulates: embed_query → vector search → LLM judge (select_template).
-Returns clean {status, outline_tree, markdown, md_with_ids}.
-Used by: agent2
+Two functions at different granularities:
+
+  search_outline_templates  — vector search only, returns top-N raw candidates
+  match_outline_template    — search + LLM judge, returns best match or not_found
+
+Used by: agent2, workflow.py
 """
 
 import logging
@@ -25,18 +28,53 @@ from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 logger = logging.getLogger(__name__)
 
 
-async def search_outline_template(question: str) -> dict:
+async def search_outline_templates(question: str, top_k: int = 5) -> dict:
     """
-    Search pre-built templates and let an internal LLM judge pick the best one.
+    Vector search only — return top-N template candidates without LLM judgment.
 
     Returns:
-        status="pending_confirm"  — found a candidate; caller should preview and ask user
-        status="not_found"        — no relevant template exists
+        status="found"     — candidates list populated
+        status="not_found" — template library is empty or no hits
     """
-    logger.info("[Tool:search_outline_template] question=%r", question)
+    logger.info("[Tool:search_outline_templates] question=%r top_k=%d", question, top_k)
 
     query_embedding = await embed_query(question)
-    candidates = await search_templates(query_embedding, top_k=3)
+    candidates = await search_templates(query_embedding, top_k=top_k)
+
+    if not candidates:
+        return {"status": "not_found", "candidates": [], "reason": "模板库为空"}
+
+    logger.info(
+        "[Tool:search_outline_templates] 命中 %d 个候选: %s",
+        len(candidates),
+        [(t["scene_name"], round(t["_score"], 3)) for t in candidates],
+    )
+    return {
+        "status": "found",
+        "candidates": [
+            {
+                "scene_name": t.get("scene_name", ""),
+                "summary": t.get("summary", ""),
+                "usage_conditions": t.get("usage_conditions", ""),
+                "score": round(t.get("_score", 0), 3),
+            }
+            for t in candidates
+        ],
+    }
+
+
+async def match_outline_template(question: str) -> dict:
+    """
+    Vector search + LLM judge — return the best-matching template or not_found.
+
+    Returns:
+        status="pending_confirm"  — matched a template; outline_tree populated
+        status="not_found"        — no suitable template found
+    """
+    logger.info("[Tool:match_outline_template] question=%r", question)
+
+    query_embedding = await embed_query(question)
+    candidates = await search_templates(query_embedding, top_k=5)
 
     if not candidates:
         return _not_found("模板库为空，请走知识库生成")
@@ -50,7 +88,7 @@ async def search_outline_template(question: str) -> dict:
         return _not_found("模板存在但缺少 outline 字段")
 
     clean_tree = to_clean_json(raw_tree)
-    logger.info("[Tool:search_outline_template] 候选: %s (score=%.3f)",
+    logger.info("[Tool:match_outline_template] 选中: %s (score=%.3f)",
                 selected.get("scene_name"), selected.get("_score", 0))
     return {
         "status": "pending_confirm",

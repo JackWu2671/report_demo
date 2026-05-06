@@ -32,7 +32,7 @@ load_dotenv(os.path.join(_BACKEND_DIR, ".env"))
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-from tools.search_template import search_outline_template
+from tools.search_template import match_outline_template
 from tools.search_graph_tree import search_graph_tree
 from patcher import parse_patch, apply_patch
 from renderer import render_outline
@@ -48,7 +48,7 @@ async def main(question: str) -> tuple[dict, str]:
     Step 3: TODO — generate_outline(question, graph_tree) → 正式大纲。
     """
     # Step 1: 检索模板
-    template_result = await search_outline_template(question)
+    template_result = await match_outline_template(question)
     if template_result["status"] == "pending_confirm":
         logger.info("[workflow] 命中模板: %s", template_result["scene_name"])
         tree = template_result["outline_tree"]
