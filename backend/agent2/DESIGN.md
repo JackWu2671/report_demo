@@ -234,7 +234,7 @@ async def chat_stream(self, user_message: str):
 ```python
 # agent2/tools/handlers.py
 HANDLERS = {
-    "search_outline_template": handle_search_outline_template,
+    "match_outline_template": handle_match_outline_template,
     "build_outline_from_anchor":         handle_build_outline_from_anchor,
     "modify_outline":           handle_modify_outline,
 }
@@ -353,7 +353,7 @@ LLM 的文字职责只有一件事：**用 1-2 句话说明刚才做了什么**�
 | | Agent1（专家知识沉淀） | Agent2（大纲对话生成） |
 |---|---|---|
 | 使用者 | 专家，输入业务场景描述 | 普通用户，提出分析需求 |
-| 核心工具 | `analyze_expert_knowledge`（Steps 1-4 打包）| `search_outline_template` + `build_outline_from_anchor` |
+| 核心工具 | `analyze_expert_knowledge`（Steps 1-4 打包）| `match_outline_template` + `build_outline_from_anchor` |
 | 额外工具 | `save_outline_template` | — |
 | Memory 类 | `Agent1Memory`（扩展了 extraction / new_nodes） | `AgentMemory`（基类） |
 | 额外事件 | `new_nodes`、`saved` | — |
@@ -373,7 +373,7 @@ LLM 的文字职责只有一件事：**用 1-2 句话说明刚才做了什么**�
     [user: "分析 fgOTN 部署"]
 
   LLM 输出:  finish_reason=tool_calls
-    tool_calls: search_outline_template(question="分析 fgOTN 部署")
+    tool_calls: match_outline_template(question="分析 fgOTN 部署")
 
   handler 执行 → memory.set_outline(tree, markdown, md_with_ids)
   agent yield: outline event  ← 前端立刻渲染大纲

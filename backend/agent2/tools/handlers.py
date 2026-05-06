@@ -21,7 +21,7 @@ async def handle_match_outline_template(args: dict, memory: AgentMemory) -> tupl
     result = await match_outline_template(args.get("question", ""))
     if result["status"] == "pending_confirm":
         # Store outline in memory so the right panel previews it immediately.
-        # If user later chooses to regenerate, build_outline_from_anchor will overwrite it.
+        # If user later chooses to regenerate, the next tool call will overwrite it.
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
         llm_str = (
             f"[match_outline_template] status=pending_confirm  scene={result['scene_name']}\n"
