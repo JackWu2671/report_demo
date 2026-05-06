@@ -194,7 +194,7 @@ async def search_graph_tree(question: str) -> list[dict]:
 
     每个节点格式:
         {
-            "id"      : str | None,   # 知识图谱节点 id，祖先补全节点可能为 None
+            "id"      : str | None,   # 知识图谱节点 id（含祖先节点，名称不在图谱中时为 None）
             "name"    : str,
             "level"   : int,
             "hit"     : bool,         # True = FAISS 直接命中
@@ -219,6 +219,9 @@ async def search_graph_tree(question: str) -> list[dict]:
     hit_ids = {c["id"] for c in candidates}
     score_by_id = {c["id"]: c["score"] for c in candidates}
 
+    # 反查表：name → id（从完整 nodes_dict 中建，覆盖祖先节点）
+    name_to_id = {n["name"]: n["id"] for n in nodes_dict.values()}
+
     # 从 path 字符串还原 name → {id, level, children_names} 映射
     name_meta: dict[str, dict] = {}
     roots: list[str] = []
@@ -228,7 +231,7 @@ async def search_graph_tree(question: str) -> list[dict]:
         for i, name in enumerate(parts):
             if name not in name_meta:
                 name_meta[name] = {
-                    "id": c["id"] if name == c["name"] else None,
+                    "id": name_to_id.get(name),   # 命中节点和祖先节点都能拿到 id
                     "level": c["level"] if name == c["name"] else i + 1,
                     "children_names": [],
                 }
