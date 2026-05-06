@@ -244,6 +244,28 @@ async def search_graph_tree(question: str) -> list[dict]:
             elif name not in roots:
                 roots.append(name)
 
+    # 补全：对每个 FAISS 命中节点，从 children_map 展开所有直接子节点
+    # 避免 LLM 因阈值过滤漏掉未命中但实际存在的子节点
+    for hit_id in hit_ids:
+        hit_node = nodes_dict.get(hit_id, {})
+        hit_name = hit_node.get("name", "")
+        if hit_name not in name_meta:
+            continue
+        for child_id in children_map.get(hit_id, []):
+            child_node = nodes_dict.get(child_id)
+            if not child_node:
+                continue
+            child_name = child_node["name"]
+            if child_name not in name_meta:
+                name_meta[child_name] = {
+                    "id": child_id,
+                    "description": child_node.get("description", ""),
+                    "level": child_node.get("level", 0),
+                    "children_names": [],
+                }
+            if child_name not in name_meta[hit_name]["children_names"]:
+                name_meta[hit_name]["children_names"].append(child_name)
+
     def _to_dict(name: str) -> dict:
         meta = name_meta[name]
         node_id = meta["id"]
@@ -259,7 +281,9 @@ async def search_graph_tree(question: str) -> list[dict]:
 
     tree = [_to_dict(r) for r in roots]
     total = sum(_count_tree(r) for r in tree)
-    logger.info("[search_graph_tree] 返回 %d 棵根树，共 %d 个节点", len(tree), total)
+    hit_count = sum(1 for c in candidates)
+    logger.info("[search_graph_tree] 返回 %d 棵根树，共 %d 个节点（%d 命中 + %d 补全）",
+                len(tree), total, hit_count, total - hit_count)
     return tree
 
 
