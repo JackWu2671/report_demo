@@ -244,14 +244,10 @@ async def search_graph_tree(question: str) -> list[dict]:
             elif name not in roots:
                 roots.append(name)
 
-    # 补全：对每个 FAISS 命中节点，从 children_map 展开所有直接子节点
+    # 补全：对每个 FAISS 命中节点，递归展开所有后代节点
     # 避免 LLM 因阈值过滤漏掉未命中但实际存在的子节点
-    for hit_id in hit_ids:
-        hit_node = nodes_dict.get(hit_id, {})
-        hit_name = hit_node.get("name", "")
-        if hit_name not in name_meta:
-            continue
-        for child_id in children_map.get(hit_id, []):
+    def _expand_all(node_id: str, parent_name: str) -> None:
+        for child_id in children_map.get(node_id, []):
             child_node = nodes_dict.get(child_id)
             if not child_node:
                 continue
@@ -263,8 +259,16 @@ async def search_graph_tree(question: str) -> list[dict]:
                     "level": child_node.get("level", 0),
                     "children_names": [],
                 }
-            if child_name not in name_meta[hit_name]["children_names"]:
-                name_meta[hit_name]["children_names"].append(child_name)
+            if child_name not in name_meta[parent_name]["children_names"]:
+                name_meta[parent_name]["children_names"].append(child_name)
+            _expand_all(child_id, child_name)
+
+    for hit_id in hit_ids:
+        hit_node = nodes_dict.get(hit_id, {})
+        hit_name = hit_node.get("name", "")
+        if hit_name not in name_meta:
+            continue
+        _expand_all(hit_id, hit_name)
 
     def _to_dict(name: str) -> dict:
         meta = name_meta[name]
