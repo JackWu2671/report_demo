@@ -1,10 +1,11 @@
 """
 definitions.py — OpenAI tool schemas for agent2.
 
-Three tools, in the order the agent should try them for a new outline request:
-  1. match_outline_template  — vector search + LLM judge on pre-built templates
-  2. build_outline_from_anchor — FAISS → anchor → subtree (when no template matches)
-  3. modify_outline           — patch current outline via natural-language instruction
+Four tools, in the order the agent should try them for a new outline request:
+  1. match_outline_template    — vector search + LLM judge on pre-built templates
+  2. search_outline_templates  — vector search only, returns top-N candidates (no LLM)
+  3. build_outline_from_anchor — FAISS → anchor → subtree (when no template matches)
+  4. modify_outline            — patch current outline via natural-language instruction
 """
 
 TOOLS: list[dict] = [
@@ -24,6 +25,30 @@ TOOLS: list[dict] = [
                         "type": "string",
                         "description": "用户的分析需求描述，原文传入",
                     }
+                },
+                "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_outline_templates",
+            "description": (
+                "仅做向量检索，返回模板库中与需求最相似的 top-N 候选模板列表（不经 LLM 判断）。"
+                "用于用户想直接浏览有哪些可用模板时调用，或在 match_outline_template 结果存疑时补充参考。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "用户的分析需求描述，原文传入",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "返回候选数量，默认 5",
+                    },
                 },
                 "required": ["question"],
             },

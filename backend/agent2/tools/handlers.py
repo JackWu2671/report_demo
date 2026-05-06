@@ -10,7 +10,7 @@ Each handler returns (result_dict, llm_str):
 import logging
 
 from memory.store import AgentMemory
-from tools.search_template import match_outline_template
+from tools.search_template import match_outline_template, search_outline_templates
 from tools.build_outline_from_anchor import build_outline_from_anchor
 from tools.modify_outline import modify_outline
 
@@ -30,6 +30,17 @@ async def handle_match_outline_template(args: dict, memory: AgentMemory) -> tupl
         )
     else:
         llm_str = f"[match_outline_template] status=not_found  reason={result['reason']}"
+    return result, llm_str
+
+
+async def handle_search_outline_templates(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    result = await search_outline_templates(args.get("question", ""), args.get("top_k", 5))
+    if result["status"] == "found":
+        lines = [f"  {i+1}. {c['scene_name']} (score={c['score']}) — {c.get('summary', '')}"
+                 for i, c in enumerate(result["candidates"])]
+        llm_str = f"[search_outline_templates] 找到 {len(result['candidates'])} 个候选:\n" + "\n".join(lines)
+    else:
+        llm_str = f"[search_outline_templates] status=not_found  reason={result['reason']}"
     return result, llm_str
 
 
@@ -57,6 +68,7 @@ async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, 
 
 HANDLERS: dict = {
     "match_outline_template": handle_match_outline_template,
+    "search_outline_templates": handle_search_outline_templates,
     "build_outline_from_anchor": handle_build_outline_from_anchor,
     "modify_outline": handle_modify_outline,
 }
