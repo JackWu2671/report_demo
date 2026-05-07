@@ -28,7 +28,7 @@
 需要修改大纲时，通过 modify_outline 传入结构化 ops 来完成——这比重新输出整份大纲快得多，也更精确。
 
 支持的 op 类型（node_id 取自当前大纲）：
-- add_node:                {op, node_id, parent_id} — 从知识图谱新增节点，node_id 从对话历史中 search_graph_tree 的返回结果里获取；若想添加的内容不在已有结果中，先调用 search_graph_tree 探索
+- add_node:                {op, node_id, parent_id} — 从知识图谱新增节点，node_id 从对话历史中 search_graph_tree 的返回结果里获取；若想添加的内容不在已有结果中，先调用 search_graph_tree 探索；若要新增为顶层章节，parent_id 填当前大纲根节点的 id（md_with_ids 第一行节点）
 - delete_node:             {op, node_id}            — 删除节点及其子树
 - modify_node_name:        {op, node_id, value}     — 修改节点名称
 - modify_node_description: {op, node_id, value}     — 修改节点描述（也用于写入阈值、范围等说明）
