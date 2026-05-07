@@ -27,26 +27,25 @@ from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 logger = logging.getLogger(__name__)
 
 
-async def init_outline_from_graph(question: str, candidates: list[dict], kb_tree_text: str = "") -> dict:
+async def init_outline_from_graph(question: str, kb_tree_text: str) -> dict:
     """
     Anchor selection + subtree expansion + initial patch.
 
     Args:
         question     : user's analysis question
-        candidates   : output of search_graph_tree — [{id, name, level, score, path}, ...]
-        kb_tree_text : full tree text from search_graph_tree (passed to select_anchor for richer context)
+        kb_tree_text : full tree text from search_graph_tree (★ marks FAISS-hit nodes)
 
     Returns:
         {status: "success"|"not_found", outline_tree, markdown, md_with_ids, message}
     """
-    logger.info("[Tool:init_outline_from_graph] question=%r, %d candidates", question, len(candidates))
+    logger.info("[Tool:init_outline_from_graph] question=%r", question)
 
-    if not candidates:
-        return _not_found("没有可用的候选节点，请先调用 search_graph_tree。")
+    if not kb_tree_text:
+        return _not_found("没有可用的知识图谱树，请先调用 search_graph_tree。")
 
     _, nodes_dict, children_map = load_resources()
 
-    anchor = await select_anchor(question, candidates, kb_tree_text)
+    anchor = await select_anchor(question, kb_tree_text)
 
     try:
         tree = build_subtree(anchor["selected_id"], nodes_dict, children_map)

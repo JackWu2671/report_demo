@@ -60,7 +60,7 @@ async def handle_load_template_outline(args: dict, memory: AgentMemory) -> tuple
 async def handle_search_graph_tree(args: dict, memory: AgentMemory) -> tuple[dict, str]:
     result = await search_graph_tree(args.get("question", ""))
     if result["status"] == "success":
-        memory.set_kb_tree(result["tree_text"], result["candidates"])
+        memory.set_kb_tree(result["tree_text"])
         llm_str = f"[search_graph_tree] status=success\n\n{result['tree_text']}"
     else:
         llm_str = f"[search_graph_tree] status=not_found  message={result['message']}"
@@ -68,11 +68,7 @@ async def handle_search_graph_tree(args: dict, memory: AgentMemory) -> tuple[dic
 
 
 async def handle_init_outline_from_graph(args: dict, memory: AgentMemory) -> tuple[dict, str]:
-    if not memory.kb_candidates:
-        result = {"status": "not_found", "outline_tree": {}, "markdown": "", "md_with_ids": "",
-                  "message": "请先调用 search_graph_tree 获取知识图谱节点。"}
-        return result, "[init_outline_from_graph] error: 需要先调用 search_graph_tree"
-    result = await init_outline_from_graph(args.get("question", ""), memory.kb_candidates, memory.kb_tree_text)
+    result = await init_outline_from_graph(args.get("question", ""), memory.kb_tree_text)
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
         llm_str = f"[init_outline_from_graph] status=success\n\n{result['md_with_ids']}"

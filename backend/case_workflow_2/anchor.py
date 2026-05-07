@@ -24,7 +24,6 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 from services.llm_service import LLMService
-from retriever import candidates_to_tree_text
 
 logger = logging.getLogger(__name__)
 
@@ -33,25 +32,19 @@ _PROMPT_DIR = Path(__file__).parent / "prompts"
 ANCHOR_PROMPT: str = (_PROMPT_DIR / "anchor.txt").read_text(encoding="utf-8")
 
 
-async def select_anchor(question: str, candidates: list[dict], tree_text: str = "") -> dict:
+async def select_anchor(question: str, tree_text: str) -> dict:
     """
-    调用 LLM，从候选节点树中选出最符合用户核心意图的锚节点。
-
-    候选以树状结构（★ 标记命中节点）呈现给 LLM，帮助 LLM 感知父子覆盖关系。
-    tree_text 优先使用 search_graph_tree 返回的完整树（含所有节点 id）；
-    未提供时回退到 candidates_to_tree_text（仅命中节点 + 路径祖先，祖先无 id）。
-    若 LLM 调用失败，回退到 FAISS 分数最高的候选节点。
+    调用 LLM，从知识图谱树中选出最符合用户核心意图的锚节点。
 
     Args:
-        question   : 用户的自然语言问题
-        candidates : retriever.build_candidate_paths() 返回的候选列表
-        tree_text  : search_graph_tree 返回的完整树文本（有则优先使用）
+        question  : 用户的自然语言问题
+        tree_text : search_graph_tree 返回的完整树文本（★ 标记 FAISS 命中节点）
 
     Returns:
         anchor dict，含 selected_id / selected_name / selected_path / level / reason
     """
     llm = LLMService.from_env()
-    display_tree = tree_text if tree_text else candidates_to_tree_text(candidates)
+    display_tree = tree_text
 
     messages = [
         {"role": "system", "content": ANCHOR_PROMPT},
@@ -64,20 +57,9 @@ async def select_anchor(question: str, candidates: list[dict], tree_text: str = 
         messages[1]["content"],
     )
 
-    try:
-        answer = await llm.complete(messages)
-        logger.info("[Step 5] LLM 完整输出:\n%s", answer)
-        anchor = LLMService._parse_json(answer)
-    except Exception as e:
-        logger.warning("[Step 5] LLM 选锚失败，回退到 score 最高的候选: %s", e)
-        f = candidates[0]
-        anchor = {
-            "selected_id": f["id"],
-            "selected_name": f["name"],
-            "selected_path": f["path"],
-            "level": f["level"],
-            "reason": "fallback",
-        }
+    answer = await llm.complete(messages)
+    logger.info("[Step 5] LLM 完整输出:\n%s", answer)
+    anchor = LLMService._parse_json(answer)
 
     logger.info(
         "[Step 5] 选锚: '%s' (L%s), reason=%s",
