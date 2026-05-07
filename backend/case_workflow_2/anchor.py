@@ -33,26 +33,29 @@ _PROMPT_DIR = Path(__file__).parent / "prompts"
 ANCHOR_PROMPT: str = (_PROMPT_DIR / "anchor.txt").read_text(encoding="utf-8")
 
 
-async def select_anchor(question: str, candidates: list[dict]) -> dict:
+async def select_anchor(question: str, candidates: list[dict], tree_text: str = "") -> dict:
     """
     调用 LLM，从候选节点树中选出最符合用户核心意图的锚节点。
 
     候选以树状结构（★ 标记命中节点）呈现给 LLM，帮助 LLM 感知父子覆盖关系。
+    tree_text 优先使用 search_graph_tree 返回的完整树（含所有节点 id）；
+    未提供时回退到 candidates_to_tree_text（仅命中节点 + 路径祖先，祖先无 id）。
     若 LLM 调用失败，回退到 FAISS 分数最高的候选节点。
 
     Args:
         question   : 用户的自然语言问题
         candidates : retriever.build_candidate_paths() 返回的候选列表
+        tree_text  : search_graph_tree 返回的完整树文本（有则优先使用）
 
     Returns:
         anchor dict，含 selected_id / selected_name / selected_path / level / reason
     """
     llm = LLMService.from_env()
-    tree_text = candidates_to_tree_text(candidates)
+    display_tree = tree_text if tree_text else candidates_to_tree_text(candidates)
 
     messages = [
         {"role": "system", "content": ANCHOR_PROMPT},
-        {"role": "user", "content": f"## 候选（树状结构）\n{tree_text}\n\n## 问题\n{question}"},
+        {"role": "user", "content": f"## 候选（树状结构）\n{display_tree}\n\n## 问题\n{question}"},
     ]
 
     logger.info(

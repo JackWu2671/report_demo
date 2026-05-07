@@ -72,7 +72,7 @@ async def handle_init_outline_from_graph(args: dict, memory: AgentMemory) -> tup
         result = {"status": "not_found", "outline_tree": {}, "markdown": "", "md_with_ids": "",
                   "message": "请先调用 search_graph_tree 获取知识图谱节点。"}
         return result, "[init_outline_from_graph] error: 需要先调用 search_graph_tree"
-    result = await init_outline_from_graph(args.get("question", ""), memory.kb_candidates)
+    result = await init_outline_from_graph(args.get("question", ""), memory.kb_candidates, memory.kb_tree_text)
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
         llm_str = f"[init_outline_from_graph] status=success\n\n{result['md_with_ids']}"

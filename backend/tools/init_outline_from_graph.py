@@ -27,13 +27,14 @@ from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 logger = logging.getLogger(__name__)
 
 
-async def init_outline_from_graph(question: str, candidates: list[dict]) -> dict:
+async def init_outline_from_graph(question: str, candidates: list[dict], kb_tree_text: str = "") -> dict:
     """
     Anchor selection + subtree expansion + initial patch.
 
     Args:
-        question   : user's analysis question
-        candidates : output of search_graph_tree — [{id, name, level, score, path}, ...]
+        question     : user's analysis question
+        candidates   : output of search_graph_tree — [{id, name, level, score, path}, ...]
+        kb_tree_text : full tree text from search_graph_tree (passed to select_anchor for richer context)
 
     Returns:
         {status: "success"|"not_found", outline_tree, markdown, md_with_ids, message}
@@ -45,7 +46,7 @@ async def init_outline_from_graph(question: str, candidates: list[dict]) -> dict
 
     _, nodes_dict, children_map = load_resources()
 
-    anchor = await select_anchor(question, candidates)
+    anchor = await select_anchor(question, candidates, kb_tree_text)
 
     try:
         tree = build_subtree(anchor["selected_id"], nodes_dict, children_map)
