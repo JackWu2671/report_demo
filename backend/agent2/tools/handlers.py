@@ -11,8 +11,8 @@ import logging
 
 from memory.store import AgentMemory
 from tools.search_template import match_outline_template, search_outline_templates, load_template_outline
+from tools.build_outline_from_anchor import build_outline_from_anchor
 from tools.search_graph_tree import search_graph_tree
-from tools.generate_outline import generate_outline
 from tools.modify_outline import modify_outline
 
 logger = logging.getLogger(__name__)
@@ -57,26 +57,22 @@ async def handle_load_template_outline(args: dict, memory: AgentMemory) -> tuple
     return result, llm_str
 
 
+async def handle_build_outline_from_anchor(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    result = await build_outline_from_anchor(args.get("question", ""))
+    if result["status"] == "success":
+        memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
+        llm_str = f"[build_outline_from_anchor] status=success\n\n{result['md_with_ids']}"
+    else:
+        llm_str = f"[build_outline_from_anchor] status=not_found  message={result['message']}"
+    return result, llm_str
+
+
 async def handle_search_graph_tree(args: dict, memory: AgentMemory) -> tuple[dict, str]:
     result = await search_graph_tree(args.get("question", ""))
     if result["status"] == "success":
         llm_str = f"[search_graph_tree] status=success\n\n{result['tree_text']}"
     else:
         llm_str = f"[search_graph_tree] status=not_found  message={result['message']}"
-    return result, llm_str
-
-
-async def handle_generate_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
-    result = await generate_outline(args.get("question", ""), args.get("tree_text", ""))
-    if result["status"] == "success":
-        memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
-        llm_str = (
-            f"[generate_outline] status=success\n"
-            f"大纲已生成，请询问用户是否满意或需要调整。\n\n"
-            f"{result['md_with_ids']}"
-        )
-    else:
-        llm_str = f"[generate_outline] status=error  message={result['message']}"
     return result, llm_str
 
 
@@ -96,7 +92,7 @@ HANDLERS: dict = {
     "match_outline_template": handle_match_outline_template,
     "search_outline_templates": handle_search_outline_templates,
     "load_template_outline": handle_load_template_outline,
+    "build_outline_from_anchor": handle_build_outline_from_anchor,
     "search_graph_tree": handle_search_graph_tree,
-    "generate_outline": handle_generate_outline,
     "modify_outline": handle_modify_outline,
 }
