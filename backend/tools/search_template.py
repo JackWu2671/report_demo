@@ -93,13 +93,14 @@ async def match_outline_template(question: str) -> dict:
         return _not_found("模板存在但缺少 outline 字段")
 
     clean_tree = to_clean_json(raw_tree)
+    wrapped = {"id": "__root__", "name": "", "level": 0, "description": "", "children": [clean_tree]}
     logger.info("[Tool:match_outline_template] 选中: %s (score=%.3f)",
                 selected.get("scene_name"), selected.get("_score", 0))
     return {
         "status": "pending_confirm",
-        "outline_tree": clean_tree,
-        "markdown": to_markdown(clean_tree),
-        "md_with_ids": to_markdown_with_ids(clean_tree),
+        "outline_tree": wrapped,
+        "markdown": to_markdown(wrapped),
+        "md_with_ids": to_markdown_with_ids(wrapped),
         "scene_name": selected.get("scene_name", ""),
         "reason": "",
     }
@@ -133,12 +134,13 @@ def load_template_outline(scene_name: str) -> dict:
             if not raw_tree:
                 return _not_found(f"模板「{scene_name}」缺少 outline 字段")
             clean_tree = to_clean_json(raw_tree)
+            wrapped = {"id": "__root__", "name": "", "level": 0, "description": "", "children": [clean_tree]}
             logger.info("[Tool:load_template_outline] 已加载: %s", scene_name)
             return {
                 "status": "success",
-                "outline_tree": clean_tree,
-                "markdown": to_markdown(clean_tree),
-                "md_with_ids": to_markdown_with_ids(clean_tree),
+                "outline_tree": wrapped,
+                "markdown": to_markdown(wrapped),
+                "md_with_ids": to_markdown_with_ids(wrapped),
                 "scene_name": scene_name,
             }
 

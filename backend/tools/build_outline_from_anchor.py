@@ -46,11 +46,13 @@ async def build_outline_from_anchor(anchor_id: str) -> dict:
                 "md_with_ids": "", "message": str(e)}
 
     clean_tree = to_clean_json(tree)
+    # 用虚拟根节点包裹，使 add_node parent_id="" 能正确地与一级章节平行
+    wrapped = {"id": "__root__", "name": "", "level": 0, "description": "", "children": [clean_tree]}
     logger.info("[Tool:build_outline_from_anchor] 完成，根节点: %s", clean_tree.get("name"))
     return {
         "status": "success",
-        "outline_tree": clean_tree,
-        "markdown": to_markdown(clean_tree),
-        "md_with_ids": to_markdown_with_ids(clean_tree),
+        "outline_tree": wrapped,
+        "markdown": to_markdown(wrapped),
+        "md_with_ids": to_markdown_with_ids(wrapped),
         "message": "",
     }

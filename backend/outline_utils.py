@@ -16,6 +16,12 @@ outline_utils.py — 大纲三种表示之间的转化工具。
 
 import re
 
+VIRTUAL_ROOT_ID = "__root__"
+
+
+def _is_virtual_root(tree: dict) -> bool:
+    return tree.get("id") == VIRTUAL_ROOT_ID
+
 
 # ── 纯 Markdown（用户视图）─────────────────────────────────────
 
@@ -26,7 +32,13 @@ def to_markdown(tree: dict) -> str:
     渲染规则：
       - 根节点对应 # 标题，每深一层加一级（最深 ######）
       - description 渲染为标题下方段落
+      - 虚拟根节点（__root__）被跳过，其子节点作为顶层章节渲染
     """
+    if _is_virtual_root(tree):
+        blocks = []
+        for child in tree.get("children", []):
+            blocks.extend(_md_node(child, heading_level=1))
+        return "\n\n".join(blocks)
     blocks = _md_node(tree, heading_level=1)
     return "\n\n".join(blocks)
 
@@ -56,9 +68,14 @@ def to_markdown_with_ids(tree: dict) -> str:
           [L3 L3_011] 孙节点：描述
 
     LLM 可通过 id 精确引用节点，输出 patch 操作时不会指错目标。
+    虚拟根节点（__root__）被跳过，其子节点作为顶层章节渲染。
     """
     lines: list[str] = []
-    _id_md_node(tree, depth=0, lines=lines)
+    if _is_virtual_root(tree):
+        for child in tree.get("children", []):
+            _id_md_node(child, depth=0, lines=lines)
+    else:
+        _id_md_node(tree, depth=0, lines=lines)
     return "\n".join(lines)
 
 
