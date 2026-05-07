@@ -108,6 +108,16 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> dict:
     """
     tree = copy.deepcopy(outline_tree)
 
+    # 懒加载 KB 资源，仅当存在 add_node op 时才加载
+    _kb_cache: dict | None = None
+
+    def _get_kb():
+        nonlocal _kb_cache
+        if _kb_cache is None:
+            _, nd, cm = load_resources()
+            _kb_cache = {"nodes_dict": nd, "children_map": cm}
+        return _kb_cache
+
     # 先收集所有 keep_only_node id，统一批量处理
     keep_ids = [op["node_id"] for op in ops if op.get("op") == "keep_only_node" and op.get("node_id")]
     if keep_ids:
@@ -125,6 +135,9 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> dict:
 
         elif op_name == "add_node":
             subtree = op.get("subtree")
+            if not subtree:
+                kb = _get_kb()
+                subtree = _build_kb_subtree(node_id, kb["nodes_dict"], kb["children_map"])
             if not subtree:
                 logger.warning("[Step 9] add_node: 节点 %s 在知识图谱中不存在，跳过", node_id)
                 continue
