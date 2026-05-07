@@ -187,37 +187,27 @@ def tree_to_id_text(node: dict, depth: int = 0) -> str:
 
 def _keep_only_nodes(tree: dict, node_ids: list[str]) -> None:
     """
-    对每个 node_id，删除其兄弟节点中不在 keep_set 内的节点。
-    按层级从高（L2）到低（L5）处理，确保高层删除后低层无需重复处理。
+    保留 node_ids 中的节点，删除同层中不包含任何 keep 节点的兄弟分支。
+
+    过滤规则：当某节点的直接子节点中存在 keep 节点时，将 children 过滤为
+    "自身在 keep_set 中"或"子树中包含 keep 节点"的节点。其他层级不动。
     """
     keep_set = set(node_ids)
-    id_to_level: dict[str, int] = {}
 
-    def _collect(node: dict) -> None:
-        id_to_level[node["id"]] = node.get("level", 0)
-        for c in node.get("children", []):
-            _collect(c)
-
-    _collect(tree)
-
-    sorted_ids = sorted(
-        (nid for nid in node_ids if nid in id_to_level),
-        key=lambda nid: id_to_level[nid],
-    )
-    for node_id in sorted_ids:
-        _prune_siblings(tree, node_id, keep_set)
-
-
-def _prune_siblings(tree: dict, target_id: str, keep_set: set) -> bool:
-    """找到 target_id 的父节点，将父节点的 children 过滤为只保留 keep_set 内的节点。"""
-    children = tree.get("children", [])
-    for child in children:
-        if child["id"] == target_id:
-            tree["children"] = [c for c in children if c["id"] in keep_set]
+    def _contains_keep(node: dict) -> bool:
+        if node["id"] in keep_set:
             return True
-        if _prune_siblings(child, target_id, keep_set):
-            return True
-    return False
+        return any(_contains_keep(c) for c in node.get("children", []))
+
+    def _prune(node: dict) -> None:
+        children = node.get("children", [])
+        if any(c["id"] in keep_set for c in children):
+            node["children"] = [c for c in children if _contains_keep(c)]
+        for child in node.get("children", []):
+            _prune(child)
+
+    _prune(tree)
+
 
 
 def _build_kb_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dict | None:
