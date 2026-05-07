@@ -72,16 +72,14 @@ async def parse_patch(user_request: str, outline_tree: dict) -> list[dict]:
     raw = LLMService._parse_json(answer)
     ops: list[dict] = raw if isinstance(raw, list) else [raw]
 
-    # 补全 add_node ops：从 nodes_dict 查出 name/level/description
+    # 补全 add_node ops：从 nodes_dict 递归构建完整子树
     add_ops = [op for op in ops if op.get("op") == "add_node"]
     if add_ops:
-        _, nodes_dict, _ = load_resources()
+        _, nodes_dict, children_map = load_resources()
         for op in add_ops:
-            node = nodes_dict.get(op.get("node_id", ""))
-            if node:
-                op.setdefault("name", node["name"])
-                op.setdefault("level", node.get("level", 0))
-                op.setdefault("description", node.get("description", ""))
+            subtree = _build_kb_subtree(op.get("node_id", ""), nodes_dict, children_map)
+            if subtree:
+                op["subtree"] = subtree
 
     logger.info("[Step 8] 解析 patch 操作 (%d 条): %s", len(ops), ops)
     return ops
@@ -121,14 +119,11 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> dict:
             continue  # 已批量处理
 
         elif op_name == "add_node":
-            new_node = {
-                "id": node_id,
-                "name": op.get("name", node_id),
-                "level": op.get("level", 0),
-                "description": op.get("description", ""),
-                "children": [],
-            }
-            added = _add_node(tree, op.get("parent_id", ""), new_node)
+            subtree = op.get("subtree")
+            if not subtree:
+                logger.warning("[Step 9] add_node: 节点 %s 在知识图谱中不存在，跳过", node_id)
+                continue
+            added = _add_node(tree, op.get("parent_id", ""), subtree)
             if added:
                 logger.info("[Step 9] add_node: 新增节点 %s → 父节点 %s | 原因: %s", node_id, op.get("parent_id"), reason)
             else:
@@ -205,6 +200,24 @@ def _prune_siblings(tree: dict, target_id: str, keep_set: set) -> bool:
         if _prune_siblings(child, target_id, keep_set):
             return True
     return False
+
+
+def _build_kb_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dict | None:
+    """从知识图谱递归构建以 node_id 为根的完整子树。"""
+    node = nodes_dict.get(node_id)
+    if not node:
+        return None
+    return {
+        "id": node_id,
+        "name": node["name"],
+        "level": node.get("level", 0),
+        "description": node.get("description", ""),
+        "children": [
+            child
+            for child_id in children_map.get(node_id, [])
+            if (child := _build_kb_subtree(child_id, nodes_dict, children_map)) is not None
+        ],
+    }
 
 
 def _add_node(tree: dict, parent_id: str, new_node: dict) -> bool:
