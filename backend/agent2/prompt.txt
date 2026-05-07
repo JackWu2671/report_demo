@@ -25,7 +25,7 @@
 
 当前大纲始终呈现在本 system prompt 末尾（md_with_ids 格式，含节点 id）。你对大纲的任何修改都会实时反映给用户，因此修改要准确。
 
-需要修改大纲时，通过 modify_outline 传入结构化 ops 来完成——这比重新输出整份大纲快得多，也更精确。
+需要修改大纲时，通过 modify_outline 传入结构化 ops 来完成。**每次调用只传一个 op**，这样用户可以看到每一步的变化，你也可以在每步之后根据结果决定下一步怎么做。
 
 支持的 op 类型（node_id 取自当前大纲）：
 - add_node:                {op, node_id, parent_id} — 从知识图谱新增节点，node_id 从对话历史中 search_graph_tree 的返回结果里获取；若想添加的内容不在已有结果中，先调用 search_graph_tree 探索；若要新增与现有一级章节平行的顶层章节，parent_id 传空字符串 ""
