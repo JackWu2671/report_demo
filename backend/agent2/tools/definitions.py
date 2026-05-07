@@ -135,7 +135,7 @@ TOOLS: list[dict] = [
                         "description": (
                             "操作列表，每条操作包含 op 字段和对应参数。\n"
                             "支持的操作：\n"
-                            "- add_node: {op, node_id, parent_id} — 从知识图谱新增节点到指定父节点下；若要新增为顶层章节，parent_id 填当前大纲根节点的 id（md_with_ids 第一行）\n"
+                            "- add_node: {op, node_id, parent_id} — 从知识图谱新增节点到指定父节点下；若要新增与现有一级章节平行的顶层章节，parent_id 传空字符串 \"\"\n"
                             "- delete_node: {op, node_id} — 删除节点及其子树\n"
                             "- modify_node_name: {op, node_id, value} — 修改节点名称\n"
                             "- modify_node_description: {op, node_id, value} — 修改节点描述\n"

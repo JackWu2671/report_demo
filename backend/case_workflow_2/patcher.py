@@ -140,12 +140,17 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
                 skipped.append({**op, "_skip_reason": msg})
                 continue
             ids_before = _collect_ids(tree)
-            added = _add_node(tree, op.get("parent_id", ""), subtree)
-            if not added:
+            parent_id = op.get("parent_id") or ""
+            if not parent_id:
                 tree.setdefault("children", []).append(subtree)
-                logger.info("[Step 9] add_node: 未找到父节点 %s，已挂到根节点下", op.get("parent_id"))
+                logger.info("[Step 9] add_node: 新增顶层章节 %s（与现有一级章节平行）", node_id)
             else:
-                logger.info("[Step 9] add_node: 新增节点 %s → 父节点 %s | 原因: %s", node_id, op.get("parent_id"), reason)
+                added = _add_node(tree, parent_id, subtree)
+                if not added:
+                    tree.setdefault("children", []).append(subtree)
+                    logger.warning("[Step 9] add_node: 未找到父节点 %s，已作为顶层章节新增", parent_id)
+                else:
+                    logger.info("[Step 9] add_node: 新增节点 %s → 父节点 %s | 原因: %s", node_id, parent_id, reason)
             new_ids = _collect_ids(subtree)
             duplicates = [i for i in new_ids if i in ids_before]
             if duplicates:
