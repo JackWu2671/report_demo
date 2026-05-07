@@ -50,12 +50,6 @@ def _render_node(node: dict, heading_level: int) -> list[str]:
     if node.get("description"):
         block += f"\n\n{node['description']}"
 
-    if node.get("params"):
-        param_str = "、".join(
-            f"{k}: {v['value']}{v['unit']}" for k, v in node["params"].items()
-        )
-        block += f"\n\n> 参数设置 — {param_str}"
-
     blocks = [block]
     for child in node.get("children", []):
         blocks.extend(_render_node(child, heading_level + 1))

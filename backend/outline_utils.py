@@ -26,7 +26,6 @@ def to_markdown(tree: dict) -> str:
     渲染规则：
       - 根节点对应 # 标题，每深一层加一级（最深 ######）
       - description 渲染为标题下方段落
-      - params 渲染为 > 参数设置 行
     """
     blocks = _md_node(tree, heading_level=1)
     return "\n\n".join(blocks)
@@ -38,12 +37,6 @@ def _md_node(node: dict, heading_level: int) -> list[str]:
 
     if node.get("description"):
         block += f"\n\n{node['description']}"
-
-    if node.get("params"):
-        param_str = "、".join(
-            f"{k}: {v['value']}{v.get('unit', '')}" for k, v in node["params"].items()
-        )
-        block += f"\n\n> 参数设置 — {param_str}"
 
     blocks = [block]
     for child in node.get("children", []):
@@ -60,7 +53,7 @@ def to_markdown_with_ids(tree: dict) -> str:
     格式：
       [L1 L1_001] 节点名称：description（无 description 则省略冒号后内容）
         [L2 L2_003] 子节点：描述
-          [L3 L3_011] 孙节点：threshold=85%（params 拍平写在 description 后）
+          [L3 L3_011] 孙节点：描述
 
     LLM 可通过 id 精确引用节点，输出 patch 操作时不会指错目标。
     """
@@ -75,15 +68,9 @@ def _id_md_node(node: dict, depth: int, lines: list[str]) -> None:
     level = node.get("level", "?")
     name = node.get("name", "")
 
-    # 拼 description + params 到同一行
     desc_parts = []
     if node.get("description"):
         desc_parts.append(node["description"])
-    if node.get("params"):
-        param_str = ", ".join(
-            f"{k}={v['value']}{v.get('unit', '')}" for k, v in node["params"].items()
-        )
-        desc_parts.append(param_str)
 
     suffix = f"：{' | '.join(desc_parts)}" if desc_parts else ""
     lines.append(f"{indent}[L{level} {nid}] {name}{suffix}")
@@ -127,7 +114,6 @@ def from_md_with_ids(text: str) -> dict | None:
             'name': name.strip(),
             'level': int(level),
             'description': description.strip(),
-            'params': {},
             'children': [],
         }
 
@@ -153,9 +139,9 @@ def to_clean_json(tree: dict) -> dict:
     """
     将大纲树导出为干净 JSON，去除检索/内部字段（keywords、score 等）。
 
-    保留字段：id, name, level, description, params, children
+    保留字段：id, name, level, description, children
     """
-    _KEEP = {"id", "name", "level", "description", "params"}
+    _KEEP = {"id", "name", "level", "description"}
     node = {k: v for k, v in tree.items() if k in _KEEP}
     node["children"] = [to_clean_json(c) for c in tree.get("children", [])]
     return node

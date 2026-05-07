@@ -6,7 +6,8 @@ Step 9 apply_patch  : 纯 Python，将 patch 操作列表应用到大纲树（de
 
 支持的 patch 操作:
   delete    — 删除指定节点及其所有子节点
-  set_param — 为节点添加参数标注（如阈值、时间窗口等）
+  rename    — 修改节点的 name 或 description
+  keep_only — 保留指定节点，删除同级兄弟节点
 
 Prompt 从 prompts/patch.txt 加载。
 """
@@ -105,15 +106,12 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> dict:
                 logger.info("[Step 9] delete: 已删除节点 %s | 原因: %s", node_id, reason)
             else:
                 logger.warning("[Step 9] delete: 未找到节点 %s", node_id)
-        elif op["op"] == "set_param":
-            found = _set_param_node(tree, node_id, op["key"], op["value"], op.get("unit", ""))
+        elif op["op"] == "rename":
+            found = _rename_node(tree, node_id, op.get("name"), op.get("description"))
             if found:
-                logger.info(
-                    "[Step 9] set_param: 节点 %s → %s=%s%s | 原因: %s",
-                    node_id, op["key"], op["value"], op.get("unit", ""), reason,
-                )
+                logger.info("[Step 9] rename: 节点 %s | 原因: %s", node_id, reason)
             else:
-                logger.warning("[Step 9] set_param: 未找到节点 %s", node_id)
+                logger.warning("[Step 9] rename: 未找到节点 %s", node_id)
         else:
             logger.warning("[Step 9] 未知操作: %s", op["op"])
     return tree
@@ -183,12 +181,15 @@ def _delete_node(tree: dict, node_id: str) -> bool:
     return False
 
 
-def _set_param_node(tree: dict, node_id: str, key: str, value, unit: str) -> bool:
-    """在 node_id 节点上添加/更新参数标注，返回是否找到目标节点。"""
+def _rename_node(tree: dict, node_id: str, name: str | None, description: str | None) -> bool:
+    """修改 node_id 节点的 name 或 description，返回是否找到目标节点。"""
     if tree["id"] == node_id:
-        tree.setdefault("params", {})[key] = {"value": value, "unit": unit}
+        if name is not None:
+            tree["name"] = name
+        if description is not None:
+            tree["description"] = description
         return True
     for child in tree.get("children", []):
-        if _set_param_node(child, node_id, key, value, unit):
+        if _rename_node(child, node_id, name, description):
             return True
     return False
