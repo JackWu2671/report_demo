@@ -50,6 +50,8 @@ class AgentMemory:
         the start of the conversation.
         """
         content = system_prompt
+        if self.kb_tree_text:
+            content += f"\n\n## 知识图谱树（add_node 可用的节点）\n\n{self.kb_tree_text}"
         if self.has_outline:
             content += f"\n\n## 当前大纲（可通过节点ID引用）\n\n{self.md_with_ids}"
         return [{"role": "system", "content": content}, *self._history]

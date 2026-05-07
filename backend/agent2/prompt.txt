@@ -14,14 +14,16 @@
 
 ## 修改大纲
 
-用户对已有大纲提出修改时，根据当前大纲（system prompt 中）和用户意图，直接构造 ops 调用 modify_outline。
+当前大纲始终呈现在本 system prompt 末尾（md_with_ids 格式，含节点 id）。你对大纲的任何修改都会实时反映给用户，因此修改要准确。
+
+需要修改大纲时，通过 modify_outline 传入结构化 ops 来完成——这比重新输出整份大纲快得多，也更精确。
 
 支持的 op 类型（node_id 取自当前大纲）：
-- add_node:              {op, node_id, parent_id}   — 从知识图谱新增节点，知识图谱节点可从 kb_tree_text 中查找
-- delete_node:           {op, node_id}              — 删除节点及其子树
-- modify_node_name:      {op, node_id, value}       — 修改节点名称
+- add_node:                {op, node_id, parent_id} — 从知识图谱新增节点，可用节点见 system prompt 末尾的知识图谱树
+- delete_node:             {op, node_id}            — 删除节点及其子树
+- modify_node_name:        {op, node_id, value}     — 修改节点名称
 - modify_node_description: {op, node_id, value}     — 修改节点描述（也用于写入阈值、范围等说明）
-- keep_only_node:        {op, node_id}              — 保留该节点，同级其他节点自动删除（每个保留节点单独一条）
+- keep_only_node:          {op, node_id}            — 保留该节点，同级其他节点自动删除（每个保留节点单独一条）
 
 ## 浏览模板 / 知识库
 
