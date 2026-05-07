@@ -138,6 +138,8 @@ class Agent2:
             logger.error("[Agent2] args parse error: %s", e)
             return {}, f"工具参数解析失败: {e}"
 
+        logger.info("[Agent2] tool_call: %s args=%s", name, json.dumps(args, ensure_ascii=False))
+
         handler = HANDLERS.get(name)
         if handler is None:
             return {}, f"未知工具: {name}"
