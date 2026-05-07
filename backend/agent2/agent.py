@@ -78,7 +78,9 @@ class Agent2:
                         args_for_display = json.loads(tc.function.arguments)
                     except Exception:
                         args_for_display = {}
-                    yield {"type": "step", "name": name, "status": "running", "args": args_for_display}
+                    call_id = tc.id
+                    yield {"type": "step", "name": name, "status": "running",
+                           "call_id": call_id, "args": args_for_display}
 
                     result_dict, llm_str = await self._execute_tool(tc)
 
@@ -97,6 +99,7 @@ class Agent2:
                         }
 
                     yield {"type": "step", "name": name, "status": "done",
+                           "call_id": call_id,
                            "result": _result_display(name, result_dict),
                            "detail": llm_str}
 

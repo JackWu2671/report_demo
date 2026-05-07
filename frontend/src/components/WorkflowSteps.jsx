@@ -74,7 +74,7 @@ export default function WorkflowSteps({ steps }) {
 
       {!collapsed && (
         <div className="wf-steps__list">
-          {steps.map(s => <StepRow key={s.name} s={s} />)}
+          {steps.map((s, i) => <StepRow key={s.call_id || `${s.name}-${i}`} s={s} />)}
         </div>
       )}
     </div>
