@@ -135,6 +135,7 @@ export default function ChatView() {
             status: evt.status,
             ...(evt.args !== undefined && { args: evt.args }),
             ...(evt.result !== undefined && { result: evt.result }),
+            ...(evt.detail !== undefined && { detail: evt.detail }),
           }
           if (idx >= 0) steps[idx] = entry
           else steps.push(entry)
