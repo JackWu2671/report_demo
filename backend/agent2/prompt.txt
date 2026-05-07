@@ -14,8 +14,14 @@
 
 ## 修改大纲
 
-用户对已有大纲提出修改（删节、聚焦方向、设置参数等）：
-- 调用 modify_outline 执行修改
+用户对已有大纲提出修改时，根据当前大纲（system prompt 中）和用户意图，直接构造 ops 调用 modify_outline。
+
+支持的 op 类型（node_id 取自当前大纲）：
+- add_node:              {op, node_id, parent_id}   — 从知识图谱新增节点，知识图谱节点可从 kb_tree_text 中查找
+- delete_node:           {op, node_id}              — 删除节点及其子树
+- modify_node_name:      {op, node_id, value}       — 修改节点名称
+- modify_node_description: {op, node_id, value}     — 修改节点描述（也用于写入阈值、范围等说明）
+- keep_only_node:        {op, node_id}              — 保留该节点，同级其他节点自动删除（每个保留节点单独一条）
 
 ## 浏览模板 / 知识库
 

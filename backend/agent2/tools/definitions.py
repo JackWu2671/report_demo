@@ -123,18 +123,27 @@ TOOLS: list[dict] = [
         "function": {
             "name": "modify_outline",
             "description": (
-                "对当前报告大纲执行修改：删除章节、聚焦方向、设置参数阈值等。"
-                "仅当已存在大纲（之前成功调用过 match_outline_template、load_template_outline 或 init_outline_from_graph）时可用。"
+                "对当前报告大纲执行修改，直接传入结构化操作列表。"
+                "仅当已存在大纲时可用。ops 由你根据用户指令和当前大纲（system prompt 中）直接构造。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "instruction": {
-                        "type": "string",
-                        "description": "用户的自然语言修改指令，原文传入",
+                    "ops": {
+                        "type": "array",
+                        "description": (
+                            "操作列表，每条操作包含 op 字段和对应参数。\n"
+                            "支持的操作：\n"
+                            "- add_node: {op, node_id, parent_id} — 从知识图谱新增节点到指定父节点下\n"
+                            "- delete_node: {op, node_id} — 删除节点及其子树\n"
+                            "- modify_node_name: {op, node_id, value} — 修改节点名称\n"
+                            "- modify_node_description: {op, node_id, value} — 修改节点描述\n"
+                            "- keep_only_node: {op, node_id} — 保留该节点，删除同级其他节点（每个保留节点单独一条）"
+                        ),
+                        "items": {"type": "object"},
                     }
                 },
-                "required": ["instruction"],
+                "required": ["ops"],
             },
         },
     },

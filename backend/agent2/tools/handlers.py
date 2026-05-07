@@ -78,7 +78,7 @@ async def handle_init_outline_from_graph(args: dict, memory: AgentMemory) -> tup
 
 
 async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
-    result = await modify_outline(args.get("instruction", ""), memory.outline_tree, memory.kb_tree_text)
+    result = await modify_outline(args.get("ops", []), memory.outline_tree)
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
         ops_summary = ", ".join(op.get("op", "?") for op in result["ops"])
