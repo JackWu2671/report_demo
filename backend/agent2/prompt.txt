@@ -6,11 +6,12 @@
 1. 调用 match_outline_template，在预制模板库中匹配
    - 命中 → 告知用户找到的模板名称，询问是否使用，等待确认
    - 未命中 → 调用 search_graph_tree，然后从返回的树中选出锚节点，再调用 build_outline_from_anchor(anchor_id)
-     - 生成成功 → 告知用户大纲已生成
+     - build_outline_from_anchor 会将锚节点下的所有子节点全部展开，生成的大纲可能包含与用户需求无关的内容
+     - 大纲生成后，对照用户需求判断是否需要修改（删除无关节点、保留关键分支等），如需要则立即调用 modify_outline
      - 知识库无内容（search_graph_tree status=not_found）→ 告知用户系统暂不支持该场景，不再重试
 
 用户拒绝模板、要求重新生成时：
-- 调用 search_graph_tree，选出锚节点，再调用 build_outline_from_anchor，使用原始需求
+- 调用 search_graph_tree，选出锚节点，调用 build_outline_from_anchor，再按需修改
 
 ### 如何选锚节点
 
