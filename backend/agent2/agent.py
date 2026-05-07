@@ -74,7 +74,11 @@ class Agent2:
             if choice.finish_reason == "tool_calls" and msg.tool_calls:
                 for tc in msg.tool_calls:
                     name = tc.function.name
-                    yield {"type": "step", "name": name, "status": "running"}
+                    try:
+                        args_for_display = json.loads(tc.function.arguments)
+                    except Exception:
+                        args_for_display = {}
+                    yield {"type": "step", "name": name, "status": "running", "args": args_for_display}
 
                     result_dict, llm_str = await self._execute_tool(tc)
 
@@ -92,7 +96,8 @@ class Agent2:
                             "options": ["使用此模板", "重新从知识库生成"],
                         }
 
-                    yield {"type": "step", "name": name, "status": "done"}
+                    yield {"type": "step", "name": name, "status": "done",
+                           "result": _result_display(name, result_dict)}
 
                     self.memory.add_message({
                         "role": "tool",
@@ -151,3 +156,38 @@ class Agent2:
             return {}, f"工具执行失败: {e}"
 
         return result_dict, llm_str
+
+
+# ── Display helpers ────────────────────────────────────────────
+
+def _count_nodes(tree: dict) -> int:
+    return 1 + sum(_count_nodes(c) for c in tree.get("children", []))
+
+
+def _result_display(name: str, result: dict) -> str:
+    status = result.get("status", "?")
+    if name == "match_outline_template":
+        if status == "pending_confirm":
+            return f"找到模板：{result.get('scene_name', '')}"
+        return f"未匹配：{result.get('reason', '')}"
+    if name == "search_outline_templates":
+        n = len(result.get("candidates", []))
+        return f"找到 {n} 个候选模板" if status == "found" else f"未找到：{result.get('reason', '')}"
+    if name == "load_template_outline":
+        return f"已加载：{result.get('scene_name', '')}" if status == "success" else f"未找到：{result.get('reason', '')}"
+    if name == "search_graph_tree":
+        if status == "success":
+            lines = [l for l in result.get("tree_text", "").splitlines() if l.strip()]
+            return f"返回 {len(lines)} 个节点"
+        return f"未找到：{result.get('message', '')}"
+    if name == "build_outline_from_anchor":
+        if status == "success":
+            tree = result.get("outline_tree", {})
+            return f"根节点：{tree.get('name', '')}，共 {_count_nodes(tree)} 个节点"
+        return f"失败：{result.get('message', '')}"
+    if name == "modify_outline":
+        if status == "success":
+            ops = result.get("ops", [])
+            return f"{len(ops)} 个操作：{', '.join(op.get('op', '?') for op in ops)}"
+        return f"失败：{result.get('message', '')}"
+    return status

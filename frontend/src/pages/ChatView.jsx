@@ -128,7 +128,14 @@ export default function ChatView() {
         updateAssistant(msg => {
           const steps = [...(msg.steps || [])]
           const idx = steps.findIndex(s => s.name === evt.name)
-          const entry = { name: evt.name, status: evt.status }
+          const existing = idx >= 0 ? steps[idx] : {}
+          const entry = {
+            ...existing,
+            name: evt.name,
+            status: evt.status,
+            ...(evt.args !== undefined && { args: evt.args }),
+            ...(evt.result !== undefined && { result: evt.result }),
+          }
           if (idx >= 0) steps[idx] = entry
           else steps.push(entry)
           return { ...msg, steps }
