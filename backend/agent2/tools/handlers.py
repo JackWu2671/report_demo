@@ -81,9 +81,9 @@ async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, 
     result = await modify_outline(args.get("ops", []), memory.outline_tree)
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
-        ops_summary = ", ".join(op.get("op", "?") for op in result["ops"])
         skipped = result.get("skipped", [])
-        llm_str = f"[modify_outline] status=success  ops={len(result['ops'])} ({ops_summary})"
+        op_lines = "\n".join(_format_op(op) for op in result["ops"])
+        llm_str = f"[modify_outline] status=success  ops={len(result['ops'])}\n{op_lines}"
         if skipped:
             skip_lines = "\n".join(
                 f"  - {op.get('op')} node_id={op.get('node_id')} 原因: {op.get('_skip_reason', '未知')}"
@@ -94,6 +94,21 @@ async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, 
     else:
         llm_str = f"[modify_outline] status=error  message={result['message']}"
     return result, llm_str
+
+
+def _format_op(op: dict) -> str:
+    name = op.get("op", "?")
+    if name == "add_node":
+        return f"  + add_node    node_id={op.get('node_id')}  parent_id={op.get('parent_id') or '(root)'}"
+    if name == "delete_node":
+        return f"  - delete_node node_id={op.get('node_id')}"
+    if name == "keep_only_node":
+        return f"  ✓ keep_only_node node_id={op.get('node_id')}"
+    if name == "modify_node_name":
+        return f"  ~ modify_name node_id={op.get('node_id')}  value={op.get('value')!r}"
+    if name == "modify_node_description":
+        return f"  ~ modify_desc node_id={op.get('node_id')}  value={op.get('value', '')[:60]!r}"
+    return f"  ? {name} {op}"
 
 
 HANDLERS: dict = {
