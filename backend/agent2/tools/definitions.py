@@ -82,9 +82,8 @@ TOOLS: list[dict] = [
         "function": {
             "name": "init_outline_from_graph",
             "description": (
-                "从知识库实时检索：FAISS向量检索 → 锚节点选择 → 子树展开 → 初始修正，生成报告大纲。"
-                "仅在 match_outline_template 返回 not_found 后调用，或用户明确要求重新生成。"
-                "status=not_found 表示知识库无相关内容，应告知用户系统暂不支持该场景。"
+                "基于 search_graph_tree 的检索结果，通过锚节点选择 → 子树展开 → 初始修正生成报告大纲。"
+                "必须在 search_graph_tree 成功后调用，否则会返回错误。"
             ),
             "parameters": {
                 "type": "object",
@@ -104,7 +103,8 @@ TOOLS: list[dict] = [
             "name": "search_graph_tree",
             "description": (
                 "从知识图谱中检索与问题相关的节点，返回带祖先路径的树状结构（含节点 id、描述、FAISS 命中分数）。"
-                "用于用户想直接浏览知识库中有哪些相关节点时调用。"
+                "match_outline_template 返回 not_found 后必须先调用此工具，再调用 init_outline_from_graph。"
+                "status=not_found 表示知识库无相关内容，应告知用户系统暂不支持该场景。"
             ),
             "parameters": {
                 "type": "object",

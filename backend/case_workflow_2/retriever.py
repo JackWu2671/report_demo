@@ -186,7 +186,7 @@ def candidates_to_tree_text(candidates: list[dict]) -> str:
 
 # ── 组合接口 ──────────────────────────────────────────────────
 
-async def search_graph_tree(question: str) -> list[dict]:
+async def search_graph_tree(question: str) -> tuple[list[dict], list[dict]]:
     """
     搜索知识图谱并返回树状结构，供 LLM 生成大纲时作为上下文。
 
@@ -288,7 +288,7 @@ async def search_graph_tree(question: str) -> list[dict]:
     hit_count = sum(1 for c in candidates)
     logger.info("[search_graph_tree] 返回 %d 棵根树，共 %d 个节点（%d 命中 + %d 补全）",
                 len(tree), total, hit_count, total - hit_count)
-    return tree
+    return tree, candidates
 
 
 def _count_tree(node: dict) -> int:

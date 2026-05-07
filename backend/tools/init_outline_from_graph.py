@@ -1,8 +1,8 @@
 """
 init_outline_from_graph.py — init_outline_from_graph tool implementation.
 
-Knowledge graph retrieval pipeline: FAISS search → anchor node selection → subtree expansion → patch.
-Called when match_outline_template returns not_found.
+Anchor selection + subtree expansion + initial patch.
+Requires candidates from search_graph_tree (no internal FAISS search).
 Used by: agent2
 """
 
@@ -18,7 +18,6 @@ for _p in [_BACKEND_DIR, _WF2_DIR]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from retriever import embed_query, search_nodes, build_candidate_paths
 from anchor import select_anchor
 from subtree import build_subtree
 from patcher import parse_patch, apply_patch
@@ -28,23 +27,24 @@ from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 logger = logging.getLogger(__name__)
 
 
-async def init_outline_from_graph(question: str) -> dict:
+async def init_outline_from_graph(question: str, candidates: list[dict]) -> dict:
     """
-    KB retrieval + anchor selection + subtree expansion + initial patch.
+    Anchor selection + subtree expansion + initial patch.
+
+    Args:
+        question   : user's analysis question
+        candidates : output of search_graph_tree — [{id, name, level, score, path}, ...]
 
     Returns:
         {status: "success"|"not_found", outline_tree, markdown, md_with_ids, message}
     """
-    logger.info("[Tool:init_outline_from_graph] question=%r", question)
+    logger.info("[Tool:init_outline_from_graph] question=%r, %d candidates", question, len(candidates))
 
-    query_embedding = await embed_query(question)
-    faiss_svc, nodes_dict, children_map = load_resources()
+    if not candidates:
+        return _not_found("没有可用的候选节点，请先调用 search_graph_tree。")
 
-    hits = search_nodes(query_embedding, faiss_svc)
-    if not hits:
-        return _not_found(f"知识库中未检索到与「{question}」相关的节点，系统暂不支持该分析场景。")
+    _, nodes_dict, children_map = load_resources()
 
-    candidates = build_candidate_paths(hits, nodes_dict, children_map)
     anchor = await select_anchor(question, candidates)
 
     try:

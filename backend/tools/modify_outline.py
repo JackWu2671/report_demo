@@ -23,9 +23,15 @@ from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 logger = logging.getLogger(__name__)
 
 
-async def modify_outline(instruction: str, outline_tree: dict) -> dict:
+async def modify_outline(instruction: str, outline_tree: dict, kb_tree_text: str = "") -> dict:
     """
     Parse and apply a modification instruction to the current outline.
+
+    Args:
+        instruction  : natural-language modification instruction
+        outline_tree : current outline tree dict
+        kb_tree_text : KB graph tree text from search_graph_tree, passed to
+                       parse_patch so the patcher LLM can resolve add_node requests
 
     Returns:
         {status: "success"|"error", outline_tree, markdown, md_with_ids, ops, message}
@@ -36,7 +42,7 @@ async def modify_outline(instruction: str, outline_tree: dict) -> dict:
                 "message": "当前没有可修改的大纲，请先生成大纲。"}
 
     logger.info("[Tool:modify_outline] instruction=%r", instruction)
-    ops = await parse_patch(instruction, outline_tree)
+    ops = await parse_patch(instruction, outline_tree, kb_tree_text)
     new_tree = apply_patch(outline_tree, ops)
     clean_tree = to_clean_json(new_tree)
     logger.info("[Tool:modify_outline] 完成，%d 个操作: %s",

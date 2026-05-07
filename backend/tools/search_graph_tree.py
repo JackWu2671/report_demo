@@ -52,13 +52,14 @@ async def search_graph_tree(question: str) -> dict:
     """
     logger.info("[Tool:search_graph_tree] question=%r", question)
 
-    tree = await _search_graph_tree(question)
+    tree, candidates = await _search_graph_tree(question)
 
     if not tree:
         return {
             "status": "not_found",
             "graph_tree": [],
             "tree_text": "",
+            "candidates": [],
             "message": f"知识库中未检索到与「{question}」相关的节点，系统暂不支持该分析场景。",
         }
 
@@ -68,5 +69,6 @@ async def search_graph_tree(question: str) -> dict:
         "status": "success",
         "graph_tree": tree,
         "tree_text": tree_text,
+        "candidates": candidates,
         "message": "",
     }

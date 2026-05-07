@@ -35,7 +35,7 @@ PATCH_PROMPT: str = (_PROMPT_DIR / "patch.txt").read_text(encoding="utf-8")
 
 # ── Step 8 ────────────────────────────────────────────────────
 
-async def parse_patch(user_request: str, outline_tree: dict) -> list[dict]:
+async def parse_patch(user_request: str, outline_tree: dict, kb_tree_text: str = "") -> list[dict]:
     """
     调用 LLM，将用户的自然语言修改指令翻译为结构化 patch 操作列表。
 
@@ -43,11 +43,12 @@ async def parse_patch(user_request: str, outline_tree: dict) -> list[dict]:
     - 无修改意图 → 返回 []
     - 有修改意图 → 返回 [{op, ...}, ...]
 
-    add_node op 在 LLM 输出后自动从 nodes_dict 补全 name/level/description。
+    add_node op 在 LLM 输出后自动从 nodes_dict 补全完整子树。
 
     Args:
         user_request : 用户的自然语言问题或修改指令
         outline_tree : 当前大纲树 dict
+        kb_tree_text : search_graph_tree 返回的知识图谱树文本，有值时追加到 prompt 供 add_node 使用
 
     Returns:
         patch 操作列表，可能为空列表
@@ -55,9 +56,13 @@ async def parse_patch(user_request: str, outline_tree: dict) -> list[dict]:
     llm = LLMService.from_env()
     tree_text = tree_to_id_text(outline_tree)
 
+    user_content = f"## 当前大纲\n{tree_text}\n\n## 修改指令\n{user_request}"
+    if kb_tree_text:
+        user_content += f"\n\n## 可用的知识图谱节点（用于 add_node）\n{kb_tree_text}"
+
     messages = [
         {"role": "system", "content": PATCH_PROMPT},
-        {"role": "user", "content": f"## 当前大纲\n{tree_text}\n\n## 修改指令\n{user_request}"},
+        {"role": "user", "content": user_content},
     ]
 
     logger.info(

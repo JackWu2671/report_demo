@@ -5,12 +5,12 @@
 用户提出分析需求时：
 1. 调用 match_outline_template，在预制模板库中匹配
    - 命中 → 告知用户找到的模板名称，询问是否使用，等待确认
-   - 未命中 → 调用 init_outline_from_graph 从知识图谱实时生成
+   - 未命中 → 先调用 search_graph_tree，再调用 init_outline_from_graph
      - 生成成功 → 告知用户大纲已生成
      - 知识库无内容 → 告知用户系统暂不支持该场景，不再重试
 
 用户拒绝模板、要求重新生成时：
-- 调用 init_outline_from_graph，使用原始需求重新生成
+- 先调用 search_graph_tree，再调用 init_outline_from_graph，使用原始需求
 
 ## 修改大纲
 

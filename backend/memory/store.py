@@ -14,6 +14,8 @@ class AgentMemory:
         self.outline_tree: dict = {}
         self.markdown: str = ""
         self.md_with_ids: str = ""
+        self.kb_tree_text: str = ""
+        self.kb_candidates: list[dict] = []
         self._history: list[dict] = []
 
     @property
@@ -24,6 +26,10 @@ class AgentMemory:
         self.outline_tree = outline_tree
         self.markdown = markdown
         self.md_with_ids = md_with_ids
+
+    def set_kb_tree(self, tree_text: str, candidates: list[dict]) -> None:
+        self.kb_tree_text = tree_text
+        self.kb_candidates = candidates
 
     def clear_outline(self) -> None:
         self.outline_tree = {}
