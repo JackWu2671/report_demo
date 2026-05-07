@@ -139,9 +139,15 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
                 logger.warning("[Step 9] add_node: %s，跳过", msg)
                 skipped.append({**op, "_skip_reason": msg})
                 continue
+            ids_before = _collect_ids(tree)
             added = _add_node(tree, op.get("parent_id", ""), subtree)
             if added:
                 logger.info("[Step 9] add_node: 新增节点 %s → 父节点 %s | 原因: %s", node_id, op.get("parent_id"), reason)
+                new_ids = _collect_ids(subtree)
+                duplicates = [i for i in new_ids if i in ids_before]
+                if duplicates:
+                    logger.warning("[Step 9] add_node: 新增后发现重复节点 %s", duplicates)
+                    skipped.append({**op, "_skip_reason": f"新增成功但产生了重复节点: {duplicates}，请用 delete_node 删除重复项"})
             else:
                 msg = f"未找到父节点 {op.get('parent_id')}"
                 logger.warning("[Step 9] add_node: %s", msg)
@@ -233,6 +239,16 @@ def _build_kb_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dic
             if (child := _build_kb_subtree(child_id, nodes_dict, children_map)) is not None
         ],
     }
+
+
+def _collect_ids(node: dict, result: set | None = None) -> set:
+    """递归收集树中所有节点 id。"""
+    if result is None:
+        result = set()
+    result.add(node["id"])
+    for c in node.get("children", []):
+        _collect_ids(c, result)
+    return result
 
 
 def _add_node(tree: dict, parent_id: str, new_node: dict) -> bool:

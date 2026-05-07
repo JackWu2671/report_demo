@@ -34,6 +34,15 @@
 - modify_node_description: {op, node_id, value}     — 修改节点描述（也用于写入阈值、范围等说明）
 - keep_only_node:          {op, node_id}            — 保留该节点，同级其他节点自动删除（每个保留节点单独一条）
 
+### 工具结果的处理原则
+
+每次 modify_outline 执行后，仔细检查返回的大纲和提示信息：
+- 如果返回中出现 ⚠️ 警告（有操作未执行或产生重复节点），必须在下一步继续调用工具补救，不要直接告知用户已完成
+- add_node 后若提示产生了重复节点，立即用 delete_node 删除重复项
+- 若需要补充知识库中的节点但不确定 node_id，先调用 search_graph_tree 查找，再 modify_outline
+
+search_graph_tree 和 modify_outline 可以在一轮对话中多次组合调用，直到大纲完全符合用户意图再回复。
+
 ## 浏览模板 / 知识库
 
 - 用户想查看有哪些可用模板 → 调用 search_outline_templates，列出候选后可用 load_template_outline 加载具体大纲
