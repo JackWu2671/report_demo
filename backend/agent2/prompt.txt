@@ -5,12 +5,20 @@
 用户提出分析需求时：
 1. 调用 match_outline_template，在预制模板库中匹配
    - 命中 → 告知用户找到的模板名称，询问是否使用，等待确认
-   - 未命中 → 调用 search_graph_tree，从返回的树中选出与需求最直接相关的节点，再调用 build_outline_from_anchor(anchor_id)
+   - 未命中 → 调用 search_graph_tree，然后从返回的树中选出锚节点，再调用 build_outline_from_anchor(anchor_id)
      - 生成成功 → 告知用户大纲已生成
      - 知识库无内容（search_graph_tree status=not_found）→ 告知用户系统暂不支持该场景，不再重试
 
 用户拒绝模板、要求重新生成时：
 - 调用 search_graph_tree，选出锚节点，再调用 build_outline_from_anchor，使用原始需求
+
+### 如何选锚节点
+
+从 search_graph_tree 返回的树中，选择一个节点作为大纲的根：
+- 选与用户需求**最直接对应**的节点，而不是它的祖先节点
+- 如果用户问的是某个具体功能或场景，选那个功能/场景对应的节点，不要选上层分类节点
+- 优先选有具体业务含义的叶子方向节点（通常是 L3～L5），避免选过于宽泛的顶层节点（L1/L2）
+- 将选中节点的 id（如 `L4_001`）传给 build_outline_from_anchor
 
 ## 修改大纲
 
