@@ -41,7 +41,7 @@ async def modify_outline(ops: list[dict], outline_tree: dict) -> dict:
                 "message": "当前没有可修改的大纲，请先生成大纲。"}
 
     logger.info("[Tool:modify_outline] %d 个操作: %s", len(ops), [op.get("op") for op in ops])
-    new_tree = apply_patch(outline_tree, ops)
+    new_tree, skipped = apply_patch(outline_tree, ops)
     clean_tree = to_clean_json(new_tree)
     return {
         "status": "success",
@@ -49,5 +49,6 @@ async def modify_outline(ops: list[dict], outline_tree: dict) -> dict:
         "markdown": to_markdown(clean_tree),
         "md_with_ids": to_markdown_with_ids(clean_tree),
         "ops": ops,
+        "skipped": skipped,
         "message": "",
     }

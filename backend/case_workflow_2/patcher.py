@@ -92,21 +92,17 @@ async def parse_patch(user_request: str, outline_tree: dict, kb_tree_text: str =
 
 # ── Step 9 ────────────────────────────────────────────────────
 
-def apply_patch(outline_tree: dict, ops: list[dict]) -> dict:
+def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
     """
-    将 patch 操作列表应用到大纲树，返回修改后的新树（原树不变）。
-
-    keep_only_node 操作汇总后统一处理：收集所有 node_id 组成 keep_set，
-    按层级从高到低依次删除各节点的非 keep_set 兄弟节点。
-
-    Args:
-        outline_tree : 当前大纲树 dict
-        ops          : parse_patch() 返回的操作列表
+    将 patch 操作列表应用到大纲树，返回 (新树, 跳过/失败的操作列表)。
 
     Returns:
-        deepcopy 后修改过的新树 dict
+        (tree, skipped)
+          tree    : deepcopy 后修改过的新树 dict
+          skipped : 未成功执行的操作列表，每项含 op / node_id / reason 字段
     """
     tree = copy.deepcopy(outline_tree)
+    skipped: list[dict] = []
 
     # 懒加载 KB 资源，仅当存在 add_node op 时才加载
     _kb_cache: dict | None = None
@@ -139,39 +135,50 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> dict:
                 kb = _get_kb()
                 subtree = _build_kb_subtree(node_id, kb["nodes_dict"], kb["children_map"])
             if not subtree:
-                logger.warning("[Step 9] add_node: 节点 %s 在知识图谱中不存在，跳过", node_id)
+                msg = f"节点 {node_id} 在知识图谱中不存在"
+                logger.warning("[Step 9] add_node: %s，跳过", msg)
+                skipped.append({**op, "_skip_reason": msg})
                 continue
             added = _add_node(tree, op.get("parent_id", ""), subtree)
             if added:
                 logger.info("[Step 9] add_node: 新增节点 %s → 父节点 %s | 原因: %s", node_id, op.get("parent_id"), reason)
             else:
-                logger.warning("[Step 9] add_node: 未找到父节点 %s", op.get("parent_id"))
+                msg = f"未找到父节点 {op.get('parent_id')}"
+                logger.warning("[Step 9] add_node: %s", msg)
+                skipped.append({**op, "_skip_reason": msg})
 
         elif op_name == "delete_node":
             removed = _delete_node(tree, node_id)
             if removed:
                 logger.info("[Step 9] delete_node: 已删除节点 %s | 原因: %s", node_id, reason)
             else:
+                msg = f"节点 {node_id} 不存在"
                 logger.warning("[Step 9] delete_node: 未找到节点 %s", node_id)
+                skipped.append({**op, "_skip_reason": msg})
 
         elif op_name == "modify_node_name":
             found = _modify_field(tree, node_id, "name", op.get("value", ""))
             if found:
                 logger.info("[Step 9] modify_node_name: 节点 %s | 原因: %s", node_id, reason)
             else:
+                msg = f"节点 {node_id} 不存在"
                 logger.warning("[Step 9] modify_node_name: 未找到节点 %s", node_id)
+                skipped.append({**op, "_skip_reason": msg})
 
         elif op_name == "modify_node_description":
             found = _modify_field(tree, node_id, "description", op.get("value", ""))
             if found:
                 logger.info("[Step 9] modify_node_description: 节点 %s | 原因: %s", node_id, reason)
             else:
+                msg = f"节点 {node_id} 不存在"
                 logger.warning("[Step 9] modify_node_description: 未找到节点 %s", node_id)
+                skipped.append({**op, "_skip_reason": msg})
 
         else:
             logger.warning("[Step 9] 未知操作: %s", op_name)
+            skipped.append({**op, "_skip_reason": f"未知操作类型 {op_name}"})
 
-    return tree
+    return tree, skipped
 
 
 # ── 内部工具 ──────────────────────────────────────────────────

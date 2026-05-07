@@ -82,8 +82,15 @@ async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, 
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
         ops_summary = ", ".join(op.get("op", "?") for op in result["ops"])
-        llm_str = (f"[modify_outline] status=success  ops={len(result['ops'])} ({ops_summary})\n\n"
-                   f"{result['md_with_ids']}")
+        skipped = result.get("skipped", [])
+        llm_str = f"[modify_outline] status=success  ops={len(result['ops'])} ({ops_summary})"
+        if skipped:
+            skip_lines = "\n".join(
+                f"  - {op.get('op')} node_id={op.get('node_id')} 原因: {op.get('_skip_reason', '未知')}"
+                for op in skipped
+            )
+            llm_str += (f"\n\n⚠️ 以下 {len(skipped)} 个操作未执行，请在下一步补救：\n{skip_lines}")
+        llm_str += f"\n\n{result['md_with_ids']}"
     else:
         llm_str = f"[modify_outline] status=error  message={result['message']}"
     return result, llm_str

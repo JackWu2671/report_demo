@@ -75,7 +75,7 @@ async def modify(user_request: str, outline_tree: dict) -> tuple[dict, str]:
     对已有大纲执行修改：LLM 解析指令 → 应用 patch → 重新渲染。
     """
     ops = await parse_patch(user_request, outline_tree)
-    new_tree = apply_patch(outline_tree, ops)
+    new_tree, _ = apply_patch(outline_tree, ops)
     return new_tree, render_outline(new_tree)
 
 
