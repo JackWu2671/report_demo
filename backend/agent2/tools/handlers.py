@@ -25,7 +25,7 @@ async def handle_match_outline_template(args: dict, memory: AgentMemory) -> tupl
         llm_str = (
             f"[match_outline_template] status=pending_confirm  scene={result['scene_name']}\n"
             f"大纲已预览，请询问用户：使用此模板还是重新从知识库生成？\n\n"
-            f"{result['md_with_ids']}"
+            f"当前大纲：\n{result['md_with_ids']}"
         )
     else:
         llm_str = f"[match_outline_template] status=not_found  reason={result['reason']}"
@@ -50,7 +50,7 @@ async def handle_load_template_outline(args: dict, memory: AgentMemory) -> tuple
         llm_str = (
             f"[load_template_outline] status=success  scene={result['scene_name']}\n"
             f"大纲已加载，请询问用户是否满意或需要调整。\n\n"
-            f"{result['md_with_ids']}"
+            f"当前大纲：\n{result['md_with_ids']}"
         )
     else:
         llm_str = f"[load_template_outline] status=not_found  reason={result['reason']}"
@@ -71,7 +71,7 @@ async def handle_build_outline_from_anchor(args: dict, memory: AgentMemory) -> t
     result = await build_outline_from_anchor(args.get("anchor_id", ""))
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
-        llm_str = f"[build_outline_from_anchor] status=success\n\n{result['md_with_ids']}"
+        llm_str = f"[build_outline_from_anchor] status=success\n\n当前大纲：\n{result['md_with_ids']}"
     else:
         llm_str = f"[build_outline_from_anchor] status=not_found  message={result['message']}"
     return result, llm_str
@@ -90,7 +90,7 @@ async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, 
                 for op in skipped
             )
             llm_str += (f"\n\n⚠️ 以下 {len(skipped)} 个操作未执行，请在下一步补救：\n{skip_lines}")
-        llm_str += f"\n\n{result['md_with_ids']}"
+        llm_str += f"\n\n当前大纲：\n{result['md_with_ids']}"
     else:
         llm_str = f"[modify_outline] status=error  message={result['message']}"
     return result, llm_str
