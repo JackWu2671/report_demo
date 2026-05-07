@@ -97,7 +97,8 @@ class Agent2:
                         }
 
                     yield {"type": "step", "name": name, "status": "done",
-                           "result": _result_display(name, result_dict)}
+                           "result": _result_display(name, result_dict),
+                           "detail": llm_str}
 
                     self.memory.add_message({
                         "role": "tool",

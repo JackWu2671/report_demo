@@ -39,7 +39,8 @@ function StepRow({ s }) {
         {open && (
           <span className="wf-step__detail">
             {argStr && <span className="wf-step__detail-row"><span className="wf-step__detail-label">入参</span>{argStr}</span>}
-            {s.result && <span className="wf-step__detail-row"><span className="wf-step__detail-label">返回</span>{s.result}</span>}
+            {s.result && <span className="wf-step__detail-row"><span className="wf-step__detail-label">摘要</span>{s.result}</span>}
+            {s.detail && <pre className="wf-step__detail-full">{s.detail}</pre>}
           </span>
         )}
       </span>
