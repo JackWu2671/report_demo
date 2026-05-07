@@ -5,7 +5,7 @@ Six tools, in the order the agent should try them for a new outline request:
   1. match_outline_template    — vector search + LLM judge on pre-built templates
   2. search_outline_templates  — vector search only, returns top-N candidates (no LLM)
   3. load_template_outline     — load full outline for a specific template by scene_name
-  4. init_outline_from_graph   — FAISS → anchor → subtree (when no template matches)
+  4. build_outline_from_anchor — pure-Python subtree expand from agent-selected anchor node
   5. search_graph_tree         — FAISS search KB → build ancestor paths → return tree
   6. modify_outline            — patch current outline via natural-language instruction
 """
@@ -17,7 +17,7 @@ TOOLS: list[dict] = [
             "name": "match_outline_template",
             "description": (
                 "在预制大纲模板库中检索并由 LLM 判断最匹配的模板，决策是否可复用。"
-                "status=pending_confirm 表示找到可用模板；status=not_found 表示无匹配，需改用 init_outline_from_graph。"
+                "status=pending_confirm 表示找到可用模板；status=not_found 表示无匹配，需改用 search_graph_tree → build_outline_from_anchor。"
                 "用户提出新的分析需求时，优先调用此工具。"
             ),
             "parameters": {
@@ -80,20 +80,21 @@ TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "init_outline_from_graph",
+            "name": "build_outline_from_anchor",
             "description": (
-                "基于 search_graph_tree 的检索结果，通过锚节点选择 → 子树展开 → 初始修正生成报告大纲。"
-                "必须在 search_graph_tree 成功后调用，否则会返回错误。"
+                "以指定节点为根，从知识图谱展开子树，生成初始报告大纲。"
+                "必须在 search_graph_tree 成功后，从返回的树中选出最相关节点的 id，再调用此工具。"
+                "anchor_id 取自 search_graph_tree 返回的树节点 id 字段，选择与用户需求最直接相关的节点。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "question": {
+                    "anchor_id": {
                         "type": "string",
-                        "description": "用户的分析需求描述，原文传入",
+                        "description": "锚节点 id，从 search_graph_tree 返回的树中选取，如 'L4_001'",
                     }
                 },
-                "required": ["question"],
+                "required": ["anchor_id"],
             },
         },
     },
@@ -103,7 +104,7 @@ TOOLS: list[dict] = [
             "name": "search_graph_tree",
             "description": (
                 "从知识图谱中检索与问题相关的节点，返回带祖先路径的树状结构（含节点 id、描述、FAISS 命中分数）。"
-                "match_outline_template 返回 not_found 后必须先调用此工具，再调用 init_outline_from_graph。"
+                "match_outline_template 返回 not_found 后必须先调用此工具，再从结果树中选锚节点调用 build_outline_from_anchor。"
                 "status=not_found 表示知识库无相关内容，应告知用户系统暂不支持该场景。"
             ),
             "parameters": {
