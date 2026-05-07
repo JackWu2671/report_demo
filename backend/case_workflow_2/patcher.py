@@ -141,17 +141,16 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
                 continue
             ids_before = _collect_ids(tree)
             added = _add_node(tree, op.get("parent_id", ""), subtree)
-            if added:
-                logger.info("[Step 9] add_node: 新增节点 %s → 父节点 %s | 原因: %s", node_id, op.get("parent_id"), reason)
-                new_ids = _collect_ids(subtree)
-                duplicates = [i for i in new_ids if i in ids_before]
-                if duplicates:
-                    logger.warning("[Step 9] add_node: 新增后发现重复节点 %s", duplicates)
-                    skipped.append({**op, "_skip_reason": f"新增成功但产生了重复节点: {duplicates}，请用 delete_node 删除重复项"})
+            if not added:
+                tree.setdefault("children", []).append(subtree)
+                logger.info("[Step 9] add_node: 未找到父节点 %s，已挂到根节点下", op.get("parent_id"))
             else:
-                msg = f"未找到父节点 {op.get('parent_id')}"
-                logger.warning("[Step 9] add_node: %s", msg)
-                skipped.append({**op, "_skip_reason": msg})
+                logger.info("[Step 9] add_node: 新增节点 %s → 父节点 %s | 原因: %s", node_id, op.get("parent_id"), reason)
+            new_ids = _collect_ids(subtree)
+            duplicates = [i for i in new_ids if i in ids_before]
+            if duplicates:
+                logger.warning("[Step 9] add_node: 新增后发现重复节点 %s", duplicates)
+                skipped.append({**op, "_skip_reason": f"新增成功但产生了重复节点: {duplicates}，请用 delete_node 删除重复项"})
 
         elif op_name == "delete_node":
             removed = _delete_node(tree, node_id)
