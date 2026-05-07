@@ -7,7 +7,7 @@ build ancestor paths → assemble tree dict list.
 Returns the KB graph tree as structured data and a formatted text
 representation for LLM consumption.
 
-Used by: agent2 (replacing build_outline_from_anchor as step 1 of 2)
+Used by: agent2
 """
 
 import logging

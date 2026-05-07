@@ -11,7 +11,7 @@ import logging
 
 from memory.store import AgentMemory
 from tools.search_template import match_outline_template, search_outline_templates, load_template_outline
-from tools.build_outline_from_anchor import build_outline_from_anchor
+from tools.init_outline_from_graph import init_outline_from_graph
 from tools.search_graph_tree import search_graph_tree
 from tools.modify_outline import modify_outline
 
@@ -57,13 +57,13 @@ async def handle_load_template_outline(args: dict, memory: AgentMemory) -> tuple
     return result, llm_str
 
 
-async def handle_build_outline_from_anchor(args: dict, memory: AgentMemory) -> tuple[dict, str]:
-    result = await build_outline_from_anchor(args.get("question", ""))
+async def handle_init_outline_from_graph(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    result = await init_outline_from_graph(args.get("question", ""))
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
-        llm_str = f"[build_outline_from_anchor] status=success\n\n{result['md_with_ids']}"
+        llm_str = f"[init_outline_from_graph] status=success\n\n{result['md_with_ids']}"
     else:
-        llm_str = f"[build_outline_from_anchor] status=not_found  message={result['message']}"
+        llm_str = f"[init_outline_from_graph] status=not_found  message={result['message']}"
     return result, llm_str
 
 
@@ -92,7 +92,7 @@ HANDLERS: dict = {
     "match_outline_template": handle_match_outline_template,
     "search_outline_templates": handle_search_outline_templates,
     "load_template_outline": handle_load_template_outline,
-    "build_outline_from_anchor": handle_build_outline_from_anchor,
+    "init_outline_from_graph": handle_init_outline_from_graph,
     "search_graph_tree": handle_search_graph_tree,
     "modify_outline": handle_modify_outline,
 }

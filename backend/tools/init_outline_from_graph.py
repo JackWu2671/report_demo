@@ -1,7 +1,7 @@
 """
-build_outline_from_anchor.py — build_outline_from_anchor tool implementation.
+init_outline_from_graph.py — init_outline_from_graph tool implementation.
 
-KB retrieval pipeline: FAISS search → anchor node selection → subtree expansion → patch.
+Knowledge graph retrieval pipeline: FAISS search → anchor node selection → subtree expansion → patch.
 Called when match_outline_template returns not_found.
 Used by: agent2
 """
@@ -28,14 +28,14 @@ from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 logger = logging.getLogger(__name__)
 
 
-async def build_outline_from_anchor(question: str) -> dict:
+async def init_outline_from_graph(question: str) -> dict:
     """
     KB retrieval + anchor selection + subtree expansion + initial patch.
 
     Returns:
         {status: "success"|"not_found", outline_tree, markdown, md_with_ids, message}
     """
-    logger.info("[Tool:build_outline_from_anchor] question=%r", question)
+    logger.info("[Tool:init_outline_from_graph] question=%r", question)
 
     query_embedding = await embed_query(question)
     faiss_svc, nodes_dict, children_map = load_resources()
@@ -57,7 +57,7 @@ async def build_outline_from_anchor(question: str) -> dict:
         tree = apply_patch(tree, ops)
 
     clean_tree = to_clean_json(tree)
-    logger.info("[Tool:build_outline_from_anchor] 完成，%d 字", len(to_markdown(clean_tree)))
+    logger.info("[Tool:init_outline_from_graph] 完成，%d 字", len(to_markdown(clean_tree)))
     return {
         "status": "success",
         "outline_tree": clean_tree,
