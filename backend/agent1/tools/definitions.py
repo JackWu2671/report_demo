@@ -35,7 +35,8 @@ TOOLS: list[dict] = [
         "function": {
             "name": "set_outline_from_markdown",
             "description": (
-                "将 LLM 构造的 md_with_ids 格式大纲文本解析为结构化大纲并渲染到前端。"
+                "将 LLM 构造的 md_with_ids 格式大纲文本解析为结构化大纲并渲染到前端，供专家直接查看。"
+                "调用后大纲将立即展示给专家，请确认内容完整、结构正确后再调用。"
                 "L2/L3/L4 层级由 LLM 按专家意图自由设计；L5 必须引用 search_graph_tree 返回的知识库节点 id。"
                 "调用此工具后，必须紧接着调用 set_scene_metadata 填写所有场景元数据。"
             ),
