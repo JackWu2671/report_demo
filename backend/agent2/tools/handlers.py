@@ -22,8 +22,12 @@ async def handle_search_outline_templates(args: dict, memory: AgentMemory) -> tu
     """仅做向量检索，返回 top-N 候选模板列表，不经 LLM 判断。"""
     result = await search_outline_templates(args.get("question", ""), args.get("top_k", 5))
     if result["status"] == "found":
-        lines = [f"  {i+1}. {c['scene_name']} (score={c['score']}) — {c.get('summary', '')}"
-                 for i, c in enumerate(result["candidates"])]
+        lines = [
+            f"  {i+1}. id={c['id']}  scene_name={c['scene_name']}  score={c['score']}\n"
+            f"      summary: {c.get('summary', '')}\n"
+            f"      usage_conditions: {c.get('usage_conditions', '')}"
+            for i, c in enumerate(result["candidates"])
+        ]
         llm_str = f"[search_outline_templates] 找到 {len(result['candidates'])} 个候选:\n" + "\n".join(lines)
     else:
         llm_str = f"[search_outline_templates] status=not_found  reason={result['reason']}"
