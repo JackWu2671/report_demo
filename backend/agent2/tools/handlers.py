@@ -31,8 +31,8 @@ async def handle_search_outline_templates(args: dict, memory: AgentMemory) -> tu
 
 
 async def handle_load_template_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
-    """按模板名称直接加载指定模板的完整大纲，将大纲写入 memory。"""
-    result = load_template_outline(args.get("scene_name", ""))
+    """按模板 id 直接加载指定模板的完整大纲，将大纲写入 memory。"""
+    result = load_template_outline(args.get("template_id", ""))
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
         llm_str = (

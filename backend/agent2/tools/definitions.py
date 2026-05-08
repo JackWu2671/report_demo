@@ -40,19 +40,19 @@ TOOLS: list[dict] = [
         "function": {
             "name": "load_template_outline",
             "description": (
-                "按模板名称直接加载指定模板的完整大纲内容。"
+                "按模板 id 直接加载指定模板的完整大纲内容。"
                 "在 search_outline_templates 返回候选后，判断有匹配时调用此工具加载大纲，再询问用户是否使用。"
-                "scene_name 必须与 search_outline_templates 返回的候选名称完全一致。"
+                "template_id 必须取自 search_outline_templates 返回的候选列表中的 id 字段。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "scene_name": {
+                    "template_id": {
                         "type": "string",
-                        "description": "模板场景名称，与候选列表中的 scene_name 完全一致",
+                        "description": "模板唯一 id，取自 search_outline_templates 返回的候选列表中的 id 字段",
                     },
                 },
-                "required": ["scene_name"],
+                "required": ["template_id"],
             },
         },
     },

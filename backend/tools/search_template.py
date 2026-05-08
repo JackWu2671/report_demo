@@ -58,6 +58,7 @@ async def search_outline_templates(question: str, top_k: int = 5) -> dict:
         "status": "found",
         "candidates": [
             {
+                "id": t.get("id", ""),
                 "scene_name": t.get("scene_name", ""),
                 "summary": t.get("summary", ""),
                 "usage_conditions": t.get("usage_conditions", ""),
@@ -106,45 +107,45 @@ async def match_outline_template(question: str) -> dict:
     }
 
 
-def load_template_outline(scene_name: str) -> dict:
+def load_template_outline(template_id: str) -> dict:
     """
-    Load the full outline for a specific template by its scene_name.
-
-    Skips vector search and LLM judgment — direct lookup by name.
-    Use when the user has already seen a candidate list and wants to
-    preview one specific template's structure.
+    按模板 id 直接加载完整大纲（O(1) 文件查找）。
 
     Returns:
         status="success"   — outline_tree / markdown / md_with_ids populated
-        status="not_found" — no template with that scene_name exists
+        status="not_found" — 无对应 id 的模板
     """
-    logger.info("[Tool:load_template_outline] scene_name=%r", scene_name)
+    logger.info("[Tool:load_template_outline] template_id=%r", template_id)
 
     if not os.path.isdir(_TEMPLATE_DIR):
         return _not_found("模板目录不存在")
 
-    for path in sorted(Path(_TEMPLATE_DIR).glob("*.json")):
-        try:
-            with open(path, encoding="utf-8") as f:
-                t = json.load(f)
-        except Exception:
-            continue
-        if t.get("scene_name") == scene_name:
-            raw_tree = t.get("outline", {})
-            if not raw_tree:
-                return _not_found(f"模板「{scene_name}」缺少 outline 字段")
-            clean_tree = to_clean_json(raw_tree)
-            wrapped = {"id": "__root__", "name": "", "level": 0, "description": "", "children": [clean_tree]}
-            logger.info("[Tool:load_template_outline] 已加载: %s", scene_name)
-            return {
-                "status": "success",
-                "outline_tree": wrapped,
-                "markdown": to_markdown(wrapped),
-                "md_with_ids": to_markdown_with_ids(wrapped),
-                "scene_name": scene_name,
-            }
+    path = os.path.join(_TEMPLATE_DIR, f"{template_id}.json")
+    if not os.path.isfile(path):
+        return _not_found(f"未找到 id={template_id} 的模板")
 
-    return _not_found(f"未找到名为「{scene_name}」的模板")
+    try:
+        with open(path, encoding="utf-8") as f:
+            t = json.load(f)
+    except Exception as e:
+        return _not_found(f"模板文件读取失败: {e}")
+
+    raw_tree = t.get("outline", {})
+    if not raw_tree:
+        return _not_found(f"模板 id={template_id} 缺少 outline 字段")
+
+    clean_tree = to_clean_json(raw_tree)
+    wrapped = {"id": "__root__", "name": "", "level": 0, "description": "", "children": [clean_tree]}
+    scene_name = t.get("scene_name", "")
+    logger.info("[Tool:load_template_outline] 已加载: %s (id=%s)", scene_name, template_id)
+    return {
+        "status": "success",
+        "outline_tree": wrapped,
+        "markdown": to_markdown(wrapped),
+        "md_with_ids": to_markdown_with_ids(wrapped),
+        "scene_name": scene_name,
+        "template_id": template_id,
+    }
 
 
 def _not_found(reason: str) -> dict:

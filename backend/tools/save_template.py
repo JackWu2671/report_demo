@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 from datetime import datetime
 
 _TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -47,8 +48,10 @@ async def save_outline_template(extraction: dict, outline_tree: dict) -> dict:
         return {"status": "error", "path": "", "scene_name": "",
                 "message": "当前没有大纲，请先调用 analyze_expert_knowledge。"}
 
+    template_id = str(uuid.uuid4())
     scene_name = extraction["scene_name"]
     template = {
+        "id": template_id,
         "scene_name": scene_name,
         "keywords": extraction.get("keywords", []),
         "summary": extraction.get("summary", ""),
@@ -58,10 +61,11 @@ async def save_outline_template(extraction: dict, outline_tree: dict) -> dict:
     }
 
     os.makedirs(_TEMPLATE_DIR, exist_ok=True)
-    path = os.path.join(_TEMPLATE_DIR, f"{scene_name}.json")
+    path = os.path.join(_TEMPLATE_DIR, f"{template_id}.json")
 
     with open(path, "w", encoding="utf-8") as f:
         json.dump(template, f, ensure_ascii=False, indent=2)
 
-    logger.info("[Tool:save_outline_template] 已保存: %s", path)
-    return {"status": "success", "path": path, "scene_name": scene_name, "message": ""}
+    logger.info("[Tool:save_outline_template] 已保存: %s (id=%s)", path, template_id)
+    return {"status": "success", "path": path, "scene_name": scene_name,
+            "template_id": template_id, "message": ""}
