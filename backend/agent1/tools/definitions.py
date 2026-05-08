@@ -1,11 +1,12 @@
 """
 definitions.py — agent1 的 OpenAI 工具 schema 定义。
 
-共四个工具，按专家知识沉淀流程排列：
+共五个工具，按专家知识沉淀流程排列：
   1. search_graph_tree         — FAISS 检索知识库，返回带祖先路径的树状结构
-  2. set_outline_from_markdown — LLM 构造 md_with_ids 文本后调此工具渲染为大纲
-  3. modify_outline            — 对当前大纲执行结构化 patch 操作
-  4. save_outline_template     — 将当前大纲保存为可复用模板
+  2. set_outline_from_markdown — LLM 构造 md_with_ids 文本后调此工具渲染为大纲（含 scene_name / summary）
+  3. set_scene_metadata        — 补充关键词和适用条件
+  4. modify_outline            — 对当前大纲执行结构化 patch 操作
+  5. save_outline_template     — 将当前大纲保存为可复用模板
 """
 
 TOOLS: list[dict] = [
@@ -34,9 +35,9 @@ TOOLS: list[dict] = [
         "function": {
             "name": "set_outline_from_markdown",
             "description": (
-                "将 LLM 构造的 md_with_ids 格式大纲文本解析为结构化大纲，渲染到前端，并记录场景元数据。"
+                "将 LLM 构造的 md_with_ids 格式大纲文本解析为结构化大纲，渲染到前端，并记录 scene_name / summary。"
                 "L2/L3/L4 层级由 LLM 按专家意图自由设计；L5 必须引用 search_graph_tree 返回的知识库节点 id。"
-                "md_with_ids 格式：每行 {缩进}[L{层级} {节点id}] {节点名称}，缩进每层两个空格。"
+                "调用此工具后，必须紧接着调用 set_scene_metadata 补充关键词和适用条件。"
             ),
             "parameters": {
                 "type": "object",
@@ -48,15 +49,6 @@ TOOLS: list[dict] = [
                     "summary": {
                         "type": "string",
                         "description": "一句话场景摘要，不超过 50 字，概括本次分析的核心目标",
-                    },
-                    "keywords": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "3～8 个核心领域关键词，名词短语为主，代表分析维度、评估指标或技术名词",
-                    },
-                    "usage_conditions": {
-                        "type": "string",
-                        "description": "适用条件，说明在什么业务场景下适合使用这份大纲，以及有哪些前提要求，不超过 80 字",
                     },
                     "md_with_ids": {
                         "type": "string",
@@ -70,7 +62,32 @@ TOOLS: list[dict] = [
                         ),
                     },
                 },
-                "required": ["scene_name", "summary", "keywords", "usage_conditions", "md_with_ids"],
+                "required": ["scene_name", "summary", "md_with_ids"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_scene_metadata",
+            "description": (
+                "补充场景的关键词和适用条件，在 set_outline_from_markdown 之后立即调用。"
+                "这两项信息仅在保存模板时使用，与大纲渲染解耦。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "3～8 个核心领域关键词，名词短语为主，代表分析维度、评估指标或技术名词",
+                    },
+                    "usage_conditions": {
+                        "type": "string",
+                        "description": "适用条件，说明在什么业务场景下适合使用这份大纲，以及有哪些前提要求，不超过 80 字",
+                    },
+                },
+                "required": ["keywords", "usage_conditions"],
             },
         },
     },

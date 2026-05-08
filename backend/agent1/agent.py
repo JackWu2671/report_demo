@@ -138,6 +138,10 @@ def _result_display(name: str, result: dict) -> str:
             ext = result.get("extraction", {})
             return f"场景：{ext.get('scene_name', '')}，大纲已渲染"
         return f"失败：{result.get('message', '')}"
+    if name == "set_scene_metadata":
+        if status == "success":
+            return f"关键词：{', '.join(result.get('keywords', []))}；适用条件已记录"
+        return f"失败：{result.get('message', '')}"
     if name == "modify_outline":
         if status == "success":
             ops = result.get("ops", [])

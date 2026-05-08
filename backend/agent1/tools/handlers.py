@@ -10,6 +10,7 @@ import logging
 from agent1.memory import Agent1Memory
 from tools.search_graph_tree import search_graph_tree
 from tools.set_outline_from_markdown import set_outline_from_markdown
+from tools.set_scene_metadata import set_scene_metadata
 from tools.modify_outline import modify_outline
 from tools.save_template import save_outline_template
 
@@ -28,24 +29,44 @@ async def handle_search_graph_tree(args: dict, memory: Agent1Memory) -> tuple[di
 
 
 async def handle_set_outline_from_markdown(args: dict, memory: Agent1Memory) -> tuple[dict, str]:
-    """解析 LLM 构造的 md_with_ids 文本，将大纲和场景元数据写入 memory。"""
+    """解析 LLM 构造的 md_with_ids 文本，将大纲写入 memory，同时记录 scene_name 和 summary。"""
     result = await set_outline_from_markdown(
         md_with_ids=args.get("md_with_ids", ""),
         scene_name=args.get("scene_name", ""),
-        keywords=args.get("keywords", []),
         summary=args.get("summary", ""),
-        usage_conditions=args.get("usage_conditions", ""),
     )
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
         memory.set_extraction(result["extraction"])
         llm_str = (
             f"[set_outline_from_markdown] status=success  scene={result['extraction']['scene_name']}\n"
-            f"大纲已渲染，请询问专家是否需要修改或保存。\n\n"
+            f"大纲已渲染。接下来请调用 set_scene_metadata 填写关键词和适用条件。\n\n"
             f"当前大纲：\n{result['md_with_ids']}"
         )
     else:
         llm_str = f"[set_outline_from_markdown] status=error  message={result['message']}"
+    return result, llm_str
+
+
+async def handle_set_scene_metadata(args: dict, memory: Agent1Memory) -> tuple[dict, str]:
+    """将关键词和适用条件合并写入 memory，供后续 save_outline_template 使用。"""
+    result = await set_scene_metadata(
+        keywords=args.get("keywords", []),
+        usage_conditions=args.get("usage_conditions", ""),
+    )
+    if result["status"] == "success":
+        memory.set_extraction({
+            "keywords": result["keywords"],
+            "usage_conditions": result["usage_conditions"],
+        })
+        llm_str = (
+            f"[set_scene_metadata] status=success\n"
+            f"关键词：{', '.join(result['keywords'])}\n"
+            f"适用条件：{result['usage_conditions']}\n"
+            f"元数据已记录，请询问专家是否需要修改或保存。"
+        )
+    else:
+        llm_str = f"[set_scene_metadata] status=error  message={result['message']}"
     return result, llm_str
 
 
@@ -102,6 +123,7 @@ def _format_op(op: dict) -> str:
 HANDLERS: dict = {
     "search_graph_tree":         handle_search_graph_tree,
     "set_outline_from_markdown": handle_set_outline_from_markdown,
+    "set_scene_metadata":        handle_set_scene_metadata,
     "modify_outline":            handle_modify_outline,
     "save_outline_template":     handle_save_outline_template,
 }

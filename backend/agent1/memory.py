@@ -29,7 +29,8 @@ class Agent1Memory(AgentMemory):
         return bool(self.extraction)
 
     def set_extraction(self, extraction: dict) -> None:
-        self.extraction = extraction
+        """合并写入 extraction，保留已有字段（支持 set_outline / set_metadata 分步调用）。"""
+        self.extraction = {**self.extraction, **extraction}
 
     def reset(self) -> None:
         super().reset()
