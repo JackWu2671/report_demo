@@ -90,7 +90,7 @@ TOOLS: list[dict] = [
                         "description": (
                             "操作列表，每条操作包含 op 字段和对应参数。每次只传一个 op。\n"
                             "支持的操作：\n"
-                            "- add_node: {op, node_id, parent_id} — 从知识图谱新增节点；顶层章节 parent_id 传 \"\"\n"
+                            "- add_node: {op, node_id, parent_id} — 新增知识库已有节点（node_id 必须来自 search_graph_tree 返回结果，不可新建）；顶层章节 parent_id 传 \"\"\n"
                             "- delete_node: {op, node_id} — 删除节点及其子树\n"
                             "- modify_node_name: {op, node_id, value} — 修改节点名称\n"
                             "- modify_node_description: {op, node_id, value} — 修改节点描述\n"

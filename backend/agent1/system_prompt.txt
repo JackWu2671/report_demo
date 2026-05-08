@@ -105,7 +105,7 @@
 需要修改时，通过 modify_outline 传入结构化 ops。**每次调用只传一个 op**。
 
 支持的 op 类型（node_id 取自当前大纲）：
-- add_node:                {op, node_id, parent_id} — 新增知识库节点；顶层章节 parent_id 传 ""
+- add_node:                {op, node_id, parent_id} — 新增**知识库已有**节点；node_id 必须来自 search_graph_tree 返回结果，不可新建；顶层章节 parent_id 传 ""
 - delete_node:             {op, node_id}            — 删除节点及其子树
 - modify_node_name:        {op, node_id, value}     — 修改节点名称
 - modify_node_description: {op, node_id, value}     — 修改节点描述
