@@ -44,12 +44,18 @@ async def set_outline_from_markdown(md_with_ids: str) -> dict:
             continue
         indent, level, node_id, rest = m.groups()
         depth = len(indent) // 2
+
+        condition = ''
+        if '｜条件：' in rest:
+            rest, condition = rest.split('｜条件：', 1)
+
         name, _, description = rest.partition('：')
         node = {
             'id': node_id.strip(),
             'name': name.strip(),
             'level': int(level),
             'description': description.strip(),
+            'condition': condition.strip(),
             'children': [],
         }
         while stack and stack[-1][0] >= depth:

@@ -184,6 +184,15 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
                 logger.warning("[Step 9] modify_node_description: 未找到节点 %s", node_id)
                 skipped.append({**op, "_skip_reason": msg})
 
+        elif op_name == "modify_node_condition":
+            found = _modify_field(tree, node_id, "condition", op.get("value", ""))
+            if found:
+                logger.info("[Step 9] modify_node_condition: 节点 %s | 原因: %s", node_id, reason)
+            else:
+                msg = f"节点 {node_id} 不存在"
+                logger.warning("[Step 9] modify_node_condition: 未找到节点 %s", node_id)
+                skipped.append({**op, "_skip_reason": msg})
+
         else:
             logger.warning("[Step 9] 未知操作: %s", op_name)
             skipped.append({**op, "_skip_reason": f"未知操作类型 {op_name}"})
@@ -199,7 +208,8 @@ def tree_to_id_text(node: dict, depth: int = 0) -> str:
         return "\n".join(tree_to_id_text(c, 0) for c in node.get("children", []))
     indent = "  " * depth
     desc = f" — {node['description']}" if node.get("description") else ""
-    line = f"{indent}[id={node['id']} L{node['level']}] {node['name']}{desc}"
+    cond = f" ｜条件：{node['condition']}" if node.get("condition") else ""
+    line = f"{indent}[id={node['id']} L{node['level']}] {node['name']}{desc}{cond}"
     child_lines = [tree_to_id_text(c, depth + 1) for c in node.get("children", [])]
     return "\n".join([line] + child_lines)
 

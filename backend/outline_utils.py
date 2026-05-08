@@ -50,6 +50,9 @@ def _md_node(node: dict, heading_level: int) -> list[str]:
     if node.get("description"):
         block += f"\n\n{node['description']}"
 
+    if node.get("condition"):
+        block += f"\n\n@if {node['condition']}"
+
     blocks = [block]
     for child in node.get("children", []):
         blocks.extend(_md_node(child, heading_level + 1))
@@ -85,11 +88,9 @@ def _id_md_node(node: dict, depth: int, lines: list[str]) -> None:
     level = node.get("level", "?")
     name = node.get("name", "")
 
-    desc_parts = []
-    if node.get("description"):
-        desc_parts.append(node["description"])
-
-    suffix = f"：{' | '.join(desc_parts)}" if desc_parts else ""
+    suffix = f"：{node['description']}" if node.get("description") else ""
+    if node.get("condition"):
+        suffix += f"｜条件：{node['condition']}"
     lines.append(f"{indent}[L{level} {nid}] {name}{suffix}")
 
     for child in node.get("children", []):
@@ -121,6 +122,10 @@ def from_md_with_ids(text: str) -> dict | None:
         indent, level, node_id, rest = m.groups()
         depth = len(indent) // 2
 
+        condition = ''
+        if '｜条件：' in rest:
+            rest, condition = rest.split('｜条件：', 1)
+
         if '：' in rest:
             name, description = rest.split('：', 1)
         else:
@@ -131,6 +136,7 @@ def from_md_with_ids(text: str) -> dict | None:
             'name': name.strip(),
             'level': int(level),
             'description': description.strip(),
+            'condition': condition.strip(),
             'children': [],
         }
 
@@ -158,7 +164,7 @@ def to_clean_json(tree: dict) -> dict:
 
     保留字段：id, name, level, description, children
     """
-    _KEEP = {"id", "name", "level", "description"}
+    _KEEP = {"id", "name", "level", "description", "condition"}
     node = {k: v for k, v in tree.items() if k in _KEEP}
     node["children"] = [to_clean_json(c) for c in tree.get("children", [])]
     return node

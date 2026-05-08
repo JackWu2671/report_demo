@@ -118,6 +118,7 @@ TOOLS: list[dict] = [
                             "- delete_node: {op, node_id} — 删除节点及其子树\n"
                             "- modify_node_name: {op, node_id, value} — 修改节点名称\n"
                             "- modify_node_description: {op, node_id, value} — 修改节点描述\n"
+                            "- modify_node_condition: {op, node_id, value} — 设置或修改节点的展示条件（自然语言）；value 传空字符串表示删除条件\n"
                             "- keep_only_node: {op, node_id} — 保留该节点，删除同级其他节点（每个保留节点单独一条）"
                         ),
                         "items": {"type": "object"},

@@ -4,7 +4,6 @@ const COLORS = ['#6c5ce7', '#0984e3', '#00b894', '#e17055', '#636e72']
 const LABELS = ['L1', 'L2', 'L3', 'L4', 'L5']
 
 function parseMarkdown(markdown) {
-  // Parse to_markdown() output: "# heading\n\ndescription" blocks
   const nodes = []
   let current = null
 
@@ -12,7 +11,9 @@ function parseMarkdown(markdown) {
     const m = line.match(/^(#{1,6})\s+(.+)/)
     if (m) {
       if (current) nodes.push(current)
-      current = { depth: m[1].length, name: m[2].trim(), desc: '' }
+      current = { depth: m[1].length, name: m[2].trim(), desc: '', condition: '' }
+    } else if (current && line.startsWith('@if ')) {
+      current.condition = line.slice(4).trim()
     } else if (current && line.trim()) {
       current.desc = current.desc
         ? current.desc + ' ' + line.trim()
@@ -64,6 +65,20 @@ export default function MarkdownOutline({ markdown }) {
                 fontSize: 12, color: '#6b7280', lineHeight: 1.55,
               }}>
                 {node.desc}
+              </div>
+            )}
+            {node.condition && (
+              <div style={{
+                marginLeft: 32, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5,
+              }}>
+                <span style={{
+                  fontSize: 10, padding: '1px 5px', borderRadius: 3,
+                  background: '#fff3cd', color: '#856404', border: '1px solid #ffc107',
+                  flexShrink: 0,
+                }}>条件</span>
+                <span style={{ fontSize: 11, color: '#92701a', lineHeight: 1.4 }}>
+                  {node.condition}
+                </span>
               </div>
             )}
           </div>

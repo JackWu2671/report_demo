@@ -104,6 +104,8 @@ def _format_op(op: dict) -> str:
         return f"  ~ modify_name node_id={op.get('node_id')}  value={op.get('value')!r}"
     if name == "modify_node_description":
         return f"  ~ modify_desc node_id={op.get('node_id')}  value={op.get('value', '')[:60]!r}"
+    if name == "modify_node_condition":
+        return f"  ~ modify_cond node_id={op.get('node_id')}  value={op.get('value', '')[:60]!r}"
     return f"  ? {name} {op}"
 
 
