@@ -35,41 +35,42 @@ TOOLS: list[dict] = [
             "name": "set_outline_from_markdown",
             "description": (
                 "将 LLM 构造的 md_with_ids 格式大纲文本解析为结构化大纲，渲染到前端，并记录场景元数据。"
-                "在 search_graph_tree 返回节点后，根据专家描述从中选取相关节点，自行组合成完整大纲文本，再调用此工具。"
-                "md_with_ids 格式：每行 {缩进}[L{层级} {节点id}] {节点名称}：{描述}，缩进每层两个空格。"
+                "L2/L3/L4 层级由 LLM 按专家意图自由设计；L5 必须引用 search_graph_tree 返回的知识库节点 id。"
+                "md_with_ids 格式：每行 {缩进}[L{层级} {节点id}] {节点名称}，缩进每层两个空格。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "md_with_ids": {
-                        "type": "string",
-                        "description": (
-                            "大纲文本，每行格式：{缩进}[L{层级} {id}] {名称}：{描述}\n"
-                            "示例：\n"
-                            "[L3 L3_001] 传送网络覆盖分析：分析OTN站点对企业的覆盖情况\n"
-                            "  [L4 L4_001] 企业分布分析：从行业、行政区等维度统计企业分布\n"
-                            "    [L5 L5_001] 企业行业分布：统计各行业企业数量"
-                        ),
-                    },
                     "scene_name": {
                         "type": "string",
-                        "description": "场景名称，简洁准确，如「传送网络覆盖分析」",
+                        "description": "场景名称，中文，不超过 10 字，如「传送网络覆盖分析」",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "一句话场景摘要，不超过 50 字，概括本次分析的核心目标",
                     },
                     "keywords": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "场景关键词列表，用于模板检索",
-                    },
-                    "summary": {
-                        "type": "string",
-                        "description": "场景简要描述，2～3句话",
+                        "description": "3～8 个核心领域关键词，名词短语为主，代表分析维度、评估指标或技术名词",
                     },
                     "usage_conditions": {
                         "type": "string",
-                        "description": "适用条件，描述什么场景下应使用此模板",
+                        "description": "适用条件，说明在什么业务场景下适合使用这份大纲，以及有哪些前提要求，不超过 80 字",
+                    },
+                    "md_with_ids": {
+                        "type": "string",
+                        "description": (
+                            "大纲文本，每行格式：{缩进}[L{层级} {id}] {名称}（新建节点名后加全角冒号和描述）\n"
+                            "示例：\n"
+                            "[L3 new_001] 传送网络覆盖分析：分析OTN站点对企业的覆盖情况\n"
+                            "  [L4 new_002] 企业分布分析：从行业、行政区等维度统计企业分布\n"
+                            "    [L5 L5_001] 企业行业分布\n"
+                            "    [L5 L5_002] 企业行政区分布"
+                        ),
                     },
                 },
-                "required": ["md_with_ids", "scene_name", "keywords", "summary", "usage_conditions"],
+                "required": ["scene_name", "summary", "keywords", "usage_conditions", "md_with_ids"],
             },
         },
     },
