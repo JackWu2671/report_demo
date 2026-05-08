@@ -1,15 +1,11 @@
 """
-memory.py — Agent1Memory: extends AgentMemory with expert-knowledge state.
+memory.py — Agent1Memory: 在 AgentMemory 基础上扩展专家知识沉淀所需状态。
 
-Extra fields beyond the base class:
-  expert_text           : original expert input text
-  extraction            : {scene_name, keywords, summary, usage_conditions}
-  outline_md_annotated  : [id]/[new]-marked Markdown from Step 3
-  tree_text             : KB tree text from Step 2
-  new_nodes             : [{name, level, parent_id, ...}] from Step 4
-  nodes_dict            : KB node dict (needed by save_outline_template)
+额外字段：
+  extraction : {scene_name, keywords, summary, usage_conditions}
+               由 set_outline_from_markdown 写入，save_outline_template 读取
 
-build_messages() injects extraction metadata alongside the current outline.
+build_messages() 将场景元数据注入 system prompt，让 LLM 在修改大纲时始终知道当前场景。
 """
 
 import os
@@ -26,44 +22,28 @@ from memory.store import AgentMemory
 class Agent1Memory(AgentMemory):
     def __init__(self) -> None:
         super().__init__()
-        self.expert_text: str = ""
         self.extraction: dict = {}
-        self.outline_md_annotated: str = ""
-        self.tree_text: str = ""
-        self.new_nodes: list = []
-        self.nodes_dict: dict = {}
 
     @property
-    def has_analysis(self) -> bool:
+    def has_extraction(self) -> bool:
         return bool(self.extraction)
 
-    def set_analysis_result(self, result: dict) -> None:
-        """Store the full output of analyze_expert_knowledge."""
-        self.expert_text = result.get("expert_text", self.expert_text)
-        self.extraction = result["extraction"]
-        self.outline_md_annotated = result["outline_md_annotated"]
-        self.tree_text = result["tree_text"]
-        self.new_nodes = result["new_nodes"]
-        self.nodes_dict = result.get("nodes_dict", {})
-        self.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
+    def set_extraction(self, extraction: dict) -> None:
+        self.extraction = extraction
 
     def reset(self) -> None:
         super().reset()
-        self.expert_text = ""
         self.extraction = {}
-        self.outline_md_annotated = ""
-        self.tree_text = ""
-        self.new_nodes = []
-        self.nodes_dict = {}
 
     def build_messages(self, system_prompt: str) -> list[dict]:
         content = system_prompt
 
-        if self.has_analysis:
+        if self.has_extraction:
             meta = self.extraction
             content += (
                 f"\n\n## 当前场景元数据\n"
                 f"场景名：{meta.get('scene_name', '')}\n"
+                f"关键词：{', '.join(meta.get('keywords', []))}\n"
                 f"使用条件：{meta.get('usage_conditions', '')}"
             )
 
