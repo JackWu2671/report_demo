@@ -502,6 +502,31 @@ body {
 .outline-panel__body::-webkit-scrollbar { width: 4px; }
 .outline-panel__body::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }
 
+.scene-meta {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+.scene-meta__row { display: flex; gap: 8px; align-items: baseline; }
+.scene-meta__label {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  min-width: 48px;
+}
+.scene-meta__value { color: var(--color-text); line-height: 1.5; }
+.scene-meta__tag {
+  display: inline-block;
+  background: var(--color-bg-hover);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 0 6px;
+  margin: 0 3px 2px 0;
+  font-size: 11px;
+}
+
 /* =========================================
    Workflow Steps
    ========================================= */

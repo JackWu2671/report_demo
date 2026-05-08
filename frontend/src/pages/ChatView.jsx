@@ -22,6 +22,7 @@ export default function ChatView() {
   const [outlineLlm, setOutlineLlm] = useState('')
   const [outlineJson, setOutlineJson] = useState(null)
   const [outlineTab, setOutlineTab] = useState('md')  // 'md' | 'llm' | 'json'
+  const [sceneMeta, setSceneMeta] = useState(null)   // {scene_name, summary, keywords, usage_conditions}
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
   const assistantMsgIdxRef = useRef(-1)
@@ -34,6 +35,7 @@ export default function ChatView() {
     setOutlineLlm('')
     setOutlineJson(null)
     setOutlineTab('md')
+    setSceneMeta(null)
     setQuickReplies([])
 
     fetch('/api/session', {
@@ -170,12 +172,12 @@ export default function ChatView() {
         updateAssistant(msg => ({ ...msg, duration: evt.seconds }))
         break
 
-      case 'extraction':
-        appendMsg({
-          role: 'extraction',
-          scene_name: evt.scene_name,
-          keywords: evt.keywords || [],
+      case 'metadata':
+        setSceneMeta({
+          scene_name: evt.scene_name || '',
           summary: evt.summary || '',
+          keywords: evt.keywords || [],
+          usage_conditions: evt.usage_conditions || '',
         })
         break
 
@@ -289,6 +291,34 @@ case 'saved':
             </div>
           )}
         </div>
+        {sceneMeta && (
+          <div className="scene-meta">
+            <div className="scene-meta__row">
+              <span className="scene-meta__label">场景</span>
+              <span className="scene-meta__value">{sceneMeta.scene_name}</span>
+            </div>
+            <div className="scene-meta__row">
+              <span className="scene-meta__label">摘要</span>
+              <span className="scene-meta__value">{sceneMeta.summary}</span>
+            </div>
+            {sceneMeta.keywords.length > 0 && (
+              <div className="scene-meta__row">
+                <span className="scene-meta__label">关键词</span>
+                <span className="scene-meta__value">
+                  {sceneMeta.keywords.map(k => (
+                    <span key={k} className="scene-meta__tag">{k}</span>
+                  ))}
+                </span>
+              </div>
+            )}
+            {sceneMeta.usage_conditions && (
+              <div className="scene-meta__row">
+                <span className="scene-meta__label">适用条件</span>
+                <span className="scene-meta__value">{sceneMeta.usage_conditions}</span>
+              </div>
+            )}
+          </div>
+        )}
         <div className="outline-panel__body">
           {outlineTab === 'md' && <MarkdownOutline markdown={outlineMd} />}
           {outlineTab === 'llm' && (

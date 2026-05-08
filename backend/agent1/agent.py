@@ -2,12 +2,13 @@
 agent.py — Agent1：专家知识 → 报告大纲模板沉淀流程。
 
 chat_stream() 产出的事件类型：
-  {"type": "step",    "name": str, "call_id": str, "status": "running"|"done", "args": dict, "result": str, "detail": str}
-  {"type": "outline", "markdown": str, "md_with_ids": str, "outline_tree": dict}
-  {"type": "saved",   "scene_name": str, "path": str}
-  {"type": "text",    "chunk": str}
-  {"type": "done",    "seconds": float}
-  {"type": "error",   "message": str}
+  {"type": "step",     "name": str, "call_id": str, "status": "running"|"done", "args": dict, "result": str, "detail": str}
+  {"type": "outline",  "markdown": str, "md_with_ids": str, "outline_tree": dict}
+  {"type": "metadata", "scene_name": str, "summary": str, "keywords": list, "usage_conditions": str}
+  {"type": "saved",    "scene_name": str, "path": str}
+  {"type": "text",     "chunk": str}
+  {"type": "done",     "seconds": float}
+  {"type": "error",    "message": str}
 """
 
 import json
@@ -68,6 +69,13 @@ class Agent1:
                                "markdown": result_dict["markdown"],
                                "md_with_ids": result_dict["md_with_ids"],
                                "outline_tree": result_dict["outline_tree"]}
+
+                    if name == "set_scene_metadata" and result_dict.get("status") == "success":
+                        yield {"type": "metadata",
+                               "scene_name": result_dict["scene_name"],
+                               "summary": result_dict["summary"],
+                               "keywords": result_dict["keywords"],
+                               "usage_conditions": result_dict["usage_conditions"]}
 
                     if name == "save_outline_template" and result_dict.get("status") == "success":
                         yield {"type": "saved",
