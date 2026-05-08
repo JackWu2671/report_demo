@@ -132,6 +132,14 @@ async def _stream_agent(session_id: str, message: str):
     yield "data: [DONE]\n\n"
 
 
+@app.get("/api/session/{session_id}/messages")
+def get_session_messages(session_id: str):
+    agent = _sessions.get(session_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Session 不存在")
+    return {"messages": agent.memory._history}
+
+
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     if req.session_id not in _sessions:

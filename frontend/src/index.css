@@ -217,6 +217,20 @@ body {
 .chat-panel__title { font-size: 15px; font-weight: 700; color: var(--color-text); }
 .chat-panel__subtitle { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; line-height: 1.4; }
 
+.chat-panel__download {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.chat-panel__download:hover { background: var(--color-bg-tertiary); color: var(--color-primary); }
+
 .chat-panel__messages {
   flex: 1;
   overflow-y: auto;

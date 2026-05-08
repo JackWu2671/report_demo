@@ -203,6 +203,27 @@ case 'saved':
             <div className="chat-panel__title">{AGENT_NAMES[agentId]}</div>
             <div className="chat-panel__subtitle">{AGENT_DESCS[agentId]}</div>
           </div>
+          {messages.length > 0 && sessionIdRef.current && (
+            <button
+              className="chat-panel__download"
+              title="下载消息列表"
+              onClick={async () => {
+                const res = await fetch(`/api/session/${sessionIdRef.current}/messages`)
+                const data = await res.json()
+                const blob = new Blob([JSON.stringify(data.messages, null, 2)], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `messages_${sessionIdRef.current.slice(0, 8)}.json`
+                a.click()
+                URL.revokeObjectURL(url)
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 8h14v2H5v-2z"/>
+              </svg>
+            </button>
+          )}
         </div>
 
         <div className="chat-panel__messages">
