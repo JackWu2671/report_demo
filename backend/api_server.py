@@ -137,7 +137,12 @@ def get_session_messages(session_id: str):
     agent = _sessions.get(session_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Session 不存在")
-    return {"messages": agent.memory._history}
+    system_prompt = getattr(agent, "system_prompt", None)
+    if system_prompt:
+        messages = agent.memory.build_messages(system_prompt)
+    else:
+        messages = agent.memory._history
+    return {"messages": messages}
 
 
 @app.post("/api/chat")

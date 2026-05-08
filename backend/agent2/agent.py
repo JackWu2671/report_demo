@@ -33,7 +33,7 @@ from agent2.tools import TOOLS, HANDLERS
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = (Path(_AGENT2_DIR) / "prompt.txt").read_text(encoding="utf-8")
+_SYSTEM_PROMPT = (Path(_AGENT2_DIR) / "system_prompt.txt").read_text(encoding="utf-8")
 _MAX_TOOL_ROUNDS = 10
 
 
@@ -50,6 +50,7 @@ class Agent2:
 
     def __init__(self) -> None:
         self.memory = AgentMemory()
+        self.system_prompt = _SYSTEM_PROMPT
 
     # ── Public interface ───────────────────────────────────────
 
