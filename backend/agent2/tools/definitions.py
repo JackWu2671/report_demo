@@ -1,13 +1,13 @@
 """
-definitions.py — OpenAI tool schemas for agent2.
+definitions.py — agent2 的 OpenAI 工具 schema 定义。
 
-Six tools, in the order the agent should try them for a new outline request:
-  1. match_outline_template    — vector search + LLM judge on pre-built templates
-  2. search_outline_templates  — vector search only, returns top-N candidates (no LLM)
-  3. load_template_outline     — load full outline for a specific template by scene_name
-  4. build_outline_from_anchor — pure-Python subtree expand from agent-selected anchor node
-  5. search_graph_tree         — FAISS search KB → build ancestor paths → return tree
-  6. modify_outline            — patch current outline via natural-language instruction
+共六个工具，按新建大纲时的推荐调用顺序排列：
+  1. match_outline_template    — 向量检索 + LLM 判断，匹配预制模板
+  2. search_outline_templates  — 仅向量检索，返回 top-N 候选（不经 LLM）
+  3. load_template_outline     — 按模板名称直接加载完整大纲
+  4. build_outline_from_anchor — 从 agent 选定的锚节点展开知识图谱子树
+  5. search_graph_tree         — FAISS 检索知识库，构建带祖先路径的树状结构
+  6. modify_outline            — 对当前大纲执行结构化 patch 操作
 """
 
 TOOLS: list[dict] = [

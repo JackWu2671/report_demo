@@ -1,10 +1,10 @@
 """
-handlers.py — agent2 tool dispatch (thin adapter layer).
+handlers.py — agent2 工具分发层（薄适配层）。
 
-Imports implementations from backend/tools/ and wires them to AgentMemory.
-Each handler returns (result_dict, llm_str):
-  result_dict — full result (agent uses for outline event)
-  llm_str     — compact string for LLM history (md_with_ids only, no full markdown)
+从 backend/tools/ 引入各工具的具体实现，并与 AgentMemory 对接。
+每个 handler 返回 (result_dict, llm_str)：
+  result_dict — 完整结果（agent 用于触发 outline 事件）
+  llm_str     — 写入 LLM 历史的紧凑字符串（只含 md_with_ids，不含完整 markdown）
 """
 
 import logging
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 async def handle_match_outline_template(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    """在预制模板库中检索最匹配的大纲模板，命中时将大纲写入 memory 并返回 pending_confirm 状态。"""
     result = await match_outline_template(args.get("question", ""))
     if result["status"] == "pending_confirm":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
@@ -33,6 +34,7 @@ async def handle_match_outline_template(args: dict, memory: AgentMemory) -> tupl
 
 
 async def handle_search_outline_templates(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    """仅做向量检索，返回 top-N 候选模板列表，不经 LLM 判断。"""
     result = await search_outline_templates(args.get("question", ""), args.get("top_k", 5))
     if result["status"] == "found":
         lines = [f"  {i+1}. {c['scene_name']} (score={c['score']}) — {c.get('summary', '')}"
@@ -44,6 +46,7 @@ async def handle_search_outline_templates(args: dict, memory: AgentMemory) -> tu
 
 
 async def handle_load_template_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    """按模板名称直接加载指定模板的完整大纲，将大纲写入 memory。"""
     result = load_template_outline(args.get("scene_name", ""))
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
@@ -58,6 +61,7 @@ async def handle_load_template_outline(args: dict, memory: AgentMemory) -> tuple
 
 
 async def handle_search_graph_tree(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    """从知识图谱检索相关节点，返回带祖先路径的树状结构，供选取锚节点使用。"""
     result = await search_graph_tree(args.get("question", ""))
     if result["status"] == "success":
         memory.set_kb_tree(result["tree_text"])
@@ -68,6 +72,7 @@ async def handle_search_graph_tree(args: dict, memory: AgentMemory) -> tuple[dic
 
 
 async def handle_build_outline_from_anchor(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    """以锚节点为根展开知识图谱子树，生成初始大纲并写入 memory。"""
     result = await build_outline_from_anchor(args.get("anchor_id", ""))
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
@@ -78,6 +83,7 @@ async def handle_build_outline_from_anchor(args: dict, memory: AgentMemory) -> t
 
 
 async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
+    """对当前大纲执行结构化修改操作，将修改后的大纲写入 memory，并在结果中标注跳过的操作。"""
     result = await modify_outline(args.get("ops", []), memory.outline_tree)
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
@@ -97,6 +103,7 @@ async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, 
 
 
 def _format_op(op: dict) -> str:
+    """将单条操作格式化为可读的单行字符串，用于 LLM 历史和前端摘要。"""
     name = op.get("op", "?")
     if name == "add_node":
         return f"  + add_node    node_id={op.get('node_id')}  parent_id={op.get('parent_id') or '(root)'}"
@@ -112,10 +119,10 @@ def _format_op(op: dict) -> str:
 
 
 HANDLERS: dict = {
-    "match_outline_template": handle_match_outline_template,
-    "search_outline_templates": handle_search_outline_templates,
-    "load_template_outline": handle_load_template_outline,
+    "match_outline_template":    handle_match_outline_template,
+    "search_outline_templates":  handle_search_outline_templates,
+    "load_template_outline":     handle_load_template_outline,
     "build_outline_from_anchor": handle_build_outline_from_anchor,
-    "search_graph_tree": handle_search_graph_tree,
-    "modify_outline": handle_modify_outline,
+    "search_graph_tree":         handle_search_graph_tree,
+    "modify_outline":            handle_modify_outline,
 }
