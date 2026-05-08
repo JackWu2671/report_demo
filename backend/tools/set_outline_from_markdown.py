@@ -28,13 +28,9 @@ logger = logging.getLogger(__name__)
 _LINE_RE = re.compile(r'^(\s*)\[L(\d+)\s+(\S+)\]\s+(.+)$')
 
 
-async def set_outline_from_markdown(
-    md_with_ids: str,
-    scene_name: str,
-    summary: str,
-) -> dict:
-    """将 LLM 构造的 md_with_ids 文本解析为 outline_tree，记录 scene_name 和 summary。"""
-    logger.info("[Tool:set_outline_from_markdown] scene=%r text_len=%d", scene_name, len(md_with_ids))
+async def set_outline_from_markdown(md_with_ids: str) -> dict:
+    """将 LLM 构造的 md_with_ids 文本解析为 outline_tree，渲染到前端。"""
+    logger.info("[Tool:set_outline_from_markdown] text_len=%d", len(md_with_ids))
 
     if not md_with_ids.strip():
         return _error("md_with_ids 不能为空")
@@ -70,19 +66,15 @@ async def set_outline_from_markdown(
     # 用虚拟根节点包裹，支持 add_node parent_id=""
     wrapped = {"id": "__root__", "name": "", "level": 0, "description": "", "children": roots}
 
-    extraction = {"scene_name": scene_name, "summary": summary}
-
     logger.info("[Tool:set_outline_from_markdown] 解析完成，顶层章节数=%d", len(roots))
     return {
         "status": "success",
         "outline_tree": wrapped,
         "markdown": to_markdown(wrapped),
         "md_with_ids": to_markdown_with_ids(wrapped),
-        "extraction": extraction,
         "message": "",
     }
 
 
 def _error(message: str) -> dict:
-    return {"status": "error", "outline_tree": {}, "markdown": "", "md_with_ids": "",
-            "extraction": {}, "message": message}
+    return {"status": "error", "outline_tree": {}, "markdown": "", "md_with_ids": "", "message": message}

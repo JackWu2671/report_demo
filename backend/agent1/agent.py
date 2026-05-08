@@ -135,12 +135,11 @@ def _result_display(name: str, result: dict) -> str:
         return f"未找到：{result.get('message', '')}"
     if name == "set_outline_from_markdown":
         if status == "success":
-            ext = result.get("extraction", {})
-            return f"场景：{ext.get('scene_name', '')}，大纲已渲染"
+            return "大纲已渲染"
         return f"失败：{result.get('message', '')}"
     if name == "set_scene_metadata":
         if status == "success":
-            return f"关键词：{', '.join(result.get('keywords', []))}；适用条件已记录"
+            return f"场景：{result.get('scene_name', '')}，元数据已记录"
         return f"失败：{result.get('message', '')}"
     if name == "modify_outline":
         if status == "success":

@@ -35,21 +35,13 @@ TOOLS: list[dict] = [
         "function": {
             "name": "set_outline_from_markdown",
             "description": (
-                "将 LLM 构造的 md_with_ids 格式大纲文本解析为结构化大纲，渲染到前端，并记录 scene_name / summary。"
+                "将 LLM 构造的 md_with_ids 格式大纲文本解析为结构化大纲并渲染到前端。"
                 "L2/L3/L4 层级由 LLM 按专家意图自由设计；L5 必须引用 search_graph_tree 返回的知识库节点 id。"
-                "调用此工具后，必须紧接着调用 set_scene_metadata 补充关键词和适用条件。"
+                "调用此工具后，必须紧接着调用 set_scene_metadata 填写所有场景元数据。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "scene_name": {
-                        "type": "string",
-                        "description": "场景名称，中文，不超过 10 字，如「传送网络覆盖分析」",
-                    },
-                    "summary": {
-                        "type": "string",
-                        "description": "一句话场景摘要，不超过 50 字，概括本次分析的核心目标",
-                    },
                     "md_with_ids": {
                         "type": "string",
                         "description": (
@@ -62,7 +54,7 @@ TOOLS: list[dict] = [
                         ),
                     },
                 },
-                "required": ["scene_name", "summary", "md_with_ids"],
+                "required": ["md_with_ids"],
             },
         },
     },
@@ -71,12 +63,20 @@ TOOLS: list[dict] = [
         "function": {
             "name": "set_scene_metadata",
             "description": (
-                "补充场景的关键词和适用条件，在 set_outline_from_markdown 之后立即调用。"
-                "这两项信息仅在保存模板时使用，与大纲渲染解耦。"
+                "填写场景元数据（名称、摘要、关键词、适用条件），在 set_outline_from_markdown 之后立即调用。"
+                "元数据与大纲渲染解耦，仅在保存模板时使用。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "scene_name": {
+                        "type": "string",
+                        "description": "场景名称，中文，不超过 10 字，如「传送网络覆盖分析」",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "一句话场景摘要，不超过 50 字，概括本次分析的核心目标",
+                    },
                     "keywords": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -87,7 +87,7 @@ TOOLS: list[dict] = [
                         "description": "适用条件，说明在什么业务场景下适合使用这份大纲，以及有哪些前提要求，不超过 80 字",
                     },
                 },
-                "required": ["keywords", "usage_conditions"],
+                "required": ["scene_name", "summary", "keywords", "usage_conditions"],
             },
         },
     },
