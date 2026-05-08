@@ -1,44 +1,23 @@
 """
 definitions.py — agent2 的 OpenAI 工具 schema 定义。
 
-共六个工具，按新建大纲时的推荐调用顺序排列：
-  1. match_outline_template    — 向量检索 + LLM 判断，匹配预制模板
-  2. search_outline_templates  — 仅向量检索，返回 top-N 候选（不经 LLM）
-  3. load_template_outline     — 按模板名称直接加载完整大纲
-  4. build_outline_from_anchor — 从 agent 选定的锚节点展开知识图谱子树
-  5. search_graph_tree         — FAISS 检索知识库，构建带祖先路径的树状结构
-  6. modify_outline            — 对当前大纲执行结构化 patch 操作
+共五个工具，按新建大纲时的推荐调用顺序排列：
+  1. search_outline_templates  — 向量检索，返回 top-N 候选模板列表（纯检索，不调 LLM）
+  2. load_template_outline     — 按模板名称直接加载完整大纲
+  3. build_outline_from_anchor — 从 agent 选定的锚节点展开知识图谱子树
+  4. search_graph_tree         — FAISS 检索知识库，构建带祖先路径的树状结构
+  5. modify_outline            — 对当前大纲执行结构化 patch 操作
 """
 
 TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "match_outline_template",
-            "description": (
-                "在预制大纲模板库中检索并由 LLM 判断最匹配的模板，决策是否可复用。"
-                "status=pending_confirm 表示找到可用模板；status=not_found 表示无匹配，需改用 search_graph_tree → build_outline_from_anchor。"
-                "用户提出新的分析需求时，优先调用此工具。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "question": {
-                        "type": "string",
-                        "description": "用户的分析需求描述，原文传入",
-                    }
-                },
-                "required": ["question"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "search_outline_templates",
             "description": (
-                "仅做向量检索，返回模板库中与需求最相似的 top-N 候选模板列表（不经 LLM 判断）。"
-                "用于用户想直接浏览有哪些可用模板时调用，或在 match_outline_template 结果存疑时补充参考。"
+                "向量检索模板库，返回与需求最相似的 top-N 候选模板列表（含 scene_name、summary、score）。"
+                "用户提出新的分析需求时优先调用。根据返回的候选列表自行判断是否有匹配的模板："
+                "有匹配 → 调用 load_template_outline 加载；无匹配 → 调用 search_graph_tree 从知识库生成。"
             ),
             "parameters": {
                 "type": "object",
@@ -61,8 +40,8 @@ TOOLS: list[dict] = [
         "function": {
             "name": "load_template_outline",
             "description": (
-                "按模板名称直接加载指定模板的完整大纲内容，跳过向量检索和 LLM 判断。"
-                "当用户已从候选列表中看到某个模板名称，想查看其具体大纲结构时调用。"
+                "按模板名称直接加载指定模板的完整大纲内容。"
+                "在 search_outline_templates 返回候选后，判断有匹配时调用此工具加载大纲，再询问用户是否使用。"
                 "scene_name 必须与 search_outline_templates 返回的候选名称完全一致。"
             ),
             "parameters": {
@@ -104,7 +83,7 @@ TOOLS: list[dict] = [
             "name": "search_graph_tree",
             "description": (
                 "从知识图谱中检索与问题相关的节点，返回带祖先路径的树状结构（含节点 id、描述、FAISS 命中分数）。"
-                "match_outline_template 返回 not_found 后必须先调用此工具，再从结果树中选锚节点调用 build_outline_from_anchor。"
+                "search_outline_templates 无合适候选时调用此工具，再从结果树中选锚节点调用 build_outline_from_anchor。"
                 "status=not_found 表示知识库无相关内容，应告知用户系统暂不支持该场景。"
             ),
             "parameters": {

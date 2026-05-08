@@ -10,27 +10,12 @@ handlers.py — agent2 工具分发层（薄适配层）。
 import logging
 
 from memory.store import AgentMemory
-from tools.search_template import match_outline_template, search_outline_templates, load_template_outline
+from tools.search_template import search_outline_templates, load_template_outline
 from tools.build_outline_from_anchor import build_outline_from_anchor
 from tools.search_graph_tree import search_graph_tree
 from tools.modify_outline import modify_outline
 
 logger = logging.getLogger(__name__)
-
-
-async def handle_match_outline_template(args: dict, memory: AgentMemory) -> tuple[dict, str]:
-    """在预制模板库中检索最匹配的大纲模板，命中时将大纲写入 memory 并返回 pending_confirm 状态。"""
-    result = await match_outline_template(args.get("question", ""))
-    if result["status"] == "pending_confirm":
-        memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
-        llm_str = (
-            f"[match_outline_template] status=pending_confirm  scene={result['scene_name']}\n"
-            f"大纲已预览，请询问用户：使用此模板还是重新从知识库生成？\n\n"
-            f"当前大纲：\n{result['md_with_ids']}"
-        )
-    else:
-        llm_str = f"[match_outline_template] status=not_found  reason={result['reason']}"
-    return result, llm_str
 
 
 async def handle_search_outline_templates(args: dict, memory: AgentMemory) -> tuple[dict, str]:
@@ -119,7 +104,6 @@ def _format_op(op: dict) -> str:
 
 
 HANDLERS: dict = {
-    "match_outline_template":    handle_match_outline_template,
     "search_outline_templates":  handle_search_outline_templates,
     "load_template_outline":     handle_load_template_outline,
     "build_outline_from_anchor": handle_build_outline_from_anchor,

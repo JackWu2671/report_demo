@@ -3,9 +3,10 @@
 ## 生成大纲
 
 用户提出分析需求时：
-1. 调用 match_outline_template，在预制模板库中匹配
-   - 命中 → 告知用户找到的模板名称，询问是否使用，等待确认
-   - 未命中 → 调用 search_graph_tree，然后从返回的树中选出锚节点，再调用 build_outline_from_anchor(anchor_id)
+1. 调用 search_outline_templates 获取候选模板列表
+   - 根据返回的 scene_name 和 summary 自行判断是否有与用户需求高度匹配的模板
+   - 有匹配 → 调用 load_template_outline 加载该模板，告知用户模板名称，询问是否使用，等待确认
+   - 无匹配 → 调用 search_graph_tree，然后从返回的树中选出锚节点，再调用 build_outline_from_anchor(anchor_id)
      - build_outline_from_anchor 会将锚节点下的所有子节点全部展开，生成的大纲可能包含与用户需求无关的内容
      - 大纲生成后，对照用户需求判断是否需要修改（删除无关节点、保留关键分支等），如需要则立即调用 modify_outline
      - 知识库无内容（search_graph_tree status=not_found）→ 告知用户系统暂不支持该场景，不再重试
@@ -45,7 +46,7 @@ search_graph_tree 和 modify_outline 可以在一轮对话中多次组合调用�
 
 ## 浏览模板 / 知识库
 
-- 用户想查看有哪些可用模板 → 调用 search_outline_templates，列出候选后可用 load_template_outline 加载具体大纲
+- 用户想查看有哪些可用模板 → 调用 search_outline_templates 列出候选，再用 load_template_outline 加载具体大纲
 - 用户想查看知识库中有哪些相关节点 → 调用 search_graph_tree
 
 ## 回复规范

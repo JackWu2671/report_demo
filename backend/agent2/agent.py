@@ -171,10 +171,6 @@ def _count_nodes(tree: dict) -> int:
 
 def _result_display(name: str, result: dict) -> str:
     status = result.get("status", "?")
-    if name == "match_outline_template":
-        if status == "pending_confirm":
-            return f"找到模板：{result.get('scene_name', '')}"
-        return f"未匹配：{result.get('reason', '')}"
     if name == "search_outline_templates":
         n = len(result.get("candidates", []))
         return f"找到 {n} 个候选模板" if status == "found" else f"未找到：{result.get('reason', '')}"
