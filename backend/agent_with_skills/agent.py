@@ -124,20 +124,14 @@ class AgentWithSkills:
                             "md_with_ids": result_dict["md_with_ids"],
                             "outline_tree": result_dict["outline_tree"],
                         }
-                    if result_dict.get("status") == "pending_confirm":
-                        yield {"type": "confirm", "options": ["使用此模板", "重新从知识库生成"]}
-
-                    # consolidate-expert 额外事件
-                    if name == "analyze_expert_knowledge" and result_dict.get("extraction"):
-                        ext = result_dict["extraction"]
+                    # consolidate-expert: 场景元数据确认后推送给前端
+                    if name == "set_scene_metadata" and result_dict.get("status") == "success":
                         yield {
                             "type": "extraction",
-                            "scene_name": ext.get("scene_name", ""),
-                            "keywords": ext.get("keywords", []),
-                            "summary": ext.get("summary", ""),
+                            "scene_name": result_dict.get("scene_name", ""),
+                            "keywords": result_dict.get("keywords", []),
+                            "summary": result_dict.get("summary", ""),
                         }
-                        if result_dict.get("new_nodes"):
-                            yield {"type": "new_nodes", "nodes": result_dict["new_nodes"]}
                     if name == "save_outline_template" and result_dict.get("status") == "success":
                         yield {"type": "saved",
                                "scene_name": result_dict["scene_name"],
