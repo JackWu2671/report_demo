@@ -29,6 +29,7 @@ from agent1.tools.handlers import HANDLERS as _AGENT1_HANDLERS
 from agent2.tools.definitions import TOOLS as _AGENT2_TOOLS
 from agent2.tools.handlers import HANDLERS as _AGENT2_HANDLERS
 from agent_with_skills.skill_registry import SkillRegistry
+from tools.shared_tools import SKILLS_LIST_TOOL, READ_SKILL_TOOL
 
 logger = logging.getLogger(__name__)
 
@@ -44,40 +45,7 @@ _BUSINESS_TOOLS = list(_business_tools.values())
 # agent1 handlers 覆盖 agent2 同名 handler（modify_outline 两者逻辑一致）
 _BUSINESS_HANDLERS = {**_AGENT2_HANDLERS, **_AGENT1_HANDLERS}
 
-# ── Skill 元工具定义 ──────────────────────────────────────────────
-
-_SKILLS_LIST_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "skills_list",
-        "description": "列出所有可用 skill 的名称、描述和分类（Level 0）。不确定有哪些能力时调用。",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    },
-}
-
-_SKILL_VIEW_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "read_skill",
-        "description": (
-            "加载指定 skill 的完整 SOP（Level 1），或其内部支持文件（Level 2）。"
-            "决定使用某个 skill 前必须先加载其 SOP，已加载的 skill 无需重复加载。"
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "skill 名称，如 generate-report"},
-                "path": {
-                    "type": "string",
-                    "description": "可选。skill 文件夹内的支持文件路径（Level 2）",
-                },
-            },
-            "required": ["name"],
-        },
-    },
-}
-
-TOOLS = [_SKILLS_LIST_TOOL, _SKILL_VIEW_TOOL] + _BUSINESS_TOOLS
+TOOLS = [SKILLS_LIST_TOOL, READ_SKILL_TOOL] + _BUSINESS_TOOLS
 
 _SKILL_SYSTEM_TEMPLATE = """\
 <skill_system>

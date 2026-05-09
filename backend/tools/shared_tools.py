@@ -3,6 +3,17 @@ shared_tools.py — 所有工具的 schema 定义全集。
 
 各 agent 按需从此文件导入所需工具定义，组装自己的 TOOLS 列表。
 共用的 handler 实现（handle_search_graph_tree、handle_modify_outline）也在此处统一维护。
+
+工具列表：
+  业务工具（agent1 / agent2 按需选用）：
+    SEARCH_GRAPH_TREE_TOOL        MODIFY_OUTLINE_TOOL
+    SEARCH_OUTLINE_TEMPLATES_TOOL LOAD_TEMPLATE_OUTLINE_TOOL
+    BUILD_OUTLINE_FROM_ANCHOR_TOOL
+    SET_OUTLINE_FROM_MARKDOWN_TOOL SET_SCENE_METADATA_TOOL
+    SAVE_OUTLINE_TEMPLATE_TOOL
+
+  Skill 系统元工具（AgentWithSkills 专用）：
+    SKILLS_LIST_TOOL              READ_SKILL_TOOL
 """
 
 import logging
@@ -203,6 +214,37 @@ SET_SCENE_METADATA_TOOL: dict = {
                 },
             },
             "required": ["scene_name", "summary", "keywords", "usage_conditions"],
+        },
+    },
+}
+
+SKILLS_LIST_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "skills_list",
+        "description": "列出所有可用 skill 的名称、描述和分类（Level 0）。不确定有哪些能力时调用。",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+}
+
+READ_SKILL_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "read_skill",
+        "description": (
+            "加载指定 skill 的完整 SOP（Level 1），或其内部支持文件（Level 2）。"
+            "决定使用某个 skill 前必须先加载其 SOP，已加载的 skill 无需重复加载。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "skill 名称，如 generate-report"},
+                "path": {
+                    "type": "string",
+                    "description": "可选。skill 文件夹内的支持文件路径（Level 2）",
+                },
+            },
+            "required": ["name"],
         },
     },
 }
