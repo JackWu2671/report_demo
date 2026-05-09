@@ -1,12 +1,10 @@
 """
-retriever.py — Step 2 / 3 / 4: 用户问题向量化、FAISS 检索、候选节点路径构建。
+retriever.py — 用户问题向量化、FAISS 检索、候选节点路径构建。
 
-Step 2 embed_query          : 调用 Embedding 服务将问题向量化
-Step 3 search_nodes         : 在 FAISS 索引中检索相关候选节点
-Step 4 build_candidate_paths: 为候选节点补全祖先路径信息
-       candidates_to_tree_text: 将候选节点渲染为树状文本，供 LLM 选锚使用
-
-search_graph_tree           : 组合函数，embed → search → build paths → 返回树状 dict 列表
+embed_query          : 调用 Embedding 服务将问题向量化
+search_nodes         : 在 FAISS 索引中检索相关候选节点
+build_candidate_paths: 为候选节点补全祖先路径信息
+search_graph_tree    : 组合函数，embed → search → build paths → 返回树状 dict 列表
 """
 
 import logging
@@ -128,60 +126,6 @@ def build_candidate_paths(
         ),
     )
     return candidates
-
-
-def candidates_to_tree_text(candidates: list[dict]) -> str:
-    """
-    将候选节点渲染为带层级缩进的树状文本，供 LLM 选锚节点时使用。
-
-    ★ 标记 FAISS 命中节点，无★ 的中间节点仅提供祖先路径上下文。
-    每个节点格式: [L{level} {id}] {name} ★（命中时）
-
-    Args:
-        candidates: build_candidate_paths() 返回的候选节点列表
-
-    Returns:
-        多行缩进字符串，反映候选节点在知识图谱中的树状层级
-    """
-    hit_ids = {c["id"] for c in candidates}
-    id_by_name: dict[str, str] = {c["name"]: c["id"] for c in candidates}
-    level_by_name: dict[str, int] = {c["name"]: c["level"] for c in candidates}
-
-    # 从 path 字符串还原树结构: name -> {id, level, children}
-    tree: dict[str, dict] = {}
-    roots: list[str] = []
-
-    for c in candidates:
-        parts = [p.strip() for p in c["path"].split(">")]
-        for i, name in enumerate(parts):
-            if name not in tree:
-                tree[name] = {
-                    "id": id_by_name.get(name),
-                    "level": level_by_name.get(name, i + 1),
-                    "children": [],
-                }
-            if i > 0:
-                parent_name = parts[i - 1]
-                if name not in tree[parent_name]["children"]:
-                    tree[parent_name]["children"].append(name)
-            elif name not in roots:
-                roots.append(name)
-
-    lines: list[str] = []
-
-    def _render(name: str, depth: int) -> None:
-        node = tree[name]
-        indent = "  " * depth
-        id_str = f" {node['id']}" if node["id"] else ""
-        marker = " ★" if node["id"] in hit_ids else ""
-        lines.append(f"{indent}[L{node['level']}{id_str}] {name}{marker}")
-        for child in node["children"]:
-            _render(child, depth + 1)
-
-    for root in roots:
-        _render(root, 0)
-
-    return "\n".join(lines)
 
 
 # ── 组合接口 ──────────────────────────────────────────────────

@@ -1,96 +1,30 @@
 """
-patcher.py — Step 8 / 9: 解析用户修改指令并应用到大纲树。
-
-Step 8 parse_patch  : LLM 将自然语言指令翻译为结构化 patch 操作列表
-Step 9 apply_patch  : 纯 Python，将 patch 操作列表应用到大纲树（deepcopy，原树不变）
+patcher.py — 将结构化操作列表应用到大纲树。
 
 支持的 patch 操作:
   add_node              — 从知识图谱新增节点，挂到指定父节点下
   delete_node           — 删除指定节点及其所有子节点
   modify_node_name      — 修改节点的 name
-  modify_node_description — 修改节点的 description（也用于调整阈值等说明）
+  modify_node_description — 修改节点的 description
+  modify_node_condition — 设置或修改节点展示条件
   keep_only_node        — 保留指定节点，删除同级兄弟节点
-
-Prompt 从 prompts/patch.txt 加载。
 """
 
 import copy
 import logging
 import os
 import sys
-from pathlib import Path
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
-from services.llm_service import LLMService
 from tools.loader import load_resources
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_DIR = Path(__file__).parent / "prompts"
-PATCH_PROMPT: str = (_PROMPT_DIR / "patch.txt").read_text(encoding="utf-8")
 
-
-# ── Step 8 ────────────────────────────────────────────────────
-
-async def parse_patch(user_request: str, outline_tree: dict, kb_tree_text: str = "") -> list[dict]:
-    """
-    调用 LLM，将用户的自然语言修改指令翻译为结构化 patch 操作列表。
-
-    LLM 看到当前大纲（含节点 id）后判断是否需要修改：
-    - 无修改意图 → 返回 []
-    - 有修改意图 → 返回 [{op, ...}, ...]
-
-    add_node op 在 LLM 输出后自动从 nodes_dict 补全完整子树。
-
-    Args:
-        user_request : 用户的自然语言问题或修改指令
-        outline_tree : 当前大纲树 dict
-        kb_tree_text : search_graph_tree 返回的知识图谱树文本，有值时追加到 prompt 供 add_node 使用
-
-    Returns:
-        patch 操作列表，可能为空列表
-    """
-    llm = LLMService.from_env()
-    tree_text = tree_to_id_text(outline_tree)
-
-    user_content = f"## 当前大纲\n{tree_text}\n\n## 修改指令\n{user_request}"
-    if kb_tree_text:
-        user_content += f"\n\n## 可用的知识图谱节点（用于 add_node）\n{kb_tree_text}"
-
-    messages = [
-        {"role": "system", "content": PATCH_PROMPT},
-        {"role": "user", "content": user_content},
-    ]
-
-    logger.info(
-        "[Step 8] Patch Prompt:\n[SYSTEM]\n%s\n\n[USER]\n%s",
-        messages[0]["content"],
-        messages[1]["content"],
-    )
-
-    answer = await llm.complete(messages)
-    logger.info("[Step 8] LLM 完整输出:\n%s", answer)
-
-    raw = LLMService._parse_json(answer)
-    ops: list[dict] = raw if isinstance(raw, list) else [raw]
-
-    # 补全 add_node ops：从 nodes_dict 递归构建完整子树
-    add_ops = [op for op in ops if op.get("op") == "add_node"]
-    if add_ops:
-        _, nodes_dict, children_map = load_resources()
-        for op in add_ops:
-            subtree = _build_kb_subtree(op.get("node_id", ""), nodes_dict, children_map)
-            if subtree:
-                op["subtree"] = subtree
-
-    logger.info("[Step 8] 解析 patch 操作 (%d 条): %s", len(ops), ops)
-    return ops
-
-
-# ── Step 9 ────────────────────────────────────────────────────
+# ── apply_patch ───────────────────────────────────────────────
 
 def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
     """

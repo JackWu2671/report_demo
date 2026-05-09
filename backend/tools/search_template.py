@@ -1,13 +1,10 @@
 """
-search_template.py — template search and matching tools.
+search_template.py — 模板检索工具。
 
-Three functions at different granularities:
+  search_outline_templates  — 向量检索，返回 top-N 原始候选列表
+  load_template_outline     — 按模板 id 直接加载完整大纲
 
-  search_outline_templates  — vector search only, returns top-N raw candidates
-  match_outline_template    — search + LLM judge, returns best match or not_found
-  load_template_outline     — load full outline for a specific template by scene_name
-
-Used by: agent2, workflow.py
+Used by: agent2
 """
 
 import json
@@ -64,44 +61,6 @@ async def search_outline_templates(question: str, top_k: int = 5) -> dict:
             }
             for t in candidates
         ],
-    }
-
-
-async def match_outline_template(question: str) -> dict:
-    """
-    Vector search + LLM judge — return the best-matching template or not_found.
-
-    Returns:
-        status="pending_confirm"  — matched a template; outline_tree populated
-        status="not_found"        — no suitable template found
-    """
-    logger.info("[Tool:match_outline_template] question=%r", question)
-
-    query_embedding = await embed_query(question)
-    candidates = await search_templates(query_embedding, top_k=5)
-
-    if not candidates:
-        return _not_found("模板库为空，请走知识库生成")
-
-    selected = await select_template(question, candidates)
-    if not selected:
-        return _not_found("未找到与需求匹配的预制大纲")
-
-    raw_tree = selected.get("outline", {})
-    if not raw_tree:
-        return _not_found("模板存在但缺少 outline 字段")
-
-    clean_tree = to_clean_json(raw_tree)
-    wrapped = {"id": "__root__", "name": "", "level": 0, "description": "", "children": [clean_tree]}
-    logger.info("[Tool:match_outline_template] 选中: %s (score=%.3f)",
-                selected.get("scene_name"), selected.get("_score", 0))
-    return {
-        "status": "pending_confirm",
-        "outline_tree": wrapped,
-        "markdown": to_markdown(wrapped),
-        "md_with_ids": to_markdown_with_ids(wrapped),
-        "scene_name": selected.get("scene_name", ""),
-        "reason": "",
     }
 
 

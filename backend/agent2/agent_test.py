@@ -5,14 +5,15 @@ Usage:
     cd backend
     python agent2/agent_test.py
 
-Each user turn streams events:
-  [running] match_outline_template     ← tool executing
-  [done]    match_outline_template
-  ── 大纲 ──────────────────────────    ← outline event (instant, no LLM streaming)
+每轮用户输入产出的事件示例:
+  [running] search_outline_templates   ← 工具执行中
+  [done]    search_outline_templates
+  [running] build_outline_from_anchor
+  ── 大纲 ──────────────────────────    ← outline 事件（工具返回后立即推送）
   # 传送网专项分析
   ...
   ──────────────────────────────────
-  🤖 已找到匹配大纲，共5个章节。      ← LLM brief text
+  🤖 大纲已就绪，是否需要调整？        ← LLM 简短文字回复
 
 Built-in commands:
   /state    print current outline_tree JSON
