@@ -19,7 +19,7 @@ if _BACKEND_DIR not in sys.path:
 
 from services.embedding_service import EmbeddingService
 from services.faiss_service import FAISSService
-from tools.loader import load_resources
+from utils.loader import load_resources
 
 logger = logging.getLogger(__name__)
 

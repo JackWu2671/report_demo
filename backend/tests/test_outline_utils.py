@@ -12,7 +12,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from outline_utils import to_markdown, to_markdown_with_ids, to_clean_json
+from utils.outline_utils import to_markdown, to_markdown_with_ids, to_clean_json
 
 # ── 测试数据（模拟 subtree.build_subtree 的输出）──────────────────
 
