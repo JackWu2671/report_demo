@@ -6,7 +6,7 @@ workflow.py — 大纲生成工作流编排入口。
             ├── 命中 → 直接返回模板大纲
             └── 未命中 → Step 2
   Step 2  search_graph_tree()        FAISS 检索知识图谱 → 补全祖先路径 → 返回候选树
-  Step 3  generate_outline()         LLM 基于候选树生成完整大纲（待实现）
+  Step 3  build_outline_from_anchor  从 agent 选定锚节点展开子树生成大纲（见 agent2）
 
 使用方法:
     cd backend
@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 from tools.search_template import match_outline_template
 from tools.search_graph_tree import search_graph_tree
-from tools.generate_outline import generate_outline
 from patcher import parse_patch, apply_patch
 from renderer import render_outline
 from exporter import export_json
@@ -61,13 +60,9 @@ async def main(question: str) -> tuple[dict, str]:
         logger.info("[workflow] 知识图谱无命中")
         return {}, graph_result["message"]
 
-    # Step 3: LLM 基于候选树生成完整大纲
-    outline_result = await generate_outline(question, graph_result["tree_text"])
-    if outline_result["status"] != "success":
-        logger.error("[workflow] generate_outline 失败: %s", outline_result["message"])
-        return {}, outline_result["message"]
-
-    return outline_result["outline_tree"], outline_result["markdown"]
+    # Step 3: agent2 通过 build_outline_from_anchor 从锚节点展开子树生成大纲
+    # workflow.py 仅演示 Step 1-2，完整流程由 agent2 负责
+    return {}, graph_result["tree_text"]
 
 
 async def modify(user_request: str, outline_tree: dict) -> tuple[dict, str]:

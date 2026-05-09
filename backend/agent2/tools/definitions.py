@@ -3,11 +3,22 @@ definitions.py — agent2 的 OpenAI 工具 schema 定义。
 
 共五个工具，按新建大纲时的推荐调用顺序排列：
   1. search_outline_templates  — 向量检索，返回 top-N 候选模板列表（纯检索，不调 LLM）
-  2. load_template_outline     — 按模板名称直接加载完整大纲
+  2. load_template_outline     — 按模板 id 直接加载完整大纲
   3. build_outline_from_anchor — 从 agent 选定的锚节点展开知识图谱子树
   4. search_graph_tree         — FAISS 检索知识库，构建带祖先路径的树状结构
   5. modify_outline            — 对当前大纲执行结构化 patch 操作
 """
+
+import os
+import sys
+
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+_BACKEND_DIR = os.path.dirname(os.path.dirname(_TOOLS_DIR))
+
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+from tools.shared_tools import make_search_graph_tree_tool, make_modify_outline_tool
 
 TOOLS: list[dict] = [
     {
@@ -77,55 +88,14 @@ TOOLS: list[dict] = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_graph_tree",
-            "description": (
-                "从知识图谱中检索与问题相关的节点，返回带祖先路径的树状结构（含节点 id、描述、FAISS 命中分数）。"
-                "search_outline_templates 无合适候选时调用此工具，再从结果树中选锚节点调用 build_outline_from_anchor。"
-                "status=not_found 表示知识库无相关内容，应告知用户系统暂不支持该场景。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "question": {
-                        "type": "string",
-                        "description": "用户的分析需求描述，原文传入",
-                    },
-                },
-                "required": ["question"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "modify_outline",
-            "description": (
-                "对当前报告大纲执行修改，直接传入结构化操作列表。"
-                "仅当已存在大纲时可用。ops 由你根据用户指令和当前大纲（system prompt 中）直接构造。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ops": {
-                        "type": "array",
-                        "description": (
-                            "操作列表，每条操作包含 op 字段和对应参数。\n"
-                            "支持的操作：\n"
-                            "- add_node: {op, node_id, parent_id} — 从知识图谱新增节点到指定父节点下；若要新增与现有一级章节平行的顶层章节，parent_id 传空字符串 \"\"\n"
-                            "- delete_node: {op, node_id} — 删除节点及其子树\n"
-                            "- modify_node_name: {op, node_id, value} — 修改节点名称\n"
-                            "- modify_node_description: {op, node_id, value} — 修改节点描述\n"
-                            "- modify_node_condition: {op, node_id, value} — 设置或修改节点展示条件；value 格式必须为「当……时，本节才展示」；value 传空字符串表示删除条件\n"
-                            "- keep_only_node: {op, node_id} — 保留该节点，删除同级其他节点（每个保留节点单独一条）"
-                        ),
-                        "items": {"type": "object"},
-                    }
-                },
-                "required": ["ops"],
-            },
-        },
-    },
+    make_search_graph_tree_tool(
+        context_desc=(
+            "search_outline_templates 无合适候选时调用此工具，再从结果树中选锚节点调用 build_outline_from_anchor。"
+            "status=not_found 表示知识库无相关内容，应告知用户系统暂不支持该场景。"
+        ),
+        question_desc="用户的分析需求描述，原文传入",
+    ),
+    make_modify_outline_tool(
+        extra_desc="ops 由你根据用户指令和当前大纲（system prompt 中）直接构造。"
+    ),
 ]

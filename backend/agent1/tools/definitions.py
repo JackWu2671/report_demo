@@ -3,33 +3,28 @@ definitions.py — agent1 的 OpenAI 工具 schema 定义。
 
 共五个工具，按专家知识沉淀流程排列：
   1. search_graph_tree         — FAISS 检索知识库，返回带祖先路径的树状结构
-  2. set_outline_from_markdown — LLM 构造 md_with_ids 文本后调此工具渲染为大纲（含 scene_name / summary）
-  3. set_scene_metadata        — 补充关键词和适用条件
+  2. set_outline_from_markdown — LLM 构造 md_with_ids 文本后调此工具渲染为大纲
+  3. set_scene_metadata        — 填写场景名称、摘要、关键词、适用条件
   4. modify_outline            — 对当前大纲执行结构化 patch 操作
   5. save_outline_template     — 将当前大纲保存为可复用模板
 """
 
+import os
+import sys
+
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+_BACKEND_DIR = os.path.dirname(os.path.dirname(_TOOLS_DIR))
+
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+from tools.shared_tools import make_search_graph_tree_tool, make_modify_outline_tool
+
 TOOLS: list[dict] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_graph_tree",
-            "description": (
-                "从知识图谱中检索与问题相关的节点，返回带祖先路径的树状结构（含节点 id、名称、描述）。"
-                "专家提供场景描述后首先调用，获取可用的节点 id，再组合构造大纲。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "question": {
-                        "type": "string",
-                        "description": "专家的业务场景描述，原文传入",
-                    },
-                },
-                "required": ["question"],
-            },
-        },
-    },
+    make_search_graph_tree_tool(
+        context_desc="专家提供场景描述后首先调用，获取可用的节点 id，再组合构造大纲。",
+        question_desc="专家的业务场景描述，原文传入",
+    ),
     {
         "type": "function",
         "function": {
@@ -95,36 +90,7 @@ TOOLS: list[dict] = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "modify_outline",
-            "description": (
-                "对当前报告大纲执行修改，直接传入结构化操作列表。"
-                "仅当已存在大纲时可用。每次只传一个 op。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ops": {
-                        "type": "array",
-                        "description": (
-                            "操作列表，每条操作包含 op 字段和对应参数。每次只传一个 op。\n"
-                            "支持的操作：\n"
-                            "- add_node: {op, node_id, parent_id} — 新增知识库已有节点（node_id 必须来自 search_graph_tree 返回结果，不可新建）；顶层章节 parent_id 传 \"\"\n"
-                            "- delete_node: {op, node_id} — 删除节点及其子树\n"
-                            "- modify_node_name: {op, node_id, value} — 修改节点名称\n"
-                            "- modify_node_description: {op, node_id, value} — 修改节点描述\n"
-                            "- modify_node_condition: {op, node_id, value} — 设置或修改节点展示条件；value 格式必须为「当……时，本节才展示」；value 传空字符串表示删除条件\n"
-                            "- keep_only_node: {op, node_id} — 保留该节点，删除同级其他节点"
-                        ),
-                        "items": {"type": "object"},
-                    }
-                },
-                "required": ["ops"],
-            },
-        },
-    },
+    make_modify_outline_tool(one_op_per_call=True),
     {
         "type": "function",
         "function": {
