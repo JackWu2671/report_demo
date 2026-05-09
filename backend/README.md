@@ -157,7 +157,7 @@ async def chat_stream(self, user_message: str):
 search_graph_tree → set_outline_from_markdown → set_scene_metadata → [modify_outline] → save_outline_template
 ```
 
-专家输入业务描述 → 检索图谱找锚点 → LLM 自行设计大纲结构（用 set_outline_from_markdown 写入）→ 填元数据 → 保存
+专家输入业务描述 → 检索图谱获取相关节点 → LLM 根据节点信息自行设计大纲结构，写成 md_with_ids 格式（set_outline_from_markdown 渲染）→ 填元数据 → 保存
 
 **Agent2 的工具链**
 
@@ -333,14 +333,16 @@ FAISS 余弦相似度检索 → top-K 命中节点（带 score）
 
 **为什么要展开子节点？**
 
-FAISS 只命中相似度超过阈值的节点，但用户可能需要子节点的内容。例如命中 L3"传送网覆盖分析"后，L4/L5 的具体分析维度也应该展示给 LLM，让它选合适的锚节点。
+FAISS 只命中相似度超过阈值的节点，但 LLM 需要看到更完整的图谱结构才能做出正确判断。例如命中 L3"传送网覆盖分析"后，L4/L5 的具体分析维度也一并展开，让 LLM 能看到这条路径下的全貌。
 
-**`search_graph_tree` vs `build_outline_from_anchor` 分工**
+**`search_graph_tree` 与 `build_outline_from_anchor` 是两件不同的事**
 
-- `search_graph_tree`：让 LLM 看到知识图谱里有什么，**由 LLM 选锚节点**（需要理解用户意图）
-- `build_outline_from_anchor`：纯 Python，不调 LLM，给定锚节点 ID 递归展开全部子节点生成大纲（纯数据操作）
+`search_graph_tree` 是**检索工具**，作用是把知识图谱中与问题相关的结构以树形文本呈现给 LLM，它的职责到此为止。拿到这份信息之后，LLM 怎么用完全取决于 agent：
 
-分工原因：锚节点选择是"理解意图"，LLM 擅长；子树展开是"数据操作"，Python 更快更稳定。
+- **Agent1**：LLM 读取返回的节点信息，自行设计大纲结构，写成 `md_with_ids` 格式，再调 `set_outline_from_markdown` 渲染。检索结果是素材，大纲结构由 LLM 创作。
+- **Agent2**：LLM 从返回的节点中选出一个最匹配的节点 ID 作为锚点，再调 `build_outline_from_anchor` 展开。检索结果是候选列表，LLM 做选择。
+
+`build_outline_from_anchor` 是**大纲生成工具**，它接收的 `anchor_id` 正是 LLM 刚才在上一步推理中选出来的——工具本身不调 LLM，但它的输入参数本就是 LLM 决策的产物。工具执行的是纯机械的子树递归展开，不再需要 LLM 参与。
 
 ---
 
