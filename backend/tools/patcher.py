@@ -25,7 +25,7 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 from services.llm_service import LLMService
-from loader import load_resources
+from tools.loader import load_resources
 
 logger = logging.getLogger(__name__)
 

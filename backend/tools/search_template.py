@@ -18,14 +18,12 @@ from pathlib import Path
 
 _TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_TOOLS_DIR)
-_WF2_DIR = os.path.join(_BACKEND_DIR, "case_workflow_2")
 
-for _p in [_BACKEND_DIR, _WF2_DIR]:
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
 
-from retriever import embed_query
-from template_selector import search_templates, select_template
+from tools.retriever import embed_query
+from tools.template_selector import search_templates, select_template
 from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 
 logger = logging.getLogger(__name__)

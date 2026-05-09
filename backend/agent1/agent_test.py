@@ -28,11 +28,9 @@ import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _BACKEND = os.path.dirname(_HERE)
-_WF1 = os.path.join(_BACKEND, "case_workflow_1")
 
-for _p in [_BACKEND, _WF1]:
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+if _BACKEND not in sys.path:
+    sys.path.insert(0, _BACKEND)
 
 from dotenv import load_dotenv
 load_dotenv(os.path.join(_BACKEND, ".env"))
