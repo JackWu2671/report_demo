@@ -1,16 +1,14 @@
 """
-agent.py — Multi-turn tool-calling agent (async generator interface).
+agent.py — Agent2：报告大纲生成流程。
 
-Agent2.chat_stream(user_message) is an async generator that yields typed events:
-
-  {"type": "step",    "name": str, "status": "running"|"done"}
-  {"type": "outline", "markdown": str}          ← emitted by tool, no LLM streaming
-  {"type": "text",    "chunk": str}             ← LLM's brief acknowledgment
+chat_stream() 产出的事件类型：
+  {"type": "step",    "name": str, "call_id": str, "status": "running"|"done", "args": dict, "result": str, "detail": str}
+  {"type": "outline", "markdown": str, "md_with_ids": str, "outline_tree": dict}
+  {"type": "text",    "chunk": str}
   {"type": "done",    "seconds": float}
   {"type": "error",   "message": str}
 
-The outline is always delivered via the "outline" event — the LLM never outputs
-the markdown text itself, keeping its reply to 1-2 short sentences.
+大纲始终通过 outline 事件推送，LLM 的文字回复保持在 1-2 句话。
 """
 
 import json
@@ -39,27 +37,27 @@ _MAX_TOOL_ROUNDS = 10
 
 class Agent2:
     """
-    Stateful multi-turn agent.
+    报告大纲生成 agent（有状态，多轮对话）。
 
-    State lives in self.memory (AgentMemory):
-      - outline_tree / markdown / md_with_ids: current outline
-      - _history: conversation turns (compact tool results, no raw markdown)
+    状态保存在 self.memory（AgentMemory）：
+      - outline_tree / markdown / md_with_ids：当前大纲
+      - _history：对话历史（工具结果以紧凑字符串存入，不存原始 markdown）
 
-    To start fresh, call agent.memory.reset() or create a new Agent2().
+    重置会话：调用 agent.memory.reset() 或新建 Agent2()。
     """
 
     def __init__(self) -> None:
         self.memory = AgentMemory()
         self.system_prompt = _SYSTEM_PROMPT
 
-    # ── Public interface ───────────────────────────────────────
+    # ── Public ────────────────────────────────────────────────────
 
     async def chat_stream(self, user_message: str) -> AsyncGenerator[dict, None]:
         """
-        Process one user turn, yielding events as they happen.
+        处理一轮用户输入，以事件流形式 yield 结果。
 
-        Outline events are emitted immediately when a tool produces an outline —
-        no LLM streaming delay. The LLM's text reply is a short acknowledgment.
+        大纲事件在工具返回后立即推送，无需等待 LLM 文字回复。
+        LLM 的文字回复应保持在 1-2 句话（由 system prompt 约束）。
         """
         self.memory.add_message({"role": "user", "content": user_message})
         logger.info("[Agent2] user: %r", user_message)
@@ -85,14 +83,14 @@ class Agent2:
 
                     result_dict, llm_str = await self._execute_tool(tc)
 
-                    # Emit outline event immediately — no LLM round-trip needed
+                    # 大纲事件立即推送，无需等待 LLM 回复
                     if result_dict.get("outline_tree"):
                         yield {"type": "outline",
                                "markdown": result_dict["markdown"],
                                "md_with_ids": result_dict["md_with_ids"],
                                "outline_tree": result_dict["outline_tree"]}
 
-                    # Template found but needs user confirmation before committing
+                    # 模板命中，等待用户确认是否采用
                     if result_dict.get("status") == "pending_confirm":
                         yield {
                             "type": "confirm",
@@ -109,9 +107,9 @@ class Agent2:
                         "tool_call_id": tc.id,
                         "content": llm_str,
                     })
-                continue  # let LLM respond to tool results
+                continue  # 让 LLM 处理工具结果后继续
 
-            # Final text — should be short (LLM instructed to be brief)
+            # LLM 给出文字回复，结束本轮
             text = (msg.content or "").strip()
             if text:
                 yield {"type": "text", "chunk": text}
@@ -122,10 +120,10 @@ class Agent2:
         yield {"type": "error", "message": "工具调用次数超限，请重试"}
         yield {"type": "done", "seconds": round(time.time() - t0, 1)}
 
-    # ── Internal ───────────────────────────────────────────────
+    # ── Internal ──────────────────────────────────────────────────
 
     async def _call_llm(self):
-        """Build context-injected messages and call the LLM."""
+        """将当前大纲注入 system prompt 后调用 LLM。"""
         llm = LLMService.from_env()
         messages = self.memory.build_messages(_SYSTEM_PROMPT)
         logger.info("[Agent2] LLM call: %d messages", len(messages))
@@ -140,7 +138,7 @@ class Agent2:
         )
 
     async def _execute_tool(self, tool_call) -> tuple[dict, str]:
-        """Execute one tool call, return (result_dict, llm_str)."""
+        """执行单条工具调用，返回 (result_dict, llm_str)。"""
         name = tool_call.function.name
         try:
             args = json.loads(tool_call.function.arguments)
@@ -163,7 +161,7 @@ class Agent2:
         return result_dict, llm_str
 
 
-# ── Display helpers ────────────────────────────────────────────
+# ── 展示辅助 ──────────────────────────────────────────────────────
 
 def _count_nodes(tree: dict) -> int:
     return 1 + sum(_count_nodes(c) for c in tree.get("children", []))
