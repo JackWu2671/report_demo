@@ -94,8 +94,14 @@ class AgentWithSkills:
             if choice.finish_reason == "tool_calls" and msg.tool_calls:
                 for tc in msg.tool_calls:
                     name = tc.function.name
+                    call_id = tc.id
+                    try:
+                        args_for_display = json.loads(tc.function.arguments)
+                    except Exception:
+                        args_for_display = {}
                     logger.info("[AgentWithSkills] LLM decided: %s(%s)", name, tc.function.arguments)
-                    yield {"type": "step", "name": name, "status": "running"}
+                    yield {"type": "step", "name": name, "status": "running",
+                           "call_id": call_id, "args": args_for_display}
 
                     result_dict, llm_str = await self._execute_tool(tc)
 
@@ -120,7 +126,10 @@ class AgentWithSkills:
                                "scene_name": result_dict["scene_name"],
                                "path": result_dict["path"]}
 
-                    yield {"type": "step", "name": name, "status": "done"}
+                    yield {"type": "step", "name": name, "status": "done",
+                           "call_id": call_id,
+                           "result": _result_display(name, result_dict, llm_str),
+                           "detail": llm_str}
                     self.memory.add_message(
                         {"role": "tool", "tool_call_id": tc.id, "content": llm_str}
                     )
@@ -224,3 +233,54 @@ class AgentWithSkills:
         level = "2" if ref_path else "1"
         label = f"{skill_name}/{ref_path}" if ref_path else skill_name
         return {}, f"[read_skill Level {level}] {label}:\n\n{content}"
+
+
+def _result_display(name: str, result: dict, llm_str: str) -> str:
+    """将工具结果转为前端步骤面板显示的单行摘要。"""
+    status = result.get("status", "")
+    # skill 元工具
+    if name == "skills_list":
+        n = llm_str.count('"name"')
+        return f"列出 {n} 个 skill"
+    if name == "read_skill":
+        lines = [l for l in llm_str.splitlines() if l.strip()]
+        return lines[0] if lines else "已读取"
+    # agent2 工具
+    if name == "search_outline_templates":
+        n = len(result.get("candidates", []))
+        return f"找到 {n} 个候选模板" if status == "found" else f"未找到：{result.get('reason', '')}"
+    if name == "load_template_outline":
+        return f"已加载：{result.get('scene_name', '')}" if status == "success" else f"未找到：{result.get('reason', '')}"
+    if name == "build_outline_from_anchor":
+        if status == "success":
+            tree = result.get("outline_tree", {})
+            children = tree.get("children", [])
+            return f"根节点：{children[0].get('name', '') if children else ''}，{_count_nodes(tree)} 个节点"
+        return f"失败：{result.get('message', '')}"
+    # 共用工具
+    if name == "search_graph_tree":
+        if status == "success":
+            lines = [l for l in result.get("tree_text", "").splitlines() if l.strip()]
+            return f"返回 {len(lines)} 个节点"
+        return f"未找到：{result.get('message', '')}"
+    if name == "modify_outline":
+        if status == "success":
+            ops = result.get("ops", [])
+            return f"{len(ops)} 个操作：{', '.join(op.get('op', '?') for op in ops)}"
+        return f"失败：{result.get('message', '')}"
+    # agent1 工具
+    if name == "set_outline_from_markdown":
+        return "大纲已渲染" if status == "success" else f"失败：{result.get('message', '')}"
+    if name == "set_scene_metadata":
+        return f"场景：{result.get('scene_name', '')}，元数据已记录" if status == "success" else f"失败：{result.get('message', '')}"
+    if name == "save_outline_template":
+        return f"已保存：{result.get('scene_name', '')}" if status == "success" else f"失败：{result.get('message', '')}"
+    return status or "完成"
+
+
+def _count_nodes(tree: dict) -> int:
+    """递归统计树中节点总数。"""
+    count = 1
+    for child in tree.get("children", []):
+        count += _count_nodes(child)
+    return count
