@@ -25,7 +25,7 @@ from services.llm_service import LLMService
 from agent2.tools import TOOLS
 from pathlib import Path
 
-_SYSTEM_PROMPT = (Path(_BACKEND) / "agent2" / "prompt.txt").read_text(encoding="utf-8")
+_SYSTEM_PROMPT = (Path(_BACKEND) / "agent2" / "system_prompt.txt").read_text(encoding="utf-8")
 
 _DIV  = "─" * 60
 _DIV2 = "═" * 60
