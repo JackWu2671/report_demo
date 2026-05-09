@@ -170,6 +170,7 @@ def _count_nodes(tree: dict) -> int:
 
 
 def _result_display(name: str, result: dict) -> str:
+    """将工具结果转为前端步骤面板显示的单行摘要。"""
     status = result.get("status", "?")
     if name == "search_outline_templates":
         n = len(result.get("candidates", []))

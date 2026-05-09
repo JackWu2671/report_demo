@@ -59,14 +59,29 @@ _SKILL_SYSTEM_TEMPLATE = """\
 
 
 class AgentWithSkills:
+    """
+    渐进式 skill 加载的单一 agent（有状态，多轮对话）。
+
+    启动时仅将 skill 的 name/description 注入 system prompt（Level 0，极少 token）。
+    LLM 按需调用 read_skill 加载完整 SOP（Level 1），或 skill 内支持文件（Level 2）。
+    业务工具来自 agent1 + agent2 的合集，通过 _BUSINESS_HANDLERS 分发。
+    状态使用 Agent1Memory（agent1/agent2 所需字段的超集）。
+    """
+
     def __init__(self) -> None:
         self.registry = SkillRegistry(_SKILLS_DIR)
-        self._loaded: set[str] = set()
-        self.memory = Agent1Memory()  # 超集，兼容两个 skill 所需的所有状态字段
+        self._loaded: set[str] = set()  # 已注入 context 的 skill SOP，避免重复加载
+        self.memory = Agent1Memory()    # 超集，兼容两个 skill 所需的所有状态字段
 
     # ── Public ────────────────────────────────────────────────────
 
     async def chat_stream(self, user_message: str) -> AsyncGenerator[dict, None]:
+        """
+        处理一轮用户输入，以事件流形式 yield 结果。
+
+        LLM 遇到复杂任务时会先调 read_skill 加载 SOP，再执行业务工具。
+        大纲、元数据等事件在工具返回后立即推送，无需等待 LLM 文字回复。
+        """
         self.memory.add_message({"role": "user", "content": user_message})
         t0 = time.time()
 
@@ -120,12 +135,14 @@ class AgentWithSkills:
         yield {"type": "done", "seconds": round(time.time() - t0, 1)}
 
     def reset(self) -> None:
+        """重置会话状态，清空对话历史、大纲和已加载的 skill SOP。"""
         self.memory.reset()
         self._loaded.clear()
 
     # ── Internal ──────────────────────────────────────────────────
 
     def _build_system_prompt(self) -> str:
+        """将 Level 0 skill 列表拼入 system prompt，每次 LLM 调用前动态构建。"""
         lines = []
         for m in self.registry.list_all():
             cat = f"[{m['category']}] " if m.get("category") else ""
@@ -135,6 +152,7 @@ class AgentWithSkills:
         return f"{_SYSTEM_PROMPT}\n\n{skill_block}"
 
     async def _call_llm(self):
+        """将当前大纲和 skill 列表注入 system prompt 后调用 LLM。"""
         llm = LLMService.from_env()
         messages = self.memory.build_messages(self._build_system_prompt())
         logger.info(
@@ -156,6 +174,10 @@ class AgentWithSkills:
         )
 
     async def _execute_tool(self, tool_call) -> tuple[dict, str]:
+        """
+        分发工具调用：skill 元工具由本地处理，业务工具转发给 _BUSINESS_HANDLERS。
+        返回 (result_dict, llm_str)。
+        """
         name = tool_call.function.name
         try:
             args = json.loads(tool_call.function.arguments)
@@ -177,6 +199,7 @@ class AgentWithSkills:
             return {}, f"工具执行失败: {e}"
 
     def _handle_skills_list(self) -> tuple[dict, str]:
+        """返回所有可用 skill 的 Level 0 元数据列表（name、description、category）。"""
         items = [
             {"name": m["name"], "description": m.get("description", ""), "category": m.get("category", "")}
             for m in self.registry.list_all()
@@ -184,6 +207,10 @@ class AgentWithSkills:
         return {}, f"[skills_list]\n{json.dumps(items, ensure_ascii=False, indent=2)}"
 
     def _handle_read_skill(self, args: dict) -> tuple[dict, str]:
+        """
+        加载 skill SOP 正文（Level 1）或内部支持文件（Level 2）。
+        已加载过的 SOP 直接返回提示，不重复注入 context。
+        """
         skill_name = args.get("name", "")
         ref_path = args.get("path")
         if self.registry.get(skill_name) is None:

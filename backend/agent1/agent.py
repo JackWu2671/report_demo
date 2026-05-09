@@ -36,11 +36,28 @@ _MAX_TOOL_ROUNDS = 10
 
 
 class Agent1:
+    """
+    专家知识沉淀 agent（有状态，多轮对话）。
+
+    状态保存在 self.memory（Agent1Memory）：
+      - outline_tree / markdown / md_with_ids：当前大纲
+      - extraction：场景元数据（scene_name、keywords 等）
+      - _history：对话历史（工具结果以紧凑字符串存入，不存原始 markdown）
+
+    重置会话：调用 agent.memory.reset() 或新建 Agent1()。
+    """
+
     def __init__(self) -> None:
         self.memory = Agent1Memory()
         self.system_prompt = _SYSTEM_PROMPT
 
     async def chat_stream(self, user_message: str) -> AsyncGenerator[dict, None]:
+        """
+        处理一轮用户输入，以事件流形式 yield 结果。
+
+        大纲、元数据事件在工具返回后立即推送，无需等待 LLM 文字回复。
+        LLM 的文字回复应保持在 1-2 句话（由 system prompt 约束）。
+        """
         self.memory.add_message({"role": "user", "content": user_message})
         logger.info("[Agent1] user: %r", user_message)
         t0 = time.time()
@@ -104,6 +121,7 @@ class Agent1:
         yield {"type": "done", "seconds": round(time.time() - t0, 1)}
 
     async def _call_llm(self):
+        """将场景元数据和当前大纲注入 system prompt 后调用 LLM。"""
         llm = LLMService.from_env()
         messages = self.memory.build_messages(_SYSTEM_PROMPT)
         logger.info("[Agent1] LLM call: %d messages", len(messages))
@@ -117,6 +135,7 @@ class Agent1:
         )
 
     async def _execute_tool(self, tool_call) -> tuple[dict, str]:
+        """执行单条工具调用，返回 (result_dict, llm_str)。"""
         name = tool_call.function.name
         try:
             args = json.loads(tool_call.function.arguments)
@@ -134,7 +153,7 @@ class Agent1:
 
 
 def _result_display(name: str, result: dict) -> str:
-    """生成前端步骤摘要的单行字符串。"""
+    """将工具结果转为前端步骤面板显示的单行摘要。"""
     status = result.get("status", "?")
     if name == "search_graph_tree":
         if status == "success":
