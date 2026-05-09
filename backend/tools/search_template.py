@@ -20,7 +20,7 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 from tools.retriever import embed_query
-from tools.template_selector import search_templates, select_template
+from tools.template_selector import search_templates
 from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 
 logger = logging.getLogger(__name__)
