@@ -1,11 +1,8 @@
 """
-shared_tools.py — agent1 / agent2 共用的工具定义和 handler。
+shared_tools.py — 所有工具的 schema 定义全集。
 
-目前共用工具：
-  - search_graph_tree : FAISS 检索知识库
-  - modify_outline    : 对大纲执行结构化 patch 操作
-
-各 agent 通过工厂函数获取带有上下文描述的工具定义，handler 直接导入复用。
+各 agent 按需从此文件导入所需工具定义，组装自己的 TOOLS 列表。
+共用的 handler 实现（handle_search_graph_tree、handle_modify_outline）也在此处统一维护。
 """
 
 import logging
@@ -25,79 +22,206 @@ from memory.store import AgentMemory
 logger = logging.getLogger(__name__)
 
 
-# ── Tool Definitions ─────────────────────────────────────────────
+# ── Tool Schema Definitions ──────────────────────────────────────
 
-def make_search_graph_tree_tool(context_desc: str, question_desc: str = "业务场景描述，原文传入") -> dict:
-    """构造 search_graph_tree 工具定义，context_desc 说明该 agent 的调用时机和后续动作。"""
-    return {
-        "type": "function",
-        "function": {
-            "name": "search_graph_tree",
-            "description": (
-                "从知识图谱中检索与问题相关的节点，返回带祖先路径的树状结构（含节点 id、名称、描述）。"
-                + context_desc
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "question": {
-                        "type": "string",
-                        "description": question_desc,
-                    },
+SEARCH_GRAPH_TREE_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "search_graph_tree",
+        "description": "从知识图谱中检索与问题相关的节点，返回带祖先路径的树状结构（含节点 id、名称、描述）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "业务场景描述，原文传入",
                 },
-                "required": ["question"],
             },
+            "required": ["question"],
         },
-    }
+    },
+}
 
+MODIFY_OUTLINE_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "modify_outline",
+        "description": "对当前报告大纲执行修改，直接传入结构化操作列表。仅当已存在大纲时可用。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ops": {
+                    "type": "array",
+                    "description": (
+                        "操作列表，每条操作包含 op 字段和对应参数。\n"
+                        "支持的操作：\n"
+                        "- add_node: {op, node_id, parent_id} — 新增知识库已有节点（node_id 必须来自 search_graph_tree 返回结果，不可新建）；顶层章节 parent_id 传 \"\"\n"
+                        "- delete_node: {op, node_id} — 删除节点及其子树\n"
+                        "- modify_node_name: {op, node_id, value} — 修改节点名称\n"
+                        "- modify_node_description: {op, node_id, value} — 修改节点描述\n"
+                        "- modify_node_condition: {op, node_id, value} — 设置或修改节点展示条件；value 格式必须为「当……时，本节才展示」；value 传空字符串表示删除条件\n"
+                        "- keep_only_node: {op, node_id} — 保留该节点，删除同级其他节点（每个保留节点单独一条）"
+                    ),
+                    "items": {"type": "object"},
+                }
+            },
+            "required": ["ops"],
+        },
+    },
+}
 
-_MODIFY_OUTLINE_OPS_BASE = (
-    "支持的操作：\n"
-    "- add_node: {op, node_id, parent_id} — 新增知识库已有节点（node_id 必须来自 search_graph_tree 返回结果，不可新建）；顶层章节 parent_id 传 \"\"\n"
-    "- delete_node: {op, node_id} — 删除节点及其子树\n"
-    "- modify_node_name: {op, node_id, value} — 修改节点名称\n"
-    "- modify_node_description: {op, node_id, value} — 修改节点描述\n"
-    "- modify_node_condition: {op, node_id, value} — 设置或修改节点展示条件；value 格式必须为「当……时，本节才展示」；value 传空字符串表示删除条件\n"
-    "- keep_only_node: {op, node_id} — 保留该节点，删除同级其他节点（每个保留节点单独一条）"
-)
-
-
-def make_modify_outline_tool(extra_desc: str = "", one_op_per_call: bool = False) -> dict:
-    """构造 modify_outline 工具定义。
-
-    Args:
-        extra_desc      : 追加到 description 末尾的上下文说明
-        one_op_per_call : True 时在描述和 ops 中加入"每次只传一个 op"限制（agent1）
-    """
-    desc = "对当前报告大纲执行修改，直接传入结构化操作列表。仅当已存在大纲时可用。"
-    if one_op_per_call:
-        desc += " 每次只传一个 op。"
-    if extra_desc:
-        desc += " " + extra_desc
-
-    header = "操作列表，每条操作包含 op 字段和对应参数。"
-    if one_op_per_call:
-        header += " 每次只传一个 op。"
-    ops_desc = header + "\n" + _MODIFY_OUTLINE_OPS_BASE
-
-    return {
-        "type": "function",
-        "function": {
-            "name": "modify_outline",
-            "description": desc,
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ops": {
-                        "type": "array",
-                        "description": ops_desc,
-                        "items": {"type": "object"},
-                    }
+SEARCH_OUTLINE_TEMPLATES_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "search_outline_templates",
+        "description": (
+            "向量检索模板库，返回与需求最相似的 top-N 候选模板列表（含 scene_name、summary、score）。"
+            "用户提出新的分析需求时优先调用。根据返回的候选列表自行判断是否有匹配的模板："
+            "有匹配 → 调用 load_template_outline 加载；无匹配 → 调用 search_graph_tree 从知识库生成。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "用户的分析需求描述，原文传入",
                 },
-                "required": ["ops"],
+                "top_k": {
+                    "type": "integer",
+                    "description": "返回候选数量，默认 5",
+                },
             },
+            "required": ["question"],
         },
-    }
+    },
+}
+
+LOAD_TEMPLATE_OUTLINE_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "load_template_outline",
+        "description": (
+            "按模板 id 直接加载指定模板的完整大纲内容。"
+            "在 search_outline_templates 返回候选后，判断有匹配时调用此工具加载大纲，再询问用户是否使用。"
+            "template_id 必须取自 search_outline_templates 返回的候选列表中的 id 字段。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "template_id": {
+                    "type": "string",
+                    "description": "模板唯一 id，取自 search_outline_templates 返回的候选列表中的 id 字段",
+                },
+            },
+            "required": ["template_id"],
+        },
+    },
+}
+
+BUILD_OUTLINE_FROM_ANCHOR_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "build_outline_from_anchor",
+        "description": (
+            "以指定节点为根，从知识图谱展开子树，生成初始报告大纲。"
+            "必须在 search_graph_tree 成功后，从返回的树中选出最相关节点的 id，再调用此工具。"
+            "anchor_id 取自 search_graph_tree 返回的树节点 id 字段，选择与用户需求最直接相关的节点。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "anchor_id": {
+                    "type": "string",
+                    "description": "锚节点 id，从 search_graph_tree 返回的树中选取，如 'L4_001'",
+                }
+            },
+            "required": ["anchor_id"],
+        },
+    },
+}
+
+SET_OUTLINE_FROM_MARKDOWN_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "set_outline_from_markdown",
+        "description": (
+            "将 LLM 构造的 md_with_ids 格式大纲文本解析为结构化大纲并渲染到前端，供专家直接查看。"
+            "调用后大纲将立即展示给专家，请确认内容完整、结构正确后再调用。"
+            "L2/L3/L4 层级由 LLM 按专家意图自由设计；L5 必须引用 search_graph_tree 返回的知识库节点 id。"
+            "调用此工具后，必须紧接着调用 set_scene_metadata 填写所有场景元数据。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "md_with_ids": {
+                    "type": "string",
+                    "description": (
+                        "大纲文本，每行格式：{缩进}[L{层级} {id}] {名称}（新建节点名后加全角冒号和描述）\n"
+                        "必须以唯一的 L1 节点作为根（报告总标题），所有 L2 节点均为其子节点。\n"
+                        "示例：\n"
+                        "[L1 new_001] 传送网络覆盖分析报告：面向OTN站点企业覆盖现状的专项分析\n"
+                        "  [L2 new_002] 企业分布洞察：了解目标市场的行业与区域分布\n"
+                        "    [L3 new_003] 行业与区域分布：统计价值企业分布，识别拓展方向\n"
+                        "      [L4 new_004] 企业分布分析：从行业、行政区等维度统计企业分布\n"
+                        "        [L5 L5_001] 企业行业分布\n"
+                        "        [L5 L5_002] 企业行政区分布"
+                    ),
+                },
+            },
+            "required": ["md_with_ids"],
+        },
+    },
+}
+
+SET_SCENE_METADATA_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "set_scene_metadata",
+        "description": (
+            "填写场景元数据（名称、摘要、关键词、适用条件），在 set_outline_from_markdown 之后立即调用。"
+            "元数据与大纲渲染解耦，仅在保存模板时使用。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "scene_name": {
+                    "type": "string",
+                    "description": "场景名称，中文，不超过 10 字，如「传送网络覆盖分析」",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "一句话场景摘要，不超过 50 字，概括本次分析的核心目标",
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "3～8 个核心领域关键词，名词短语为主，代表分析维度、评估指标或技术名词",
+                },
+                "usage_conditions": {
+                    "type": "string",
+                    "description": "适用条件，说明在什么业务场景下适合使用这份大纲，以及有哪些前提要求，不超过 80 字",
+                },
+            },
+            "required": ["scene_name", "summary", "keywords", "usage_conditions"],
+        },
+    },
+}
+
+SAVE_OUTLINE_TEMPLATE_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "save_outline_template",
+        "description": (
+            "将当前大纲保存为可复用模板。"
+            "仅在专家明确确认（如说'保存'、'好的就这样'）时调用，不得主动触发。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+}
 
 
 # ── Shared Handlers ──────────────────────────────────────────────
@@ -132,8 +256,6 @@ async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, 
         llm_str = f"[modify_outline] status=error  message={result['message']}"
     return result, llm_str
 
-
-# ── Shared Utilities ─────────────────────────────────────────────
 
 def _format_op(op: dict) -> str:
     """将单条操作格式化为可读单行字符串，用于前端步骤摘要和 LLM 历史。"""
