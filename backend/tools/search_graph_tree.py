@@ -26,15 +26,13 @@ logger = logging.getLogger(__name__)
 
 
 def _tree_to_text(nodes: list[dict], depth: int = 0) -> str:
-    """将树状 dict 列表渲染为缩进文本，★ 标记 FAISS 直接命中节点。"""
+    """将树状 dict 列表渲染为统一节点文本格式。"""
     lines = []
     for node in nodes:
         indent = "  " * depth
-        hit_mark = " ★" if node.get("hit") else ""
-        score_str = f" ({node['score']:.3f})" if node.get("score") is not None else ""
         id_str = f" {node['id']}" if node.get("id") else ""
-        desc_str = f" — {node['description']}" if node.get("description") else ""
-        lines.append(f"{indent}[L{node['level']}{id_str}] {node['name']}{hit_mark}{score_str}{desc_str}")
+        desc_str = f"：{node['description']}" if node.get("description") else ""
+        lines.append(f"{indent}[L{node['level']}{id_str}] {node['name']}{desc_str}")
         if node.get("children"):
             lines.append(_tree_to_text(node["children"], depth + 1))
     return "\n".join(lines)
