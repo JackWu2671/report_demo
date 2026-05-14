@@ -281,7 +281,14 @@ async def handle_search_graph_tree(args: dict, memory: AgentMemory) -> tuple[dic
 
 async def handle_modify_outline(args: dict, memory: AgentMemory) -> tuple[dict, str]:
     """对当前大纲执行结构化修改操作，将修改后的大纲写入 memory。"""
-    result = await modify_outline(args.get("ops", []), memory.outline_tree)
+    ops = args.get("ops", [])
+    if isinstance(ops, str):
+        import json as _json
+        try:
+            ops = _json.loads(ops)
+        except _json.JSONDecodeError:
+            ops = []
+    result = await modify_outline(ops, memory.outline_tree)
     if result["status"] == "success":
         memory.set_outline(result["outline_tree"], result["markdown"], result["md_with_ids"])
         skipped = result.get("skipped", [])
