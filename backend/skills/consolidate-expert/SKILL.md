@@ -41,10 +41,9 @@ search_graph_tree → set_outline_from_markdown → set_scene_metadata → [modi
 
 根据专家输入和知识库节点，自行设计大纲结构，调用 `set_outline_from_markdown` 传入 `md_with_ids`。
 
-`md_with_ids` 格式规则：
-- 每行：`{缩进}[L{层级} {id}] {名称}（新建节点名后加全角冒号和描述）`
+`md_with_ids` 格式见支持文件 `node-text-format.md`（调用 `read_skill` 加载）。核心约束：
 - 必须以唯一 L1 节点为根（报告总标题）
-- L2/L3/L4 由你按专家意图自由设计，id 用 `new_001`、`new_002`… 命名
+- L2/L3/L4 由你按专家意图自由设计，可新建
 - L5 必须引用 `search_graph_tree` 返回的知识库节点 id，不可新建
 
 调用后大纲立即展示给专家。
@@ -59,7 +58,7 @@ search_graph_tree → set_outline_from_markdown → set_scene_metadata → [modi
 
 ### 步骤 4：按专家意见修改（按需）
 
-调用 `modify_outline`，每次只传一个 op。修改后一句话确认变更，询问是否满意。
+调用 `modify_outline`，可在一次调用中传入多个 op，按列表顺序依次执行。修改后一句话确认变更，询问是否满意。
 
 ### 步骤 5：保存为模板
 
