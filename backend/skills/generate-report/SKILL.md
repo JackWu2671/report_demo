@@ -1,17 +1,17 @@
 ---
 name: generate-report
 description: >
-  面向业务分析的完整报告生成工具包。根据用户的分析问题或业务场景描述，
-  从知识库生成结构化大纲，再渲染为完整报告文档，最终以报告内容回答用户的问题。
-  当用户提出业务分析需求、想了解某个场景的现状与机会、或需要一份分析报告时，
-  务必加载此 skill，即使用户没有明确说"生成报告"或"写大纲"。
-  不适用于：简单问答、与业务分析无关的一般性对话。
+  看网分析工具包。用于一切需要分析传送网络现状的场景：覆盖评估、容量分析、
+  fgOTN/OSU 部署规划、站点选址、企业覆盖缺口、资源瓶颈识别等。
+  只要用户想了解网络现状、发现问题或给出部署建议，就加载此 skill——
+  报告和大纲只是分析的呈现手段，不是触发条件。
+  不适用于：与网络分析无关的一般性对话、简单知识问答。
 version: 2.0.0
 author: report_demo
 metadata:
   hermes:
     category: report
-    tags: [report, outline, knowledge-base, analysis]
+    tags: [network-analysis, otn, fgotn, coverage, capacity, outline, report]
 ---
 
 # 生成完整报告
