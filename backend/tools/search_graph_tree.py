@@ -32,7 +32,9 @@ def _tree_to_text(nodes: list[dict], depth: int = 0) -> str:
         indent = "  " * depth
         id_str = f" {node['id']}" if node.get("id") else ""
         desc_str = f"：{node['description']}" if node.get("description") else ""
-        lines.append(f"{indent}[L{node['level']}{id_str}] {node['name']}{desc_str}")
+        level = node['level']
+        level_str = "Q" if level == 5 else f"L{level}"
+        lines.append(f"{indent}[{level_str}{id_str}] {node['name']}{desc_str}")
         if node.get("children"):
             lines.append(_tree_to_text(node["children"], depth + 1))
     return "\n".join(lines)
