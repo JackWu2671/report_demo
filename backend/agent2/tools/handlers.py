@@ -29,15 +29,26 @@ async def handle_search_outline_templates(args: dict, memory: AgentMemory) -> tu
             for i, c in enumerate(candidates)
         ]
         best_id = candidates[0]["id"]
+
+        # 预加载最佳候选的完整大纲，推送到前端预览（不写入 memory）
+        preview = load_template_outline(best_id)
+        preview_fields = {}
+        if preview["status"] == "success":
+            preview_fields = {
+                "outline_tree": preview["outline_tree"],
+                "markdown":     preview["markdown"],
+                "md_with_ids":  preview["md_with_ids"],
+            }
+
         llm_str = (
             f"[search_outline_templates] 找到 {len(candidates)} 个候选:\n"
             + "\n".join(lines)
-            + f"\n\n已向用户展示两个快捷选项：「使用此模板」和「重新从知识库生成」。"
+            + f"\n\n已向用户展示模板预览和两个快捷选项：「使用此模板」和「重新从知识库生成」。"
             f"请向用户简要介绍找到的模板并等待其选择。"
             f"若用户选择「使用此模板」，请调用 load_template_outline 加载 id={best_id}（最佳匹配）；"
             f"若用户选择「重新从知识库生成」，请改用 search_graph_tree 检索知识图谱。"
         )
-        result = {**result, "status": "pending_confirm"}
+        result = {**result, "status": "pending_confirm", **preview_fields}
     else:
         llm_str = f"[search_outline_templates] status=not_found  reason={result['reason']}"
     return result, llm_str
