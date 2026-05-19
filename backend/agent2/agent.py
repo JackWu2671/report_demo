@@ -172,11 +172,11 @@ def _result_display(name: str, result: dict) -> str:
     status = result.get("status", "?")
     if name == "search_outline_templates":
         n = len(result.get("candidates", []))
-        if status in ("found", "pending_confirm"):
-            return f"找到 {n} 个候选模板，等待用户选择"
-        return f"未找到：{result.get('reason', '')}"
+        return f"找到 {n} 个候选模板" if status == "found" else f"未找到：{result.get('reason', '')}"
     if name == "load_template_outline":
-        return f"已加载：{result.get('scene_name', '')}" if status == "success" else f"未找到：{result.get('reason', '')}"
+        if status in ("success", "pending_confirm"):
+            return f"已加载：{result.get('scene_name', '')}，等待用户确认"
+        return f"未找到：{result.get('reason', '')}"
     if name == "search_graph_tree":
         if status == "success":
             lines = [l for l in result.get("tree_text", "").splitlines() if l.strip()]
