@@ -34,7 +34,7 @@ from tools.shared_tools import SKILLS_LIST_TOOL, READ_SKILL_TOOL
 logger = logging.getLogger(__name__)
 
 _SKILLS_DIR = Path(_BACKEND_DIR) / "skills"
-_SYSTEM_PROMPT = (Path(_AGENT_DIR) / "prompt.txt").read_text(encoding="utf-8")
+_SYSTEM_PROMPT = (Path(_AGENT_DIR) / "system_prompt.txt").read_text(encoding="utf-8")
 _MAX_ROUNDS = 8
 
 # ── 合并业务工具（agent2 优先，agent1 补充独有工具，modify_outline 去重）──────
