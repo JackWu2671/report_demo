@@ -104,8 +104,7 @@ async def repl() -> None:
             break
 
         if not user_input:
-            print("退出。")
-            break
+            continue
 
         if user_input == "/help":
             _print_help()
@@ -139,10 +138,6 @@ async def repl() -> None:
 
                 elif etype == "extraction":
                     print(f"\n  [场景] {event.get('scene_name', '')}  关键词: {', '.join(event.get('keywords', []))}\n")
-
-                elif etype == "new_nodes":
-                    names = [n.get("name", "") for n in event.get("nodes", [])]
-                    print(f"  [新节点] {', '.join(names)}\n")
 
                 elif etype == "saved":
                     print(f"\n  [已保存] {event.get('scene_name', '')}  → {event.get('path', '')}\n")
