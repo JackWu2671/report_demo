@@ -25,7 +25,7 @@ from utils.outline_utils import to_markdown, to_markdown_with_ids
 
 logger = logging.getLogger(__name__)
 
-_LINE_RE = re.compile(r'^(\s*)\[L(\d+)\s+(\S+)\]\s+(.+)$')
+_LINE_RE = re.compile(r'^(\s*)\[(L(\d+)|Q)\s+(\S+)\]\s+(.+)$')
 
 
 async def set_outline_from_markdown(md_with_ids: str) -> dict:
@@ -42,8 +42,9 @@ async def set_outline_from_markdown(md_with_ids: str) -> dict:
         m = _LINE_RE.match(line)
         if not m:
             continue
-        indent, level, node_id, rest = m.groups()
+        indent, level_token, level_digit, node_id, rest = m.groups()
         depth = len(indent) // 2
+        level = 5 if level_token == "Q" else int(level_digit)
 
         condition = ''
         if '｜条件：' in rest:
@@ -53,7 +54,7 @@ async def set_outline_from_markdown(md_with_ids: str) -> dict:
         node = {
             'id': node_id.strip(),
             'name': name.strip(),
-            'level': int(level),
+            'level': level,
             'description': description.strip(),
             'condition': condition.strip(),
             'children': [],
@@ -67,7 +68,7 @@ async def set_outline_from_markdown(md_with_ids: str) -> dict:
         stack.append((depth, node))
 
     if not roots:
-        return _error("解析失败，请检查 md_with_ids 格式是否正确（需含 [Lx id] 前缀）")
+        return _error("解析失败，请检查 md_with_ids 格式是否正确（章节节点用 [L1~L4 id]，query节点用 [Q id]）")
 
     # 用虚拟根节点包裹，支持 add_node parent_id=""
     wrapped = {"id": "__root__", "name": "", "level": 0, "description": "", "children": roots}

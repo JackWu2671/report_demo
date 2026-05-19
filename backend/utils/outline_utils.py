@@ -88,10 +88,11 @@ def _id_md_node(node: dict, depth: int, lines: list[str]) -> None:
     level = node.get("level", "?")
     name = node.get("name", "")
 
+    level_str = "Q" if level == 5 else f"L{level}"
     suffix = f"：{node['description']}" if node.get("description") else ""
     if node.get("condition"):
         suffix += f"｜条件：{node['condition']}"
-    lines.append(f"{indent}[L{level} {nid}] {name}{suffix}")
+    lines.append(f"{indent}[{level_str} {nid}] {name}{suffix}")
 
     for child in node.get("children", []):
         _id_md_node(child, depth + 1, lines)
@@ -99,7 +100,12 @@ def _id_md_node(node: dict, depth: int, lines: list[str]) -> None:
 
 # ── md_with_ids → outline_tree（逆向解析）────────────────────────
 
-_LINE_RE = re.compile(r'^(\s*)\[L(\d+)\s+(\S+)\]\s+(.+)$')
+_LINE_RE = re.compile(r'^(\s*)\[(L(\d+)|Q)\s+(\S+)\]\s+(.+)$')
+
+
+def _parse_level(level_token: str, level_digit: str) -> int:
+    """将格式标记转为内部 level 整数：Q → 5，L1..L4 → 1..4。"""
+    return 5 if level_token == "Q" else int(level_digit)
 
 
 def from_md_with_ids(text: str) -> dict | None:
@@ -107,7 +113,8 @@ def from_md_with_ids(text: str) -> dict | None:
     将 LLM 输出的 md_with_ids 文本解析为 outline_tree dict。
 
     格式约定（与 to_markdown_with_ids 一致）：
-      {indent}[L{level} {id}] {name}：{description}
+      {indent}[L{level} {id}] {name}：{description}   （章节节点）
+      {indent}[Q {id}] {name}：{description}           （query 节点）
       缩进每层 2 个空格，描述可省略。
 
     Returns:
@@ -119,7 +126,7 @@ def from_md_with_ids(text: str) -> dict | None:
         m = _LINE_RE.match(line)
         if not m:
             continue
-        indent, level, node_id, rest = m.groups()
+        indent, level_token, level_digit, node_id, rest = m.groups()
         depth = len(indent) // 2
 
         condition = ''
@@ -134,7 +141,7 @@ def from_md_with_ids(text: str) -> dict | None:
         node = {
             'id': node_id.strip(),
             'name': name.strip(),
-            'level': int(level),
+            'level': _parse_level(level_token, level_digit),
             'description': description.strip(),
             'condition': condition.strip(),
             'children': [],
