@@ -1,5 +1,5 @@
 ---
-name: generate-report
+name: analyze-network
 description: >
   看网分析工具包。用于一切需要分析传送网络现状的场景：覆盖评估、容量分析、
   fgOTN/OSU 部署规划、站点选址、企业覆盖缺口、资源瓶颈识别等。

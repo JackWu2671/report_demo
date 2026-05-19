@@ -245,7 +245,7 @@ READ_SKILL_TOOL: dict = {
         "parameters": {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "skill 名称，如 generate-report"},
+                "name": {"type": "string", "description": "skill 名称，如 analyze-network"},
                 "path": {
                     "type": "string",
                     "description": "可选。skill 文件夹内的支持文件路径（Level 2）",

@@ -5,7 +5,7 @@ agent.py — 单一 agent，hermes-agent 风格三级渐进式 skill 加载。
 LLM 按需调用 read_skill 加载完整 SOP（Level 1），或加载支持文件（Level 2）。
 
 支持两个 skill：
-  generate-report    — 面向普通用户，生成分析报告
+  analyze-network    — 看网分析，覆盖评估/容量分析/部署规划等
   consolidate-expert — 面向专家，沉淀知识为可复用模板
 """
 
@@ -105,7 +105,7 @@ class AgentWithSkills:
 
                     result_dict, llm_str = await self._execute_tool(tc)
 
-                    # generate-report 事件
+                    # analyze-network 事件
                     if result_dict.get("outline_tree"):
                         yield {
                             "type": "outline",
