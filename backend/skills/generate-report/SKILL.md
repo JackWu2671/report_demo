@@ -63,7 +63,7 @@ metadata:
 - `add_node`：`{op, node_id, parent_id}` — 从知识图谱新增节点；`node_id` 须来自 `search_graph_tree` 返回结果，若目标节点不在已有结果中，先调用 `search_graph_tree` 探索；新增与现有一级章节平行的顶层节点时 `parent_id` 传 `""`
 - `delete_node`：`{op, node_id}` — 删除节点及其全部子树
 - `modify_node_name`：`{op, node_id, value}` — 修改节点名称
-- `modify_node_description`：`{op, node_id, value}` — 修改节点描述，也用于写入阈值、范围等说明
+- `modify_node_description`：`{op, node_id, value}` — 修改节点描述。**L5 节点的描述即查询参数**：当用户指定了分析范围（城市、行业、时间段、阈值等过滤条件），必须同步用此 op 将条件写入所有相关 L5 节点的描述，报告渲染时将依据描述执行对应的数据过滤。不得只改 L3/L4 的名称和描述而遗漏 L5 的查询条件更新。
 - `keep_only_node`：`{op, node_id}` — 保留该节点，同级其他节点自动删除（每个保留节点单独一条 op）
 
 **调用策略**：
