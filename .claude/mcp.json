@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "report-demo": {
-      "command": "python",
-      "args": ["-m", "backend.mcp_server"],
-      "cwd": "${workspaceFolder}"
-    }
-  }
-}

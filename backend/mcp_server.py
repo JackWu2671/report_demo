@@ -1,11 +1,11 @@
 """
-mcp_server.py — MCP server exposing report_demo tools for Claude Code integration.
+mcp_server.py — 标准 MCP server，将 report_demo 工具暴露给任意 MCP 客户端。
 
-Transport: stdio (default, compatible with Claude Code / Claude Desktop)
+Transport: stdio（MCP 标准传输，所有兼容客户端均支持）
 Run:       python -m backend.mcp_server
 
 状态设计：
-  outline_tree 由调用方（Claude Code）在上下文中跟踪，每次调用时以参数传入。
+  outline_tree 由调用方在上下文中跟踪，每次调用时以参数传入。
   工具本身无状态，与 tool_server.py 的设计一致。
 
 Tools exposed:
