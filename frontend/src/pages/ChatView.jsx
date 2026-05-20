@@ -1,18 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
 import MarkdownOutline from '../components/MarkdownOutline'
 import ChatMessage from '../components/ChatMessage'
 import QueryInput from '../components/QueryInput'
 
-const AGENT_NAMES = { '1': '专家知识沉淀', '2': '大纲对话生成' }
-const AGENT_DESCS = {
-  '1': '将专家描述的业务逻辑整理成结构化报告大纲，支持多轮对话迭代完善。',
-  '2': '根据分析需求实时生成报告大纲，支持聚焦方向、删减章节、设置参数等修改。',
-}
-
 export default function ChatView() {
-  const { agentId } = useParams()
-  const navigate = useNavigate()
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -41,12 +32,12 @@ export default function ChatView() {
     fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent_id: parseInt(agentId) }),
+      body: JSON.stringify({}),
     })
       .then(r => r.json())
       .then(d => { sessionIdRef.current = d.session_id })
       .catch(e => console.error('[ChatView] 创建 session 失败', e))
-  }, [agentId])
+  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -196,14 +187,9 @@ case 'saved':
       {/* 左：对话区 */}
       <div className="chat-panel">
         <div className="chat-panel__header">
-          <button className="chat-panel__back" onClick={() => navigate('/chat')}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-            </svg>
-          </button>
           <div>
-            <div className="chat-panel__title">{AGENT_NAMES[agentId]}</div>
-            <div className="chat-panel__subtitle">{AGENT_DESCS[agentId]}</div>
+            <div className="chat-panel__title">看网分析</div>
+            <div className="chat-panel__subtitle">分析传送网络现状，覆盖评估、容量分析、部署规划等</div>
           </div>
           {messages.length > 0 && sessionIdRef.current && (
             <button

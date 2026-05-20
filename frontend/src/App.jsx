@@ -2,7 +2,6 @@ import React from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import KBPage from './pages/KBPage'
 import TemplatePage from './pages/TemplatePage'
-import ChatPage from './pages/ChatPage'
 import ChatView from './pages/ChatView'
 
 export default function App() {
@@ -24,8 +23,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<div style={{ padding: 32 }}><KBPage /></div>} />
           <Route path="/templates" element={<div style={{ padding: 32 }}><TemplatePage /></div>} />
-          <Route path="/chat" element={<ChatPage />} />
-          <Route path="/chat/:agentId" element={<ChatView />} />
+          <Route path="/chat" element={<ChatView />} />
         </Routes>
       </main>
     </>
