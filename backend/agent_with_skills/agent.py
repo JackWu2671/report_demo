@@ -14,12 +14,8 @@ import logging
 import os
 import sys
 import time
-from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import AsyncGenerator
-
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 
 _AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_AGENT_DIR)
@@ -71,8 +67,8 @@ class AgentWithSkills:
         self.registry = SkillRegistry(_SKILLS_DIR)
         self._loaded: set[str] = set()  # 已注入 context 的 skill SOP，避免重复加载
         self.memory = Agent1Memory()    # 超集，兼容两个 skill 所需的所有状态字段
-        self._mcp_session: ClientSession | None = None
-        self._mcp_stack: AsyncExitStack | None = None
+        self._mcp_session = None   # ClientSession，懒加载
+        self._mcp_stack = None     # AsyncExitStack
 
     # ── Public ────────────────────────────────────────────────────
 
@@ -191,7 +187,11 @@ class AgentWithSkills:
         )
 
     async def _init_mcp(self) -> None:
-        """启动 mcp_server 子进程，建立 stdio 连接。"""
+        """启动 mcp_server 子进程，建立 stdio 连接。懒加载 mcp 包避免非 MCP 路径的依赖问题。"""
+        from contextlib import AsyncExitStack
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
         self._mcp_stack = AsyncExitStack()
         params = StdioServerParameters(
             command=sys.executable,
