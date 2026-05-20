@@ -59,9 +59,7 @@ async def search_graph_tree(question: str) -> str:
     用于了解知识库有哪些可用的 query 节点，以及它们的层级关系。
     """
     result = await _search_graph_tree(question)
-    if result["status"] == "success":
-        return f"status=success\n\n{result['tree_text']}"
-    return f"status=not_found  message={result['message']}"
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()

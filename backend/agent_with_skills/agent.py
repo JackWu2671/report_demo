@@ -14,8 +14,12 @@ import logging
 import os
 import sys
 import time
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import AsyncGenerator
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 _AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_AGENT_DIR)
@@ -25,9 +29,7 @@ if _BACKEND_DIR not in sys.path:
 from agent1.memory import Agent1Memory
 from services.llm_service import LLMService
 from agent1.tools.definitions import TOOLS as _AGENT1_TOOLS
-from agent1.tools.handlers import HANDLERS as _AGENT1_HANDLERS
 from agent2.tools.definitions import TOOLS as _AGENT2_TOOLS
-from agent2.tools.handlers import HANDLERS as _AGENT2_HANDLERS
 from agent_with_skills.skill_registry import SkillRegistry
 from tools.shared_tools import SKILLS_LIST_TOOL, READ_SKILL_TOOL
 
@@ -37,13 +39,10 @@ _SKILLS_DIR = Path(_BACKEND_DIR) / "skills"
 _SYSTEM_PROMPT = (Path(_AGENT_DIR) / "system_prompt.txt").read_text(encoding="utf-8")
 _MAX_ROUNDS = 8
 
-# ── 合并业务工具（agent2 优先，agent1 补充独有工具，modify_outline 去重）──────
+# ── 合并业务工具 schema（agent2 优先，agent1 补充独有工具，modify_outline 去重）──
 _business_tools: dict[str, dict] = {t["function"]["name"]: t for t in _AGENT2_TOOLS}
 _business_tools.update({t["function"]["name"]: t for t in _AGENT1_TOOLS})
 _BUSINESS_TOOLS = list(_business_tools.values())
-
-# agent1 handlers 覆盖 agent2 同名 handler（modify_outline 两者逻辑一致）
-_BUSINESS_HANDLERS = {**_AGENT2_HANDLERS, **_AGENT1_HANDLERS}
 
 TOOLS = [SKILLS_LIST_TOOL, READ_SKILL_TOOL] + _BUSINESS_TOOLS
 
@@ -72,6 +71,8 @@ class AgentWithSkills:
         self.registry = SkillRegistry(_SKILLS_DIR)
         self._loaded: set[str] = set()  # 已注入 context 的 skill SOP，避免重复加载
         self.memory = Agent1Memory()    # 超集，兼容两个 skill 所需的所有状态字段
+        self._mcp_session: ClientSession | None = None
+        self._mcp_stack: AsyncExitStack | None = None
 
     # ── Public ────────────────────────────────────────────────────
 
@@ -148,6 +149,13 @@ class AgentWithSkills:
         self.memory.reset()
         self._loaded.clear()
 
+    async def close(self) -> None:
+        """关闭 MCP 连接（session 结束时调用）。"""
+        if self._mcp_stack:
+            await self._mcp_stack.aclose()
+            self._mcp_session = None
+            self._mcp_stack = None
+
     # ── Internal ──────────────────────────────────────────────────
 
     def _build_system_prompt(self) -> str:
@@ -182,9 +190,26 @@ class AgentWithSkills:
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
 
+    async def _init_mcp(self) -> None:
+        """启动 mcp_server 子进程，建立 stdio 连接。"""
+        self._mcp_stack = AsyncExitStack()
+        params = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "backend.mcp_server"],
+            cwd=_BACKEND_DIR,
+        )
+        read, write = await self._mcp_stack.enter_async_context(stdio_client(params))
+        self._mcp_session = await self._mcp_stack.enter_async_context(
+            ClientSession(read, write)
+        )
+        await self._mcp_session.initialize()
+        logger.info("[AgentWithSkills] MCP session ready")
+
     async def _execute_tool(self, tool_call) -> tuple[dict, str]:
         """
-        分发工具调用：skill 元工具由本地处理，业务工具转发给 _BUSINESS_HANDLERS。
+        分发工具调用：
+        - skill 元工具（skills_list / read_skill）本地处理
+        - 业务工具通过 MCP client 转发给 mcp_server 子进程
         返回 (result_dict, llm_str)。
         """
         name = tool_call.function.name
@@ -198,14 +223,45 @@ class AgentWithSkills:
         if name == "read_skill":
             return self._handle_read_skill(args)
 
-        handler = _BUSINESS_HANDLERS.get(name)
-        if handler is None:
-            return {}, f"未知工具: {name}"
+        # ── 业务工具走 MCP ─────────────────────────────────────────
+        if self._mcp_session is None:
+            await self._init_mcp()
+
+        # 无状态工具缺少的 memory 状态由 agent 注入
+        if name == "modify_outline" and "outline_tree" not in args:
+            args = {**args, "outline_tree": self.memory.outline_tree}
+        if name == "save_outline_template":
+            if "outline_tree" not in args:
+                args = {**args, "outline_tree": self.memory.outline_tree}
+            if "extraction" not in args:
+                args = {**args, "extraction": self.memory.extraction}
+
         try:
-            return await handler(args, self.memory)
+            mcp_result = await self._mcp_session.call_tool(name, args)
         except Exception as e:
-            logger.exception("[AgentWithSkills] tool %r failed", name)
+            logger.exception("[AgentWithSkills] MCP tool %r failed", name)
             return {}, f"工具执行失败: {e}"
+
+        raw = mcp_result.content[0].text if mcp_result.content else "{}"
+        try:
+            result_dict = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}, raw
+
+        # memory 同步：将工具写回的状态更新到 agent 内存
+        if result_dict.get("outline_tree"):
+            self.memory.set_outline(
+                result_dict["outline_tree"],
+                result_dict.get("markdown", ""),
+                result_dict.get("md_with_ids", ""),
+            )
+        if result_dict.get("tree_text"):
+            self.memory.set_kb_tree(result_dict["tree_text"])
+        if name == "set_scene_metadata" and result_dict.get("status") == "success":
+            self.memory.set_extraction(result_dict)
+
+        llm_str = f"[{name}]\n{raw}"
+        return result_dict, llm_str
 
     def _handle_skills_list(self) -> tuple[dict, str]:
         """返回所有可用 skill 的 Level 0 元数据列表（name、description、category）。"""
