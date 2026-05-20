@@ -5,9 +5,7 @@ agent_test.py — AgentWithSkills 交互测试。
 
   你 > 帮我分析 fgOTN 部署情况
 
-  ▶ skills_list                     ← Level 0：查询有哪些 skill（如需要）
-  ✓ skills_list
-  ▶ read_skill                      ← Level 1：加载 generate-outline SOP
+  ▶ read_skill                      ← Level 1：加载 analyze-network SOP
   ✓ read_skill
   ▶ match_outline_template          ← 按 SOP 调工具
   ✓ match_outline_template
@@ -58,7 +56,7 @@ from agent_with_skills.agent import AgentWithSkills  # noqa: E402
 _DIV = "─" * 56
 
 # skill 元工具，显示时加特殊标记，方便区分"skill 加载"和"业务工具"
-_SKILL_TOOLS = {"skills_list", "read_skill"}
+_SKILL_TOOLS = {"read_skill"}
 
 
 def _print_outline(markdown: str) -> None:

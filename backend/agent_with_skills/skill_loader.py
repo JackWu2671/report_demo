@@ -1,7 +1,7 @@
 """
 skill_loader.py — hermes-agent 风格的三级渐进式 skill 加载。
 
-Level 0  skills_list()            → [{name, description, category}, ...]
+Level 0  system prompt 注入       → skill name/description（启动时缓存）
 Level 1  read_skill(name)         → 完整 SKILL.md 正文（SOP）
 Level 2  read_skill(name, path)   → skills/<name>/<path> 指定文件内容
 """

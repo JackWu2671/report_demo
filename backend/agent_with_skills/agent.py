@@ -27,7 +27,7 @@ from agent_with_skills.memory import AgentWithSkillsMemory
 from agent_with_skills.tools.definitions import TOOLS as _BUSINESS_TOOLS
 from agent_with_skills.tools.handlers import HANDLERS as _BUSINESS_HANDLERS
 from agent_with_skills.skill_registry import SkillRegistry
-from tools.shared_tools import SKILLS_LIST_TOOL, READ_SKILL_TOOL
+from tools.shared_tools import READ_SKILL_TOOL
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ _SKILLS_DIR = Path(_BACKEND_DIR) / "skills"
 _SYSTEM_PROMPT = (Path(_AGENT_DIR) / "system_prompt.txt").read_text(encoding="utf-8")
 _MAX_ROUNDS = 8
 
-TOOLS = [SKILLS_LIST_TOOL, READ_SKILL_TOOL] + _BUSINESS_TOOLS
+TOOLS = [READ_SKILL_TOOL] + _BUSINESS_TOOLS
 
 _SKILL_SYSTEM_TEMPLATE = """\
 <skill_system>
@@ -60,6 +60,7 @@ class AgentWithSkills:
         self.registry = SkillRegistry(_SKILLS_DIR)
         self._loaded: set[str] = set()  # 已注入 context 的 skill SOP，避免重复加载
         self.memory = AgentWithSkillsMemory()
+        self._system_prompt = self._build_system_prompt()  # skills 不变，缓存一次
 
     # ── Public ────────────────────────────────────────────────────
 
@@ -139,7 +140,7 @@ class AgentWithSkills:
     # ── Internal ──────────────────────────────────────────────────
 
     def _build_system_prompt(self) -> str:
-        """将 Level 0 skill 列表拼入 system prompt，每次 LLM 调用前动态构建。"""
+        """将 Level 0 skill 列表拼入 system prompt，__init__ 时调用一次后缓存。"""
         lines = []
         for m in self.registry.list_all():
             cat = f"[{m['category']}] " if m.get("category") else ""
@@ -151,7 +152,7 @@ class AgentWithSkills:
     async def _call_llm(self):
         """将当前大纲和 skill 列表注入 system prompt 后调用 LLM。"""
         llm = LLMService.from_env()
-        messages = self.memory.build_messages(self._build_system_prompt())
+        messages = self.memory.build_messages(self._system_prompt)
         logger.info(
             "[AgentWithSkills._call_llm] messages=%d\n%s",
             len(messages),
@@ -181,8 +182,6 @@ class AgentWithSkills:
         except json.JSONDecodeError as e:
             return {}, f"参数解析失败: {e}"
 
-        if name == "skills_list":
-            return self._handle_skills_list()
         if name == "read_skill":
             return self._handle_read_skill(args)
 
@@ -194,14 +193,6 @@ class AgentWithSkills:
         except Exception as e:
             logger.exception("[AgentWithSkills] tool %r failed", name)
             return {}, f"工具执行失败: {e}"
-
-    def _handle_skills_list(self) -> tuple[dict, str]:
-        """返回所有可用 skill 的 Level 0 元数据列表（name、description、category）。"""
-        items = [
-            {"name": m["name"], "description": m.get("description", ""), "category": m.get("category", "")}
-            for m in self.registry.list_all()
-        ]
-        return {}, f"[skills_list]\n{json.dumps(items, ensure_ascii=False, indent=2)}"
 
     def _handle_read_skill(self, args: dict) -> tuple[dict, str]:
         """
@@ -226,10 +217,6 @@ class AgentWithSkills:
 def _result_display(name: str, result: dict, llm_str: str) -> str:
     """将工具结果转为前端步骤面板显示的单行摘要。"""
     status = result.get("status", "")
-    # skill 元工具
-    if name == "skills_list":
-        n = llm_str.count('"name"')
-        return f"列出 {n} 个 skill"
     if name == "read_skill":
         lines = [l for l in llm_str.splitlines() if l.strip()]
         return lines[0] if lines else "已读取"

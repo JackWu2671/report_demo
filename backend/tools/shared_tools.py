@@ -13,7 +13,7 @@ shared_tools.py — 所有工具的 schema 定义全集。
     SAVE_OUTLINE_TEMPLATE_TOOL
 
   Skill 系统元工具（AgentWithSkills 专用）：
-    SKILLS_LIST_TOOL              READ_SKILL_TOOL
+    READ_SKILL_TOOL
 """
 
 import logging
@@ -222,15 +222,6 @@ SET_SCENE_METADATA_TOOL: dict = {
             },
             "required": ["scene_name", "summary", "keywords", "usage_conditions"],
         },
-    },
-}
-
-SKILLS_LIST_TOOL: dict = {
-    "type": "function",
-    "function": {
-        "name": "skills_list",
-        "description": "列出所有可用 skill 的名称、描述和分类（Level 0）。不确定有哪些能力时调用。",
-        "parameters": {"type": "object", "properties": {}, "required": []},
     },
 }
 
