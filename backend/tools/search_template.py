@@ -77,8 +77,10 @@ def load_template_outline(template_id: str) -> dict:
     if not os.path.isdir(_TEMPLATE_DIR):
         return _not_found("模板目录不存在")
 
-    path = os.path.join(_TEMPLATE_DIR, f"{template_id}.json")
-    if not os.path.isfile(path):
+    path = (Path(_TEMPLATE_DIR) / f"{template_id}.json").resolve()
+    if not path.is_relative_to(Path(_TEMPLATE_DIR).resolve()):
+        return _not_found(f"无效的 template_id: {template_id}")
+    if not path.is_file():
         return _not_found(f"未找到 id={template_id} 的模板")
 
     try:

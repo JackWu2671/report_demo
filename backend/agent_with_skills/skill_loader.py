@@ -59,7 +59,9 @@ def read_skill(skill_path: Path, ref_path: str | None = None) -> str:
     Level 2: ref_path 指定  → 返回 skill 文件夹内的指定文件内容
     """
     if ref_path:
-        target = skill_path / ref_path
+        target = (skill_path / ref_path).resolve()
+        if not target.is_relative_to(skill_path.resolve()):
+            return f"路径越界: {ref_path}"
         if not target.exists():
             return f"文件不存在: {ref_path}"
         return target.read_text(encoding="utf-8")
