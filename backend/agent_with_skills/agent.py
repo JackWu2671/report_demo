@@ -22,12 +22,10 @@ _BACKEND_DIR = os.path.dirname(_AGENT_DIR)
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
-from agent1.memory import Agent1Memory
 from services.llm_service import LLMService
-from agent1.tools.definitions import TOOLS as _AGENT1_TOOLS
-from agent1.tools.handlers import HANDLERS as _AGENT1_HANDLERS
-from agent2.tools.definitions import TOOLS as _AGENT2_TOOLS
-from agent2.tools.handlers import HANDLERS as _AGENT2_HANDLERS
+from agent_with_skills.memory import AgentWithSkillsMemory
+from agent_with_skills.tools.definitions import TOOLS as _BUSINESS_TOOLS
+from agent_with_skills.tools.handlers import HANDLERS as _BUSINESS_HANDLERS
 from agent_with_skills.skill_registry import SkillRegistry
 from tools.shared_tools import SKILLS_LIST_TOOL, READ_SKILL_TOOL
 
@@ -36,14 +34,6 @@ logger = logging.getLogger(__name__)
 _SKILLS_DIR = Path(_BACKEND_DIR) / "skills"
 _SYSTEM_PROMPT = (Path(_AGENT_DIR) / "system_prompt.txt").read_text(encoding="utf-8")
 _MAX_ROUNDS = 8
-
-# ── 合并业务工具（agent2 优先，agent1 补充独有工具，modify_outline 去重）──────
-_business_tools: dict[str, dict] = {t["function"]["name"]: t for t in _AGENT2_TOOLS}
-_business_tools.update({t["function"]["name"]: t for t in _AGENT1_TOOLS})
-_BUSINESS_TOOLS = list(_business_tools.values())
-
-# agent1 handlers 覆盖 agent2 同名 handler（modify_outline 两者逻辑一致）
-_BUSINESS_HANDLERS = {**_AGENT2_HANDLERS, **_AGENT1_HANDLERS}
 
 TOOLS = [SKILLS_LIST_TOOL, READ_SKILL_TOOL] + _BUSINESS_TOOLS
 
@@ -64,14 +54,12 @@ class AgentWithSkills:
 
     启动时仅将 skill 的 name/description 注入 system prompt（Level 0，极少 token）。
     LLM 按需调用 read_skill 加载完整 SOP（Level 1），或 skill 内支持文件（Level 2）。
-    业务工具来自 agent1 + agent2 的合集，通过 _BUSINESS_HANDLERS 分发。
-    状态使用 Agent1Memory（agent1/agent2 所需字段的超集）。
     """
 
     def __init__(self) -> None:
         self.registry = SkillRegistry(_SKILLS_DIR)
         self._loaded: set[str] = set()  # 已注入 context 的 skill SOP，避免重复加载
-        self.memory = Agent1Memory()    # 超集，兼容两个 skill 所需的所有状态字段
+        self.memory = AgentWithSkillsMemory()
 
     # ── Public ────────────────────────────────────────────────────
 
@@ -245,7 +233,6 @@ def _result_display(name: str, result: dict, llm_str: str) -> str:
     if name == "read_skill":
         lines = [l for l in llm_str.splitlines() if l.strip()]
         return lines[0] if lines else "已读取"
-    # agent2 工具
     if name == "search_outline_templates":
         n = len(result.get("candidates", []))
         return f"找到 {n} 个候选模板" if status == "found" else f"未找到：{result.get('reason', '')}"
@@ -257,7 +244,6 @@ def _result_display(name: str, result: dict, llm_str: str) -> str:
             children = tree.get("children", [])
             return f"根节点：{children[0].get('name', '') if children else ''}，{_count_nodes(tree)} 个节点"
         return f"失败：{result.get('message', '')}"
-    # 共用工具
     if name == "search_graph_tree":
         if status == "success":
             lines = [l for l in result.get("tree_text", "").splitlines() if l.strip()]
@@ -268,7 +254,6 @@ def _result_display(name: str, result: dict, llm_str: str) -> str:
             ops = result.get("ops", [])
             return f"{len(ops)} 个操作：{', '.join(op.get('op', '?') for op in ops)}"
         return f"失败：{result.get('message', '')}"
-    # agent1 工具
     if name == "set_outline_from_markdown":
         return "大纲已渲染" if status == "success" else f"失败：{result.get('message', '')}"
     if name == "set_scene_metadata":

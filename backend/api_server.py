@@ -1,11 +1,11 @@
 """
-api_server.py — FastAPI server bridging Agent1 / Agent2 to SSE stream.
+api_server.py — FastAPI server for AgentWithSkills SSE stream.
 
 Session lifecycle:
-  POST /api/session  { agent_id }  → { session_id }
+  POST /api/session  { agent_id? }  → { session_id }
   POST /api/chat     { session_id, message }  → text/event-stream
 
-Each session keeps one Agent instance alive (with its AgentMemory) across turns.
+Each session keeps one AgentWithSkills instance alive across turns.
 Sessions are stored in-process; they are lost on server restart.
 """
 
@@ -34,8 +34,6 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 if _DIR not in sys.path:
     sys.path.insert(0, _DIR)
 
-from agent1.agent import Agent1
-from agent2.agent import Agent2
 from agent_with_skills.agent import AgentWithSkills
 
 app = FastAPI()
@@ -49,8 +47,8 @@ app.add_middleware(
 _KB_DIR = os.path.join(_DIR, "expert_knowledge")
 _TEMPLATE_DIR = os.path.join(_DIR, "templates")
 
-# session_id → Agent1 | Agent2 | AgentWithSkills
-_sessions: dict[str, Agent1 | Agent2 | AgentWithSkills] = {}
+# session_id → AgentWithSkills
+_sessions: dict[str, AgentWithSkills] = {}
 
 
 # —— 知识库 & 模板接口 ————————————————————————————————————————————
@@ -84,23 +82,14 @@ def get_templates():
 # —— Session 管理 ————————————————————————————————————————————————
 
 class SessionRequest(BaseModel):
-    agent_id: int
+    agent_id: int = 3
 
 
 @app.post("/api/session")
 def create_session(req: SessionRequest):
-    if req.agent_id == 1:
-        agent = Agent1()
-    elif req.agent_id == 2:
-        agent = Agent2()
-    elif req.agent_id == 3:
-        agent = AgentWithSkills()
-    else:
-        raise HTTPException(status_code=400, detail=f"未知 agent_id: {req.agent_id}")
-
     session_id = str(uuid.uuid4())
-    _sessions[session_id] = agent
-    logger.info("[Session] 创建 session=%s agent_id=%d", session_id, req.agent_id)
+    _sessions[session_id] = AgentWithSkills()
+    logger.info("[Session] 创建 session=%s", session_id)
     return {"session_id": session_id}
 
 
