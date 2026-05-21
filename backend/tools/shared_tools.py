@@ -225,6 +225,29 @@ SET_SCENE_METADATA_TOOL: dict = {
     },
 }
 
+GRAPH_MANAGE_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "graph_manage",
+        "description": (
+            "将专家模板中的业务经验融合回知识图谱（node.json + relation.json）。"
+            "在 save_outline_template 成功后，由 graph-fusion skill 引导调用，传入 template_id。"
+            "自动识别模板中的新概念，决定是否新增 L2-L4 图谱节点或丰富已有节点描述。"
+            "L5（query）节点受保护，不会被修改。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "template_id": {
+                    "type": "string",
+                    "description": "刚保存模板的 template_id，取自 save_outline_template 的返回值",
+                },
+            },
+            "required": ["template_id"],
+        },
+    },
+}
+
 READ_SKILL_TOOL: dict = {
     "type": "function",
     "function": {

@@ -67,6 +67,11 @@ search_graph_tree → set_outline_from_markdown → set_scene_metadata → [modi
 只在专家明确确认时调用（说"保存"、"就这样"、"好的"等），不要主动催促。
 保存成功后告知模板名称和存储路径。
 
+### 步骤 6：融合回知识图谱
+
+`save_outline_template` 成功后，**立即**调用 `read_skill("graph-fusion")` 加载知识图谱融合工作流，
+按其 SOP 引导专家完成图谱更新。
+
 ## 注意事项
 
 大纲通过独立事件推送给前端，**绝对不要**在文字回复里输出大纲内容或任何 Markdown 格式的结构数据。

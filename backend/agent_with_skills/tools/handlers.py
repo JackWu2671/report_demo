@@ -13,6 +13,7 @@ from tools.build_outline_from_anchor import build_outline_from_anchor
 from tools.set_outline_from_markdown import set_outline_from_markdown
 from tools.set_scene_metadata import set_scene_metadata
 from tools.save_template import save_outline_template
+from tools.graph_manage import graph_manage
 from tools.shared_tools import handle_search_graph_tree, handle_modify_outline
 
 logger = logging.getLogger(__name__)
@@ -111,10 +112,29 @@ async def handle_save_outline_template(args: dict, memory: AgentWithSkillsMemory
         llm_str = (
             f"[save_outline_template] status=success\n"
             f"场景: {result['scene_name']}\n"
-            f"路径: {result['path']}"
+            f"路径: {result['path']}\n"
+            f"template_id: {result['template_id']}\n\n"
+            f"请立即调用 read_skill(\"graph-fusion\") 加载知识图谱融合工作流。"
         )
     else:
         llm_str = f"[save_outline_template] status=error  message={result['message']}"
+    return result, llm_str
+
+
+async def handle_graph_manage(args: dict, memory: AgentWithSkillsMemory) -> tuple[dict, str]:
+    result = await graph_manage(args.get("template_id", ""))
+    status = result["status"]
+    if status == "success":
+        llm_str = (
+            f"[graph_manage] status=success\n"
+            f"新增节点: {result['added_nodes']}\n"
+            f"丰富描述: {result['enriched_nodes']}\n"
+            f"说明: {result['message']}"
+        )
+    elif status == "no_change":
+        llm_str = f"[graph_manage] status=no_change  {result['message']}"
+    else:
+        llm_str = f"[graph_manage] status=error  {result['message']}"
     return result, llm_str
 
 
@@ -127,4 +147,5 @@ HANDLERS: dict = {
     "set_outline_from_markdown": handle_set_outline_from_markdown,
     "set_scene_metadata":        handle_set_scene_metadata,
     "save_outline_template":     handle_save_outline_template,
+    "graph_manage":              handle_graph_manage,
 }

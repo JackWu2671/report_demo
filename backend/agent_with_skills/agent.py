@@ -114,6 +114,13 @@ class AgentWithSkills:
                         yield {"type": "saved",
                                "scene_name": result_dict["scene_name"],
                                "path": result_dict["path"]}
+                    if name == "graph_manage" and result_dict.get("status") in ("success", "no_change"):
+                        yield {
+                            "type": "graph_patch",
+                            "added_nodes": result_dict.get("added_nodes", []),
+                            "enriched_nodes": result_dict.get("enriched_nodes", []),
+                            "message": result_dict.get("message", ""),
+                        }
 
                     yield {"type": "step", "name": name, "status": "done",
                            "call_id": call_id,
@@ -247,6 +254,19 @@ def _result_display(name: str, result: dict, llm_str: str) -> str:
         return f"场景：{result.get('scene_name', '')}，元数据已记录" if status == "success" else f"失败：{result.get('message', '')}"
     if name == "save_outline_template":
         return f"已保存：{result.get('scene_name', '')}" if status == "success" else f"失败：{result.get('message', '')}"
+    if name == "graph_manage":
+        if status == "success":
+            added = result.get("added_nodes", [])
+            enriched = result.get("enriched_nodes", [])
+            parts = []
+            if added:
+                parts.append(f"新增 {len(added)} 个节点")
+            if enriched:
+                parts.append(f"丰富 {len(enriched)} 个描述")
+            return "图谱已更新：" + "，".join(parts) if parts else "图谱已更新"
+        if status == "no_change":
+            return "图谱无需更新"
+        return f"图谱融合失败：{result.get('message', '')}"
     return status or "完成"
 
 
