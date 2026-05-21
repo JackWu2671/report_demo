@@ -148,6 +148,21 @@ async def save_outline_template(extraction: dict, outline_tree: dict) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
+@mcp.tool()
+def read_skill(name: str, path: str = "") -> str:
+    """
+    加载指定 skill 的完整 SOP（Level 1），或其内部支持文件（Level 2）。
+    决定使用某个 skill 前必须先加载其 SOP，已加载的 skill 无需重复加载。
+    name: skill 名称，如 analyze-network 或 consolidate-expert。
+    path: 可选，skill 文件夹内的支持文件路径，如 node-text-format.md（Level 2）。
+    """
+    skill_path = _SKILLS_DIR / name
+    if not skill_path.exists():
+        available = [p.name for p in _SKILLS_DIR.iterdir() if p.is_dir()]
+        return f"Skill '{name}' not found. Available: {available}"
+    return _read_skill(skill_path, path if path else None)
+
+
 # ── Resources (Skills) ─────────────────────────────────────────────
 
 @mcp.resource("skill://{skill_name}")
