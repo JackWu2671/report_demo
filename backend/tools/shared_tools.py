@@ -230,20 +230,69 @@ GRAPH_MANAGE_TOOL: dict = {
     "function": {
         "name": "graph_manage",
         "description": (
-            "将专家模板中的业务经验融合回知识图谱（node.json + relation.json）。"
-            "在 save_outline_template 成功后，由 graph-fusion skill 引导调用，传入 template_id。"
-            "自动识别模板中的新概念，决定是否新增 L2-L4 图谱节点或丰富已有节点描述。"
-            "L5（query）节点受保护，不会被修改。"
+            "执行知识图谱融合写入：将 agent 分析确认好的 patch 写入 node.json + relation.json。"
+            "agent 必须按 graph-fusion.md 的 SOP 完成分析并获得专家确认后才能调用本工具。"
+            "L5（query）节点受保护，level 只允许传 2、3、4。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "template_id": {
                     "type": "string",
-                    "description": "刚保存模板的 template_id，取自 save_outline_template 的返回值",
+                    "description": "来源模板 ID，取自 save_outline_template 的返回值，用于溯源",
+                },
+                "add_nodes": {
+                    "type": "array",
+                    "description": "要新增到图谱的节点列表（仅 L2-L4）",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "level": {
+                                "type": "integer",
+                                "enum": [2, 3, 4],
+                                "description": "节点层级，只允许 2、3、4",
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "节点名称",
+                            },
+                            "keywords": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "3-6 个检索关键词",
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "节点业务描述，50-100 字",
+                            },
+                            "parent_id": {
+                                "type": "string",
+                                "description": "父节点 ID，必须是 node.json 中已有节点的 ID，如 L2_001",
+                            },
+                        },
+                        "required": ["level", "name", "keywords", "description", "parent_id"],
+                    },
+                },
+                "enrich_nodes": {
+                    "type": "array",
+                    "description": "要丰富描述的已有图谱节点列表（仅 L1-L4，L5 自动跳过）",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "node_id": {
+                                "type": "string",
+                                "description": "要丰富的节点 ID，必须是 node.json 中已有节点，如 L3_001",
+                            },
+                            "append": {
+                                "type": "string",
+                                "description": "追加到 description 末尾的补充描述，30-80 字，不重复已有内容",
+                            },
+                        },
+                        "required": ["node_id", "append"],
+                    },
                 },
             },
-            "required": ["template_id"],
+            "required": ["template_id", "add_nodes", "enrich_nodes"],
         },
     },
 }

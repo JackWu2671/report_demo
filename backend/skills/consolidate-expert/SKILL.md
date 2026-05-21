@@ -69,8 +69,7 @@ search_graph_tree → set_outline_from_markdown → set_scene_metadata → [modi
 
 ### 步骤 6：融合回知识图谱
 
-`save_outline_template` 成功后，**立即**调用 `read_skill("graph-fusion")` 加载知识图谱融合工作流，
-按其 SOP 引导专家完成图谱更新。
+`save_outline_template` 成功后，**立即**调用 `read_skill("consolidate-expert", "graph-fusion.md")` 加载融合操作规范，按其 SOP 引导专家完成图谱更新。
 
 ## 注意事项
 

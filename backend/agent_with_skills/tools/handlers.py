@@ -122,7 +122,11 @@ async def handle_save_outline_template(args: dict, memory: AgentWithSkillsMemory
 
 
 async def handle_graph_manage(args: dict, memory: AgentWithSkillsMemory) -> tuple[dict, str]:
-    result = await graph_manage(args.get("template_id", ""))
+    result = await graph_manage(
+        template_id=args.get("template_id", ""),
+        add_nodes=args.get("add_nodes", []),
+        enrich_nodes=args.get("enrich_nodes", []),
+    )
     status = result["status"]
     if status == "success":
         llm_str = (
@@ -131,8 +135,6 @@ async def handle_graph_manage(args: dict, memory: AgentWithSkillsMemory) -> tupl
             f"丰富描述: {result['enriched_nodes']}\n"
             f"说明: {result['message']}"
         )
-    elif status == "no_change":
-        llm_str = f"[graph_manage] status=no_change  {result['message']}"
     else:
         llm_str = f"[graph_manage] status=error  {result['message']}"
     return result, llm_str
