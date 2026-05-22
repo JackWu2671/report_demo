@@ -87,11 +87,11 @@ python3 $SKILLS_DIR/analyze-network/scripts/build_outline.py L4_001
 
 ### 步骤 4：按用户反馈修改大纲（按需）
 
+> **JSON 参数引号规则（必须遵守）**：外层用**双引号**，内层所有 `"` 转义为 `\"`。
+> 不可用单引号包裹——Windows cmd.exe 不把单引号当字符串边界，参数会被空格拆散。
+
 ```bash
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py '[
-  {"op": "delete_node", "node_id": "L4_003"},
-  {"op": "modify_node_description", "node_id": "L5_001", "value": "仅统计南宁市的企业"}
-]'
+python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_003\"}, {\"op\": \"modify_node_description\", \"node_id\": \"L5_001\", \"value\": \"仅统计南宁市的企业\"}]"
 ```
 
 支持的 op 类型：

@@ -91,12 +91,10 @@ python3 $SKILLS_DIR/consolidate-expert/scripts/set_metadata.py \
 
 ### 步骤 4：按专家意见修改（按需）
 
-使用 analyze-network 的 `modify_outline.py` 修改大纲：
+使用 analyze-network 的 `modify_outline.py` 修改大纲（外层双引号，内层 `\"` 转义）：
 
 ```bash
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py '[
-  {"op": "modify_node_name", "node_id": "new_002", "value": "新名称"}
-]'
+python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"modify_node_name\", \"node_id\": \"new_002\", \"value\": \"新名称\"}]"
 ```
 
 修改后一句话确认变更，询问是否满意。

@@ -34,8 +34,15 @@ async def main():
         print(json.dumps({"status": "error", "message": "缺少 ops_json 参数"}), file=sys.stderr)
         sys.exit(1)
 
+    # On Windows cmd.exe, single quotes are NOT string delimiters, so a
+    # single-quoted JSON arg gets split on spaces into multiple argv entries.
+    # Rejoin them and strip surrounding single quotes if present.
+    raw = " ".join(sys.argv[1:]).strip()
+    if raw.startswith("'") and raw.endswith("'"):
+        raw = raw[1:-1]
+
     try:
-        ops = json.loads(sys.argv[1])
+        ops = json.loads(raw)
     except json.JSONDecodeError as e:
         print(json.dumps({"status": "error", "message": f"ops_json 解析失败：{e}"}, ensure_ascii=False), file=sys.stderr)
         sys.exit(1)
