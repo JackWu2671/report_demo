@@ -53,12 +53,10 @@ python3 $SKILLS_DIR/analyze-network/scripts/search_graph_tree.py "专家描述�
 
 根据专家输入和知识库节点，自行设计大纲结构，调用：
 
+> **格式规则（必须遵守）**：外层用**双引号**，节点之间用 `\n` 分隔（字面量反斜线n），每级缩进 2 个空格，内层不得有双引号。
+
 ```bash
-python3 $SKILLS_DIR/consolidate-expert/scripts/set_outline.py '[L1 new_001] 标题：描述
-  [L2 new_002] 章节：描述
-    [L3 new_003] 节：描述
-      [L4 new_004] 小节：描述
-        [Q L5_001] query节点名称'
+python3 $SKILLS_DIR/consolidate-expert/scripts/set_outline.py "[L1 new_001] 标题：描述\n  [L2 new_002] 章节：描述\n    [L3 new_003] 节：描述\n      [L4 new_004] 小节：描述\n        [Q L5_001] query节点名称"
 ```
 
 `md_with_ids` 格式约束（违反任意一条视为无效输出）：
