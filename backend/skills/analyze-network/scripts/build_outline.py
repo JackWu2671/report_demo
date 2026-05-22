@@ -18,7 +18,7 @@ _SCRIPTS = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
 from session import set_outline
-from tools.build_outline_from_anchor import build_outline_from_anchor
+from build_outline_from_anchor import build_outline_from_anchor
 
 
 async def main():

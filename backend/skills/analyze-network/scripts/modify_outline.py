@@ -26,7 +26,7 @@ _SCRIPTS = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
 from session import get_outline_tree, set_outline
-from tools.modify_outline import modify_outline
+from modify_outline import modify_outline
 
 
 async def main():

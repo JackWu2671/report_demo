@@ -19,7 +19,7 @@ _SCRIPTS = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
 from session import set_extraction
-from tools.set_scene_metadata import set_scene_metadata
+from set_scene_metadata import set_scene_metadata
 
 
 async def main():

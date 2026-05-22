@@ -17,7 +17,7 @@ _SCRIPTS = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
 from session import set_outline
-from tools.set_outline_from_markdown import set_outline_from_markdown
+from set_outline_from_markdown import set_outline_from_markdown
 
 
 async def main():

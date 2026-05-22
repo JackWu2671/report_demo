@@ -17,7 +17,7 @@ _SCRIPTS = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
 from session import set_outline
-from tools.search_template import load_template_outline
+from search_template import load_template_outline
 
 
 def main():

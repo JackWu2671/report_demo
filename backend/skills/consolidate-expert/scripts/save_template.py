@@ -17,7 +17,7 @@ _SCRIPTS = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
 from session import get_outline_tree, get_extraction
-from tools.save_template import save_outline_template
+from save_template import save_outline_template
 
 
 async def main():

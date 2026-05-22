@@ -20,7 +20,7 @@ import argparse
 
 sys.path.insert(0, os.environ.get("REPORT_BACKEND_DIR", ""))
 
-from tools.graph_manage import graph_manage
+from graph_manage import graph_manage
 
 
 async def main():

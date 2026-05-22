@@ -17,7 +17,7 @@ import json
 sys.path.insert(0, os.environ.get("REPORT_BACKEND_DIR", ""))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-from tools.search_template import search_outline_templates
+from search_template import search_outline_templates
 
 
 async def main():

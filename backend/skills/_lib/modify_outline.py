@@ -10,8 +10,8 @@ import logging
 import os
 import sys
 
-_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
-_BACKEND_DIR = os.path.dirname(_TOOLS_DIR)
+_LIB_DIR = os.path.dirname(os.path.abspath(__file__))
+_BACKEND_DIR = os.path.dirname(os.path.dirname(_LIB_DIR))
 
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
