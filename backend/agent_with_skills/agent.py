@@ -17,6 +17,8 @@ agent 内存与脚本之间同步：
 import json
 import logging
 import os
+import platform
+import re
 import subprocess
 import sys
 import time
@@ -183,7 +185,18 @@ class AgentWithSkills:
             "REPORT_SESSION_ID":  self.session_id,
             "REPORT_SESSION_DIR": str(_SESSION_DIR),
             "REPORT_BACKEND_DIR": _BACKEND_DIR,
+            "SKILLS_DIR":         str(_SKILLS_DIR),
         }
+
+        # Expand $VAR references so the command runs correctly on all platforms.
+        # cmd.exe (Windows) doesn't expand $VAR, so we do it ourselves before
+        # handing the command to the shell.
+        for key, val in env.items():
+            command = command.replace(f"${key}", val)
+
+        # On Windows python3 is not on PATH; replace with the running interpreter.
+        if platform.system() == "Windows":
+            command = re.sub(r"\bpython3\b", sys.executable.replace("\\", "/"), command)
 
         try:
             proc = subprocess.run(

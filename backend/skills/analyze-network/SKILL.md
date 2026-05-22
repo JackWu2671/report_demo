@@ -19,10 +19,11 @@ metadata:
 用户提出分析问题，最终目标是一份完整的报告文档来回答这个问题。
 报告分两个阶段生成：先确定结构（大纲），再填充内容（渲染）。
 
-所有工具均为 Python 脚本，通过 `bash` 调用，脚本路径格式：
-`python3 $SKILLS_DIR/analyze-network/scripts/<script>.py`
+所有工具均为 Python 脚本，通过 `bash` 调用。环境变量 `$SKILLS_DIR` 已预置为脚本根目录，调用格式：
 
-其中 `$SKILLS_DIR` 即 `$REPORT_BACKEND_DIR/../skills`（或直接使用绝对路径，运行时由环境变量注入）。
+```bash
+python3 $SKILLS_DIR/analyze-network/scripts/<script>.py [参数]
+```
 
 ## 脚本工具参考
 
@@ -34,19 +35,12 @@ metadata:
 | `modify_outline.py '<ops_json>'` | 对当前大纲执行结构化修改操作 |
 | `load_template.py <template_id>` | 按 ID 加载指定模板大纲写入会话 |
 
-脚本的实际路径为 `$REPORT_BACKEND_DIR/../skills/analyze-network/scripts/`，
-调用时请拼接完整路径，例如：
-
-```bash
-python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/search_graph_tree.py "fgOTN覆盖分析"
-```
-
 ## 第一阶段：生成大纲
 
 ### 步骤 1：先找现成模板
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/search_templates.py "用户需求原文" --topk 5
+python3 $SKILLS_DIR/analyze-network/scripts/search_templates.py "用户需求原文" --topk 5
 ```
 
 返回 JSON 数组，每项含 `id`、`scene_name`、`summary`、`usage_conditions`、`score`。
@@ -61,7 +55,7 @@ python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/search_templates.p
 ### 步骤 2：从知识库实时构建
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/search_graph_tree.py "用户需求原文"
+python3 $SKILLS_DIR/analyze-network/scripts/search_graph_tree.py "用户需求原文"
 ```
 
 输出两部分：
@@ -80,7 +74,7 @@ python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/search_graph_tree.
 ### 步骤 3：展开并主动修剪大纲
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/build_outline.py L4_001
+python3 $SKILLS_DIR/analyze-network/scripts/build_outline.py L4_001
 ```
 
 输出带 id 的 Markdown 大纲，大纲同时写入会话状态并推送给前端。
@@ -94,7 +88,7 @@ python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/build_outline.py L
 ### 步骤 4：按用户反馈修改大纲（按需）
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/modify_outline.py '[
+python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py '[
   {"op": "delete_node", "node_id": "L4_003"},
   {"op": "modify_node_description", "node_id": "L5_001", "value": "仅统计南宁市的企业"}
 ]'
@@ -120,7 +114,7 @@ python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/modify_outline.py 
 ### 加载模板大纲
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/load_template.py <template_id>
+python3 $SKILLS_DIR/analyze-network/scripts/load_template.py <template_id>
 ```
 
 成功时输出带 id 的 Markdown 大纲，大纲写入会话状态并推送给前端。

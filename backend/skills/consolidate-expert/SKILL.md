@@ -21,7 +21,7 @@ metadata:
 结构化模板，让后续所有报告都能站在专家的肩膀上。
 
 所有工具均为 Python 脚本，通过 `bash` 调用。脚本路径：
-`$REPORT_BACKEND_DIR/../skills/consolidate-expert/scripts/<script>.py`
+`$SKILLS_DIR/consolidate-expert/scripts/<script>.py`
 
 ## 脚本工具参考
 
@@ -34,14 +34,14 @@ metadata:
 | `graph_manage.py --template-id <id> --add-nodes '<json>' --enrich-nodes '<json>'` | 将沉淀内容融合回知识图谱 |
 
 **注意**：`search_graph_tree.py` 位于 analyze-network 脚本目录：
-`$REPORT_BACKEND_DIR/../skills/analyze-network/scripts/search_graph_tree.py`
+`$SKILLS_DIR/analyze-network/scripts/search_graph_tree.py`
 
 ## 工作流程
 
 ### 步骤 1：检索知识库
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/search_graph_tree.py "专家描述原文"
+python3 $SKILLS_DIR/analyze-network/scripts/search_graph_tree.py "专家描述原文"
 ```
 
 返回带祖先路径的节点树，包含可用的 query 节点 id。记住这些 id，后续构造大纲时 query 节点必须引用知识库已有 id，不可新建。
@@ -54,7 +54,7 @@ python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/search_graph_tree.
 根据专家输入和知识库节点，自行设计大纲结构，调用：
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/consolidate-expert/scripts/set_outline.py '[L1 new_001] 标题：描述
+python3 $SKILLS_DIR/consolidate-expert/scripts/set_outline.py '[L1 new_001] 标题：描述
   [L2 new_002] 章节：描述
     [L3 new_003] 节：描述
       [L4 new_004] 小节：描述
@@ -76,7 +76,7 @@ python3 $REPORT_BACKEND_DIR/../skills/consolidate-expert/scripts/set_outline.py 
 `set_outline.py` 调用完毕后，**立即**调用：
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/consolidate-expert/scripts/set_metadata.py \
+python3 $SKILLS_DIR/consolidate-expert/scripts/set_metadata.py \
   --scene-name "传送网络覆盖分析" \
   --summary "面向OTN站点企业覆盖现状的专项分析，识别覆盖缺口与部署机会" \
   --keywords "OTN,企业覆盖,fgOTN,站点部署,覆盖缺口" \
@@ -94,7 +94,7 @@ python3 $REPORT_BACKEND_DIR/../skills/consolidate-expert/scripts/set_metadata.py
 使用 analyze-network 的 `modify_outline.py` 修改大纲：
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/modify_outline.py '[
+python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py '[
   {"op": "modify_node_name", "node_id": "new_002", "value": "新名称"}
 ]'
 ```
@@ -106,7 +106,7 @@ python3 $REPORT_BACKEND_DIR/../skills/analyze-network/scripts/modify_outline.py 
 只在专家明确确认时调用（说"保存"、"就这样"、"好的"等），不要主动催促：
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/consolidate-expert/scripts/save_template.py
+python3 $SKILLS_DIR/consolidate-expert/scripts/save_template.py
 ```
 
 成功时输出 `{"template_id": "...", "scene_name": "...", "path": "..."}`，告知专家模板名称和存储路径。
@@ -118,7 +118,7 @@ python3 $REPORT_BACKEND_DIR/../skills/consolidate-expert/scripts/save_template.p
 融合使用：
 
 ```bash
-python3 $REPORT_BACKEND_DIR/../skills/consolidate-expert/scripts/graph_manage.py \
+python3 $SKILLS_DIR/consolidate-expert/scripts/graph_manage.py \
   --template-id <template_id> \
   --add-nodes '[{"level": 3, "name": "节点名", "keywords": ["kw1","kw2"], "description": "描述", "parent_id": "L2_001"}]' \
   --enrich-nodes '[{"node_id": "L3_001", "append": "补充描述"}]'
