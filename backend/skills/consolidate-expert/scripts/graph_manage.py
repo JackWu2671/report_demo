@@ -7,7 +7,8 @@
       --add-nodes '<json_array>' \
       --enrich-nodes '<json_array>'
 
-add_nodes 每项格式：{"level": 2|3|4, "name": "...", "keywords": [...], "description": "...", "parent_id": "L2_001"}
+add_nodes 每项格式：{"level": 2|3|4|5, "name": "...", "keywords": [...], "description": "...", "parent_id": "L2_001"}
+  level=5 为 query 节点，description 即查询参数，parent_id 须为 L4 节点
 enrich_nodes 每项格式：{"node_id": "L3_001", "append": "补充描述"}
 
 成功时输出 JSON 摘要：{"added": [...], "enriched": [...], "message": "..."}

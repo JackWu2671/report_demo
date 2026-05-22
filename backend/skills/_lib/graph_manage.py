@@ -52,7 +52,8 @@ async def graph_manage(
     Args:
         template_id  : 来源模板 ID，用于日志溯源
         add_nodes    : 要新增的节点列表，每项格式：
-                       {level: 2|3|4, name, keywords, description, parent_id}
+                       {level: 2|3|4|5, name, keywords, description, parent_id}
+                       level=5 为 query 节点，description 即查询参数
         enrich_nodes : 要丰富描述的已有节点列表，每项格式：
                        {node_id, append}
 
@@ -77,7 +78,7 @@ async def graph_manage(
 
     for spec in add_nodes:
         level = spec.get("level")
-        if level not in (2, 3, 4):
+        if level not in (2, 3, 4, 5):
             logger.warning("[graph_manage] 跳过非法层级: level=%s name=%s", level, spec.get("name"))
             continue
         parent_id = spec.get("parent_id", "")
