@@ -14,6 +14,7 @@ shared_tools.py — 所有工具的 schema 定义全集。
 
   Skill 系统元工具（AgentWithSkills 专用）：
     READ_SKILL_TOOL
+    BASH_TOOL
 """
 
 import logging
@@ -315,6 +316,21 @@ READ_SKILL_TOOL: dict = {
                 },
             },
             "required": ["name"],
+        },
+    },
+}
+
+BASH_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "bash",
+        "description": "执行 bash 命令，通常用于运行 skills/<name>/scripts/*.py 脚本工具。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "要执行的 bash 命令"},
+            },
+            "required": ["command"],
         },
     },
 }

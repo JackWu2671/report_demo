@@ -88,7 +88,7 @@ class SessionRequest(BaseModel):
 @app.post("/api/session")
 def create_session(req: SessionRequest):
     session_id = str(uuid.uuid4())
-    _sessions[session_id] = AgentWithSkills()
+    _sessions[session_id] = AgentWithSkills(session_id=session_id)
     logger.info("[Session] 创建 session=%s", session_id)
     return {"session_id": session_id}
 
