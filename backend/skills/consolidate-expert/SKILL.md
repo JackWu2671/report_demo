@@ -23,6 +23,8 @@ metadata:
 所有工具均为 Python 脚本，通过 `bash` 调用。脚本路径：
 `$SKILLS_DIR/consolidate-expert/scripts/<script>.py`
 
+> **跨平台命令规则**：所有命令必须写在**单行**，不得使用 `\` 换行续接（Windows 不支持）。
+
 ## 脚本工具参考
 
 | 脚本 | 说明 |
@@ -74,11 +76,7 @@ python3 $SKILLS_DIR/consolidate-expert/scripts/set_outline.py "[L1 new_001] 标�
 `set_outline.py` 调用完毕后，**立即**调用：
 
 ```bash
-python3 $SKILLS_DIR/consolidate-expert/scripts/set_metadata.py \
-  --scene-name "传送网络覆盖分析" \
-  --summary "面向OTN站点企业覆盖现状的专项分析，识别覆盖缺口与部署机会" \
-  --keywords "OTN,企业覆盖,fgOTN,站点部署,覆盖缺口" \
-  --usage-conditions "适用于需要评估OTN网络企业覆盖现状、识别部署优先级的场景"
+python3 $SKILLS_DIR/consolidate-expert/scripts/set_metadata.py --scene-name "传送网络覆盖分析" --summary "面向OTN站点企业覆盖现状的专项分析，识别覆盖缺口与部署机会" --keywords "OTN,企业覆盖,fgOTN,站点部署,覆盖缺口" --usage-conditions "适用于需要评估OTN网络企业覆盖现状、识别部署优先级的场景"
 ```
 
 字段要求：
@@ -114,10 +112,7 @@ python3 $SKILLS_DIR/consolidate-expert/scripts/save_template.py
 融合使用：
 
 ```bash
-python3 $SKILLS_DIR/consolidate-expert/scripts/graph_manage.py \
-  --template-id <template_id> \
-  --add-nodes '[{"level": 3, "name": "节点名", "keywords": ["kw1","kw2"], "description": "描述", "parent_id": "L2_001"}]' \
-  --enrich-nodes '[{"node_id": "L3_001", "append": "补充描述"}]'
+python3 $SKILLS_DIR/consolidate-expert/scripts/graph_manage.py --template-id <template_id> --add-nodes "[{\"level\": 3, \"name\": \"节点名\", \"keywords\": [\"kw1\",\"kw2\"], \"description\": \"描述\", \"parent_id\": \"L2_001\"}]" --enrich-nodes "[{\"node_id\": \"L3_001\", \"append\": \"补充描述\"}]"
 ```
 
 详细的融合决策流程见 `graph-fusion.md`。
