@@ -67,6 +67,9 @@ python3 $SKILLS_DIR/publish-knowledge/scripts/show_graph.py
 - `description`：L2/L3/L4 为 50～100 字业务描述；**L5 的 description 即查询参数**，直接决定数据过滤范围，须准确描述查询意图（如"仅统计南宁市的企业行业分布"）
 - `parent_id`：必须是知识图谱中已有节点的 ID（L5 的父节点为 L4）
 
+**add_node 可选字段：**
+- `condition`：展示条件，格式为"当……时，本节才展示"（如"当用户选择了城市维度时，本节才展示"）。仅在节点并非始终展示时填写，无条件限制则留空。
+
 **enrich_existing 必填字段（仅适用于 L2/L3/L4）：**
 - `node_id`：已有节点 ID（如 `L3_001`）
 - `append`：30～80 字的补充描述，不重复已有内容
@@ -99,8 +102,10 @@ python3 $SKILLS_DIR/publish-knowledge/scripts/show_graph.py
 用户确认后，对每个来源模板分别调用（同一模板的所有操作合并为一次调用）：
 
 ```bash
-python3 $SKILLS_DIR/publish-knowledge/scripts/graph_manage.py --template-id <template_id> --add-nodes "[{\"level\": 3, \"name\": \"节点名\", \"keywords\": [\"kw1\",\"kw2\"], \"description\": \"描述\", \"parent_id\": \"L2_001\"}]" --enrich-nodes "[{\"node_id\": \"L3_001\", \"append\": \"补充描述\"}]"
+python3 $SKILLS_DIR/publish-knowledge/scripts/graph_manage.py --template-id <template_id> --add-nodes "[{\"level\": 3, \"name\": \"节点名\", \"keywords\": [\"kw1\",\"kw2\"], \"description\": \"描述\", \"parent_id\": \"L2_001\", \"condition\": \"当用户选择了城市维度时，本节才展示\"}]" --enrich-nodes "[{\"node_id\": \"L3_001\", \"append\": \"补充描述\"}]"
 ```
+
+`condition` 字段可省略（无展示条件的节点不传或传空字符串）。
 
 没有任何变更的模板可跳过（`--add-nodes "[]" --enrich-nodes "[]"` 会正常执行但无写入）。
 

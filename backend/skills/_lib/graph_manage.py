@@ -5,8 +5,9 @@ graph_manage.py — 知识图谱融合执行工具。
 分析和决策由 agent 按 graph-fusion.md 的 SOP 完成，本工具只负责写入，不再内部调用 LLM。
 
 规则：
-  - L5（query）节点绑定 SQL/API 查询，受保护，写入时自动跳过
-  - add_nodes 中 level 只允许 2、3、4
+  - add_nodes 中 level 允许 2、3、4、5（L5 为 query 节点）
+  - enrich_nodes 跳过 L5（L5 的 description 即查询参数，不追加）
+  - condition 字段可选，表达"当……时，本节才展示"的展示条件
   - 变更直接写入磁盘；FAISS 索引需重建后生效
 """
 
@@ -52,8 +53,9 @@ async def graph_manage(
     Args:
         template_id  : 来源模板 ID，用于日志溯源
         add_nodes    : 要新增的节点列表，每项格式：
-                       {level: 2|3|4|5, name, keywords, description, parent_id}
+                       {level: 2|3|4|5, name, keywords, description, parent_id, condition?}
                        level=5 为 query 节点，description 即查询参数
+                       condition 可选，格式"当……时，本节才展示"
         enrich_nodes : 要丰富描述的已有节点列表，每项格式：
                        {node_id, append}
 
@@ -93,6 +95,7 @@ async def graph_manage(
             "name": spec["name"],
             "keywords": spec.get("keywords", []),
             "description": spec.get("description", ""),
+            "condition": spec.get("condition", ""),
         }
         nodes.append(new_node)
         existing_ids.add(new_id)
