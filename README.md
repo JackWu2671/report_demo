@@ -12,7 +12,7 @@ AI 辅助的报告大纲生成系统。用户用自然语言描述分析需求�
 4. [知识库检索](#4-知识库检索)
 5. [模板检索](#5-模板检索)
 6. [Agent Loop 设计](#6-agent-loop-设计)
-7. [Tools 设计](#7-tools-设计)
+7. [工具与脚本设计](#7-工具与脚本设计)
 8. [Skills 设计](#8-skills-设计)
 9. [Memory 设计](#9-memory-设计)
 
@@ -20,7 +20,7 @@ AI 辅助的报告大纲生成系统。用户用自然语言描述分析需求�
 
 ## 1. 报告的三种表现形式
 
-同一份报告大纲在系统中以三种形态并存，服务不同的消费者。三者均由 `utils/outline_utils.py` 从同一个 `outline_tree` 派生，互不依赖。
+同一份报告大纲在系统中以三种形态并存，服务不同的消费者。三者均由 `skills/_lib/outline_utils.py` 从同一个 `outline_tree` 派生，互不依赖。
 
 ### 1.1 outline_tree（结构化 JSON）
 
@@ -123,7 +123,7 @@ AI 辅助的报告大纲生成系统。用户用自然语言描述分析需求�
 
 ## 2. 知识库存储
 
-知识库以两个 JSON 文件存储在 `backend/expert_knowledge/`，启动时由 `utils/loader.py` 一次性加载到内存。
+知识库以两个 JSON 文件存储在 `backend/expert_knowledge/`，启动时由 `skills/_lib/loader.py` 一次性加载到内存。
 
 ### 2.1 node.json
 
@@ -255,7 +255,7 @@ python scripts/build_index.py
 
 ## 4. 知识库检索
 
-实现在 `utils/retriever.py`，由 `tools/search_graph_tree.py` 封装为 LLM 可调工具。
+实现在 `skills/_lib/retriever.py`。
 
 ### 检索流程
 
@@ -275,8 +275,10 @@ python scripts/build_index.py
 完整子树
     │
     ▼ _tree_to_text()
-树状文本（md_with_ids 格式）供 LLM 选锚节点
+树状文本（md_with_ids 格式）
 ```
+
+脚本 CLI `search_graph_tree.py` 将上述流程封装为命令行接口，输出树状文本，LLM 从中选择锚节点。
 
 ### 关键参数
 
@@ -296,13 +298,13 @@ python scripts/build_index.py
       [Q L5_002] 企业行政区分布
 ```
 
-LLM 从这棵树中选择锚节点 ID 传给 `build_outline_from_anchor`，或直接引用 query 节点 ID 构造大纲（`consolidate-expert` 场景）。
+LLM 从这棵树中选择锚节点 ID 传给 `build_outline.py`，或直接引用 query 节点 ID 构造大纲（`consolidate-expert` 场景）。
 
 ---
 
 ## 5. 模板检索
 
-实现在 `utils/template_selector.py`，由 `tools/search_template.py` 封装。
+实现在 `skills/_lib/template_selector.py`。
 
 ### 检索流程
 
@@ -336,7 +338,7 @@ LLM 从这棵树中选择锚节点 ID 传给 `build_outline_from_anchor`，或�
   2. ...
 ```
 
-LLM 根据 `scene_name`/`summary`/`usage_conditions` 自行判断相关性，有匹配则调 `load_template_outline`，否则转向 `search_graph_tree`。
+LLM 根据 `scene_name`/`summary`/`usage_conditions` 自行判断相关性，有匹配则调 `load_template.py`，否则转向 `search_graph_tree.py`。
 
 ---
 
@@ -350,74 +352,71 @@ LLM 根据 `scene_name`/`summary`/`usage_conditions` 自行判断相关性，有
 async def chat_stream(user_message):
     memory.add_message({"role": "user", "content": user_message})
 
-    for _ in range(MAX_ROUNDS):           # 最多 8 轮工具调用
-        response = await _call_llm()      # 携带完整对话历史 + 工具列表
+    for _ in range(MAX_ROUNDS):
+        response = await _call_llm()   # TOOLS = [read_skill, bash]
 
         if finish_reason == "tool_calls":
             for tc in tool_calls:
-                yield step_running_event       # 推给前端：工具开始执行
+                yield step_running_event
                 result_dict, llm_str = await _execute_tool(tc)
-                yield outline/extraction/saved_events  # 按需推送业务事件
-                yield step_done_event          # 推给前端：工具执行完毕
+                for event in result_dict.get("_events", []):
+                    yield event          # outline / extraction 事件
+                yield step_done_event
                 memory.add_message(tool_result)
-            continue                           # 继续下一轮
+            continue
 
-        yield text_event                       # LLM 文字回复
+        yield text_event
         yield done_event
         return
 
     yield error_event("工具调用次数超限")
 ```
 
-### 工具分发（dispatch map）
+### 工具分发（只有两个分支）
 
 ```python
-async def _execute_tool(tool_call):
-    name = tool_call.function.name
-    args = json.loads(tool_call.function.arguments)  # OpenAI 格式，参数是 JSON 字符串
-
+async def _execute_tool(name, args):
     if name == "read_skill":
-        return _handle_read_skill(args)   # skill 元工具，agent 本地处理
+        return _handle_read_skill(args)   # 本地处理，无子进程
+    if name == "bash":
+        return await _handle_bash(args["command"])
+```
 
-    handler = HANDLERS.get(name)          # 业务工具，查 dispatch map
-    return await handler(args, self.memory)
+### bash 执行的 session 同步机制
+
+```
+1. bash 调用前 → 把 memory 当前状态（outline_tree, md_with_ids, extraction）写入 /tmp/report_sessions/{id}.json
+2. 子进程执行  → 脚本通过 REPORT_SESSION_ID / REPORT_SESSION_DIR 环境变量读写 session 文件
+3. bash 调用后 → agent 读回 session 文件，_detect_events() 对比前后差异：
+                  - outline_tree 变了 → 推 outline 事件，更新 memory
+                  - extraction  变了 → 推 extraction 事件，更新 memory
 ```
 
 ### SSE 事件协议
 
 | 事件类型 | 触发时机 | 关键字段 |
 |----------|----------|---------|
-| `step` running | 工具开始执行 | `name`, `call_id`, `args` |
-| `step` done | 工具执行完毕 | `name`, `result`（单行摘要）, `detail`（完整 llm_str）|
-| `outline` | 任何产生新大纲的工具返回后 | `markdown`, `md_with_ids`, `outline_tree` |
-| `extraction` | `set_scene_metadata` 成功后 | `scene_name`, `keywords`, `summary` |
-| `saved` | `save_outline_template` 成功后 | `scene_name`, `path` |
+| `step` running | bash/read_skill 开始执行 | `name`, `call_id`, `args` |
+| `step` done | bash/read_skill 执行完毕 | `name`, `result`（单行摘要）, `detail` |
+| `outline` | bash 执行后 session 文件 outline_tree 发生变化 | `markdown`, `md_with_ids`, `outline_tree` |
+| `extraction` | bash 执行后 session 文件 extraction 发生变化 | `scene_name`, `keywords`, `summary` |
 | `text` | LLM 文字回复 | `chunk` |
 | `done` | 本轮结束 | `seconds` |
 | `error` | 超限或异常 | `message` |
 
 大纲走独立的 `outline` 事件而不是让 LLM 逐字输出，因为大纲是工具计算出来的结构化数据，无需 LLM 重新生成，前端可以瞬间渲染。
 
-### 工具结果的双返回值
-
-每个 handler 返回 `(result_dict, llm_str)` 两部分：
-
-- **`result_dict`**：结构化 JSON，agent loop 检查它决定推哪种 SSE 事件（`outline_tree` 是否非空、`status` 是否 success）
-- **`llm_str`**：紧凑文本，写入 LLM 对话历史，格式如 `[tool_name] status=success\n...`
-
-两者分离是因为前端需要结构化 JSON，而 LLM 需要自然语言摘要，同一份执行结果服务两个消费者。
-
 ---
 
-## 7. Tools 设计
+## 7. 工具与脚本设计
 
-所有工具的 JSON Schema 定义统一存放在 `tools/shared_tools.py`（OpenAI Function Calling 格式），handler 实现在对应的 `tools/*.py` 文件中。当前共 9 个工具，分三组。
+当前架构下 LLM 只感知两个工具（`read_skill` + `bash`），所有业务逻辑均以 Python CLI 脚本形式存放在 `skills/<name>/scripts/`。
 
-### 7.1 Skill 元工具（1个）
+### 7.1 LLM 可见工具（2个）
 
 #### `read_skill`
 
-加载指定 skill 的完整 SOP 或其内部支持文件，由 `agent.py` 直接处理，不走 dispatch map。
+加载指定 skill 的完整 SOP 或其内部支持文件，由 `agent.py` 直接处理，无子进程。
 
 ```
 参数：
@@ -431,132 +430,63 @@ async def _execute_tool(tool_call):
 
 已加载的 SOP 通过 `_loaded` set 去重，同一会话内不重复注入（返回"已加载，请直接按流程操作"）。内置路径沙箱，`ref_path` 经 `.resolve().is_relative_to()` 验证，防止读取 skill 目录之外的文件。
 
-### 7.2 知识库与大纲构建工具（3个）
-
-#### `search_graph_tree`
-
-从知识图谱检索与问题相关的节点，返回带祖先路径的树状结构。
+#### `bash`
 
 ```
-参数：question (string) — 用户需求原文
+参数：command (string) — 要执行的 bash 命令
 
-返回：
-  status="success"   : {tree_text（md_with_ids 格式文本）, graph_tree（JSON）}
-  status="not_found" : {message}
+用途：执行 skills/<name>/scripts/*.py 业务脚本
+注入环境变量：
+  REPORT_SESSION_ID   当前会话 ID
+  REPORT_SESSION_DIR  session 文件目录（默认 /tmp/report_sessions/）
+  REPORT_BACKEND_DIR  backend/ 绝对路径
+  SKILLS_DIR          skills/ 绝对路径（脚本调用的快捷路径）
 ```
 
-LLM 从 `tree_text` 中选锚节点 ID 传给 `build_outline_from_anchor`，或引用 query 节点 ID 直接构造大纲。
+#### 跨平台命令规范
 
-#### `build_outline_from_anchor`
+- 所有命令必须写在单行（Windows cmd.exe 不支持 `\` 续行）
+- JSON 参数：外层双引号，内层 `\"` 转义
+- 多行文本参数（如 set_outline.py）：用 `\n` 表示换行，脚本内部自动解码
 
-以指定节点为根，展开知识图谱子树，生成初始大纲。
+### 7.2 Skills 脚本（CLI 接口速查）
 
-```
-参数：anchor_id (string) — 从 search_graph_tree 返回结果中选取的节点 ID
+**analyze-network/scripts/：**
 
-返回：
-  status="success"   : {outline_tree, markdown, md_with_ids}
-  status="not_found" : {message}
-```
+| 脚本 | 命令格式 | 说明 |
+|------|---------|------|
+| search_graph_tree.py | `python3 ... "查询词" [--topk N]` | 语义检索知识图谱节点 |
+| search_templates.py | `python3 ... "查询词" [--topk N]` | 检索模板库 |
+| build_outline.py | `python3 ... <anchor_id>` | 展开子树生成大纲 |
+| modify_outline.py | `python3 ... "[{\"op\":...}]"` | 修改大纲 |
+| load_template.py | `python3 ... <template_id>` | 加载模板大纲 |
 
-将选中节点下的所有后代节点完整展开，生成的大纲通常比实际需要的更宽，需随后调用 `modify_outline` 修剪。
+**consolidate-expert/scripts/：**
 
-#### `set_outline_from_markdown`
+| 脚本 | 命令格式 | 说明 |
+|------|---------|------|
+| set_outline.py | `python3 ... "[L1 new_001] 标题\n  [L2 ...]"` | 解析并写入大纲 |
+| set_metadata.py | `python3 ... --scene-name "..." --summary "..." --keywords "..." --usage-conditions "..."` | 写入场景元数据 |
+| save_template.py | `python3 ...` | 保存为模板 |
+| graph_manage.py | `python3 ... --template-id <id> --add-nodes "[...]" --enrich-nodes "[...]"` | 融合回知识图谱 |
 
-将 LLM 自行构造的 `md_with_ids` 格式文本解析为结构化大纲，用于 `consolidate-expert` 场景。
+### 7.3 脚本共享库（skills/_lib/）
 
-```
-参数：md_with_ids (string) — 符合格式约束的大纲文本
+`skills/_lib/` 按职责分两层：
 
-返回：
-  status="success" : {outline_tree, markdown, md_with_ids}
-  status="error"   : {message}
-```
+**session.py**：读写 `/tmp/report_sessions/{id}.json`，是脚本读写 agent 状态的唯一入口。
 
-格式约束（违反任意一条为无效输出）：
-- L1 必须存在且唯一，作为报告总标题
-- query 节点（`[Q ...]`）必须是叶子节点，禁止有子节点
-- 禁止新建 query 节点，只能引用知识库已有节点 ID
-- 每个新建 L4 下必须至少挂一个知识库已有的 query 节点
-- 所有新建节点名称后必须紧跟全角冒号和 50～100 字描述
+**业务逻辑层**（原 `tools/` 迁入）：search_graph_tree、search_template、build_outline_from_anchor、modify_outline、set_outline_from_markdown、set_scene_metadata、save_template、graph_manage
 
-### 7.3 模板管理工具（2个）
-
-#### `search_outline_templates`
-
-向量检索模板库，返回 top-N 候选列表。
-
-```
-参数：question (string), top_k (int, 默认5)
-
-返回：
-  status="found"     : {candidates: [{id, scene_name, summary, usage_conditions, score}]}
-  status="not_found" : {reason}
-```
-
-LLM 根据候选的 `scene_name`/`summary`/`usage_conditions` 自行判断相关性，有匹配则调 `load_template_outline`，无匹配则转向 `search_graph_tree`。
-
-#### `load_template_outline`
-
-按模板 ID 直接加载完整大纲（O(1) 文件读取）。
-
-```
-参数：template_id (string) — 来自 search_outline_templates 返回的 id 字段
-
-返回：
-  status="success"   : {outline_tree, markdown, md_with_ids, scene_name}
-  status="not_found" : {reason}
-```
-
-内置路径沙箱验证（`template_id` 拼路径后经 `.resolve().is_relative_to(TEMPLATE_DIR)` 验证），防止路径遍历攻击。
-
-### 7.4 大纲修改与保存工具（3个）
-
-#### `modify_outline`
-
-对当前大纲执行结构化修改，支持多操作批量执行，按列表顺序依次应用。
-
-```
-参数：ops (array) — 操作列表
-
-支持的操作：
-  add_node               {op, node_id, parent_id}  从知识库添加已有节点；parent_id="" 表示顶层
-  delete_node            {op, node_id}             删除节点及其整个子树
-  modify_node_name       {op, node_id, value}      修改节点名称
-  modify_node_description{op, node_id, value}      修改节点描述（query 节点直接影响数据查询范围）
-  modify_node_condition  {op, node_id, value}      设置/删除展示条件；value="" 表示删除
-  keep_only_node         {op, node_id}             保留该节点，删除同级所有其他节点
-
-返回：{status, outline_tree, markdown, md_with_ids, ops（已执行）, skipped（跳过的操作及原因）}
-```
-
-`skipped` 字段非空时 LLM 必须继续调工具补救，不得直接告知用户已完成。
-
-#### `set_scene_metadata`
-
-填写场景元数据，存入 `memory.extraction`，供后续保存模板使用。
-
-```
-参数：scene_name (≤10字), summary (≤50字), keywords (3～8个), usage_conditions (≤80字)
-返回：{status, scene_name, summary, keywords, usage_conditions}
-```
-
-#### `save_outline_template`
-
-将 `memory.extraction` + `memory.outline_tree` 持久化为 JSON 模板文件。
-
-```
-参数：（无，直接从 memory 读取）
-返回：{status, path, scene_name, template_id}
-```
-
-只在用户明确确认时调用（说"保存"、"好的就这样"等），不得主动触发。
+**基础设施层**（原 `utils/` 迁入）：retriever、loader、outline_utils、subtree、patcher、template_selector
 
 ---
 
 ## 8. Skills 设计
 
-Skills 是用自然语言写的工作流 SOP，告诉 LLM 面对特定场景时应该按什么顺序调用哪些工具。存放在 `backend/skills/` 目录，每个 skill 是一个子目录，包含 `SKILL.md`（主 SOP）和可选的支持文件。
+Skills 是用自然语言写的工作流 SOP，告诉 LLM 面对特定场景时应该按什么顺序调用哪些脚本。存放在 `backend/skills/` 目录，每个 skill 是一个子目录，包含 `SKILL.md`（主 SOP）和 `scripts/`（业务脚本）。
+
+**脚本化架构的核心思路：** LLM 通过阅读 SKILL.md 了解各脚本的 CLI 接口和调用顺序，使用 `bash` 工具执行脚本，不再感知业务工具的 JSON Schema。SKILL.md 是 LLM 与脚本之间的协议文档。
 
 ### 三级渐进式加载
 
@@ -569,12 +499,12 @@ Level 0（系统启动时缓存）
 
 Level 1（按需加载，每 skill 约 2000 token）
   完整 SKILL.md SOP 正文通过 tool_result 注入对话历史
-  LLM 严格按 SOP 执行后续工具调用
+  LLM 严格按 SOP 执行后续脚本调用
 
           ↓ SOP 中引用支持文档，调用 read_skill(name, path)
 
 Level 2（按需加载）
-  skill 目录内的指定支持文件（如 node-text-format.md）
+  skill 目录内的指定支持文件
 ```
 
 **去重机制：** 已加载的 SOP 记录在 `agent._loaded` set 中，同一会话内不重复注入，避免浪费 context。
@@ -594,35 +524,35 @@ Level 2（按需加载）
 
 **触发条件：** 用户想了解网络现状、发现问题或给出部署建议——覆盖评估、容量分析、fgOTN/OSU 部署规划、站点选址、企业覆盖缺口、资源瓶颈识别等。报告和大纲只是分析的输出形式，不是触发条件。不适用：与网络分析无关的一般对话、简单知识问答。
 
-**工具调用顺序（有匹配模板）：**
+**脚本调用顺序（有匹配模板）：**
 ```
-search_outline_templates → load_template_outline → [modify_outline]
+search_templates.py → load_template.py → [modify_outline.py]
 ```
 
-**工具调用顺序（无匹配模板 / 用户拒绝模板）：**
+**脚本调用顺序（无匹配模板 / 用户拒绝模板）：**
 ```
-search_graph_tree → build_outline_from_anchor → modify_outline
+search_graph_tree.py → build_outline.py → modify_outline.py
 ```
 
 **SOP 核心步骤：**
 
 **步骤 1：先找现成模板**
-调 `search_outline_templates`，根据 `scene_name`/`summary`/`score` 自行判断是否高度匹配。
-- 有匹配 → 调 `load_template_outline` 加载，告知用户模板名称，询问是否使用，**等待用户确认，不得自行决定**
+调 `search_templates.py`，根据 `scene_name`/`summary`/`score` 自行判断是否高度匹配。
+- 有匹配 → 调 `load_template.py` 加载，告知用户模板名称，询问是否使用，**等待用户确认，不得自行决定**
 - 无匹配 → 直接进入步骤 2，无需告知用户"未找到模板"
 
 **步骤 2：从知识库实时构建**
-调 `search_graph_tree`，按锚节点选择原则选定锚节点：选与用户需求最直接对应的节点，优先 L3/L4 乃至 query 节点，避免选 L1/L2 等过于宽泛的顶层节点。
+调 `search_graph_tree.py`，按锚节点选择原则选定锚节点：选与用户需求最直接对应的节点，优先 L3/L4 乃至 query 节点，避免选 L1/L2 等过于宽泛的顶层节点。
 
 **步骤 3：展开并主动修剪**
-调 `build_outline_from_anchor` 后，**不等用户指示**，立即通过一次 `modify_outline` 完成：
+调 `build_outline.py` 后，**不等用户指示**，立即通过一次 `modify_outline.py` 完成：
 1. 结构修剪：删除与用户需求无关的节点，或用 `keep_only_node` 保留关键分支
 2. 范围过滤：若用户在需求中已指定分析范围（城市、行业、时间段、阈值等），用 `modify_node_description` 将过滤条件写入所有相关 query 节点描述
 
 两项均无需操作时可不调用。修改完成后简短告知用户，询问是否进一步调整。
 
 **步骤 4：按用户反馈修改**
-调 `modify_outline`，多个独立操作合并为一次调用。`modify_node_description` 修改 query 节点描述时，该描述直接作为数据过滤参数——不得只改 L3/L4 名称而忽略 query 节点描述的同步更新。
+调 `modify_outline.py`，多个独立操作合并为一次调用。`modify_node_description` 修改 query 节点描述时，该描述直接作为数据过滤参数——不得只改 L3/L4 名称而忽略 query 节点描述的同步更新。
 
 **关键约束：**
 - 大纲通过 `outline` 事件推送给前端，**禁止在文字回复里输出大纲内容**
@@ -632,29 +562,27 @@ search_graph_tree → build_outline_from_anchor → modify_outline
 
 **触发条件：** 用户发来一段较长的业务描述（通常 80～300 字），内容是自己的分析判断、工作方法或场景经验，而不是在提问。典型表现："我们一般怎么看……"、"这个场景需要关注……"、"根据我的经验……"、直接把一段业务思路一次性发过来。无论用户有没有说"保存"，只要是在输出业务知识就触发。不适用：用疑问句提问、请求生成报告、简短对话。
 
-**工具调用顺序：**
+**脚本调用顺序：**
 ```
-search_graph_tree → set_outline_from_markdown → set_scene_metadata → [modify_outline] → save_outline_template
+search_graph_tree.py → set_outline.py → set_metadata.py → [modify_outline.py] → save_template.py → [graph_manage.py]
 ```
 
 **SOP 核心步骤：**
 
 **步骤 1：检索知识库**
-调 `search_graph_tree`，将专家描述的业务场景**完整原文**传入 `question`。记录返回的 query 节点 ID，后续构造大纲时 query 节点只能引用这些 ID，不可新建。
+调 `search_graph_tree.py`，将专家描述的业务场景**完整原文**传入查询词。记录返回的 query 节点 ID，后续构造大纲时 query 节点只能引用这些 ID，不可新建。
 
 **步骤 2：构造大纲**
-根据专家输入和知识库节点，自行设计大纲结构，调 `set_outline_from_markdown` 传入 `md_with_ids`。L2/L3/L4 由 LLM 按专家意图自由设计（可新建），query 节点只能引用步骤 1 返回的知识库节点 ID。调用后大纲立即展示给专家。
+根据专家输入和知识库节点，自行设计大纲结构，调 `set_outline.py` 传入 `md_with_ids` 格式文本。L2/L3/L4 由 LLM 按专家意图自由设计（可新建），query 节点只能引用步骤 1 返回的知识库节点 ID。调用后大纲立即展示给专家。
 
 **步骤 3：填写场景元数据**
-`set_outline_from_markdown` 调用完毕后**立即**调 `set_scene_metadata`，填写 `scene_name`/`summary`/`keywords`/`usage_conditions`。
+`set_outline.py` 调用完毕后**立即**调 `set_metadata.py`，填写 `scene_name`/`summary`/`keywords`/`usage_conditions`。
 
 **步骤 4：按专家意见修改（可选）**
-调 `modify_outline`，一句话确认变更后询问是否满意。
+调 `modify_outline.py`，一句话确认变更后询问是否满意。
 
 **步骤 5：保存为模板**
-只在专家明确确认时（说"保存"、"就这样"、"好的"等）调 `save_outline_template`，不主动催促。
-
-**支持文件：** `skills/consolidate-expert/node-text-format.md`，详细说明 `md_with_ids` 的格式规则，SOP 中通过 `read_skill("consolidate-expert", "node-text-format.md")` 按需加载（Level 2）。
+只在专家明确确认时（说"保存"、"就这样"、"好的"等）调 `save_template.py`，不主动催促。
 
 ---
 
@@ -678,7 +606,7 @@ search_graph_tree → set_outline_from_markdown → set_scene_metadata → [modi
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `extraction` | dict | 场景元数据，由 `set_scene_metadata` 写入，`save_outline_template` 读取 |
+| `extraction` | dict | 场景元数据，由 `set_metadata.py` 写入，`save_template.py` 读取 |
 
 `extraction` 结构：`{scene_name, summary, keywords, usage_conditions}`
 
@@ -715,3 +643,25 @@ Skill 的 Level 0 列表（name + description）在 `AgentWithSkills.__init__()`
 ### reset()
 
 清空 `_history`、`outline_tree`、`markdown`、`md_with_ids`、`extraction`，以及 `agent._loaded` set（已加载的 skill SOP 记录），还原到初始状态供新一轮对话使用。
+
+### 9.x Session 文件
+
+Session 文件是 agent memory 和子进程脚本之间的数据桥梁。每次 bash 调用：
+1. agent 写入 `{outline_tree, md_with_ids, markdown, extraction}` 到 session 文件
+2. 脚本通过 `skills/_lib/session.py` 的 `read()`/`write()` 读写此文件
+3. agent 读回并 diff，更新 memory 并推送前端事件
+
+```
+/tmp/report_sessions/{session_id}.json
+{
+  "outline_tree": { ... },
+  "md_with_ids": "...",
+  "markdown": "...",
+  "extraction": {
+    "scene_name": "...",
+    "summary": "...",
+    "keywords": [...],
+    "usage_conditions": "..."
+  }
+}
+```
