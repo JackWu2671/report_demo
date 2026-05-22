@@ -21,7 +21,7 @@ _BACKEND_DIR = os.path.dirname(os.path.dirname(_LIB_DIR))
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
-from utils.outline_utils import to_markdown, to_markdown_with_ids
+from outline_utils import to_markdown, to_markdown_with_ids
 
 logger = logging.getLogger(__name__)
 

@@ -10,9 +10,8 @@ import json
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from utils.outline_utils import to_markdown, to_markdown_with_ids, to_clean_json
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "_lib"))
+from outline_utils import to_markdown, to_markdown_with_ids, to_clean_json
 
 # ── 测试数据（模拟 subtree.build_subtree 的输出）──────────────────
 

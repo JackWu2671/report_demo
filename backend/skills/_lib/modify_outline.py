@@ -16,8 +16,8 @@ _BACKEND_DIR = os.path.dirname(os.path.dirname(_LIB_DIR))
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
-from utils.patcher import apply_patch
-from utils.outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
+from patcher import apply_patch
+from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
 
 logger = logging.getLogger(__name__)
 

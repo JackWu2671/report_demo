@@ -20,7 +20,7 @@ _BACKEND_DIR = os.path.dirname(os.path.dirname(_LIB_DIR))
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
-from utils.retriever import search_graph_tree as _search_graph_tree
+from retriever import search_graph_tree as _search_graph_tree
 
 logger = logging.getLogger(__name__)
 
