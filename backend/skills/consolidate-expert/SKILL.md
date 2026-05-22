@@ -33,7 +33,6 @@ metadata:
 | `set_outline.py '<md_with_ids>'` | 解析 md_with_ids 大纲写入会话，推送给前端 |
 | `set_metadata.py --scene-name "..." --summary "..." --keywords "kw1,kw2" --usage-conditions "..."` | 写入场景元数据 |
 | `save_template.py` | 将当前大纲和元数据保存为模板 |
-| `graph_manage.py --template-id <id> --add-nodes '<json>' --enrich-nodes '<json>'` | 将沉淀内容融合回知识图谱 |
 
 **注意**：`search_graph_tree.py` 位于 analyze-network 脚本目录：
 `$SKILLS_DIR/analyze-network/scripts/search_graph_tree.py`
@@ -103,19 +102,9 @@ python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"modif
 python3 $SKILLS_DIR/consolidate-expert/scripts/save_template.py
 ```
 
-成功时输出 `{"template_id": "...", "scene_name": "...", "path": "..."}`，告知专家模板名称和存储路径。
+成功时输出 `{"template_id": "...", "scene_name": "...", "path": "..."}`，告知专家模板名称和存储路径，流程结束。
 
-### 步骤 6：融合回知识图谱
-
-`save_template.py` 成功后，**立即**调用 `read_skill("consolidate-expert", "graph-fusion.md")` 加载融合操作规范，按其 SOP 引导专家完成图谱更新。
-
-融合使用：
-
-```bash
-python3 $SKILLS_DIR/consolidate-expert/scripts/graph_manage.py --template-id <template_id> --add-nodes "[{\"level\": 3, \"name\": \"节点名\", \"keywords\": [\"kw1\",\"kw2\"], \"description\": \"描述\", \"parent_id\": \"L2_001\"}]" --enrich-nodes "[{\"node_id\": \"L3_001\", \"append\": \"补充描述\"}]"
-```
-
-详细的融合决策流程见 `graph-fusion.md`。
+> 知识图谱融合由独立的 `publish-knowledge` skill 批量处理，不在本流程内触发。
 
 ## 注意事项
 
