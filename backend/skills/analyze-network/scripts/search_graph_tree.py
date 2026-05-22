@@ -19,7 +19,7 @@ sys.path.insert(0, os.environ.get("REPORT_BACKEND_DIR", ""))
 sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", ".."))
 sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
-from search_graph_tree import search_graph_tree as _search
+from retriever import search_graph_tree as _search
 
 
 def _render_tree(node: dict, depth: int, hit_scores: dict) -> None:
