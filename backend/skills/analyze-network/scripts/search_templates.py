@@ -15,7 +15,8 @@ import asyncio
 import json
 
 sys.path.insert(0, os.environ.get("REPORT_BACKEND_DIR", ""))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+_SCRIPTS = os.path.dirname(__file__)
+sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
 from search_template import search_outline_templates
 
