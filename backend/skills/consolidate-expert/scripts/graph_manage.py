@@ -19,6 +19,8 @@ import json
 import argparse
 
 sys.path.insert(0, os.environ.get("REPORT_BACKEND_DIR", ""))
+_SCRIPTS = os.path.dirname(__file__)
+sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
 from graph_manage import graph_manage
 
