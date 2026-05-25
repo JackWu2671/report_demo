@@ -2,20 +2,13 @@
 """
 parse_scene_xlsx.py — 将场景类 xlsx 转换为 JSON
 
-用法:
-  python3 parse_scene_xlsx.py <level>
-
-  <level>  场景层级名称，同时作为文件名前缀，例如：
-             python3 parse_scene_xlsx.py 场景       # 读 场景.xlsx，写 场景.json
-             python3 parse_scene_xlsx.py 子场景     # 读 子场景.xlsx，写 子场景.json
-
-输入: expert_knowledge/<level>.xlsx
-输出: expert_knowledge/<level>.json
+直接修改下方 ── 配置区 ── 里的三个变量，然后运行：
+  python3 parse_scene_xlsx.py
 
 字段说明:
   id          — 场景唯一标识
   name        — 场景名称（同 SCENEKEY）
-  level       — 由命令行参数指定（如 "场景" / "子场景"）
+  level       — 由 LEVEL 变量指定
   description — 一句话描述
   detail      — 详细拓展逻辑（原字段名 expandLogic）
   keywords    — 关键词列表（原字段名 keyWords）
@@ -32,11 +25,11 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
 _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 
-
-def resolve_paths(level: str) -> tuple[str, str]:
-    input_file  = os.path.join(_KB_DIR, f"{level}.xlsx")
-    output_file = os.path.join(_KB_DIR, f"{level}.json")
-    return input_file, output_file
+# ── 配置区（每次修改这里）────────────────────────────────────────────
+LEVEL       = "子场景"                                    # 写入每条记录的 level 字段
+INPUT_FILE  = os.path.join(_KB_DIR, "子场景.xlsx")        # 输入 Excel 路径
+OUTPUT_FILE = os.path.join(_KB_DIR, "子场景.json")        # 输出 JSON 路径
+# ────────────────────────────────────────────────────────────────────
 
 
 def parse_dimensions(raw) -> list[dict]:
@@ -84,14 +77,9 @@ def convert_row(scene_key: str, content_str: str, level: str) -> dict | None:
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("用法: python3 parse_scene_xlsx.py <level>", file=sys.stderr)
-        print("示例: python3 parse_scene_xlsx.py 场景", file=sys.stderr)
-        print("      python3 parse_scene_xlsx.py 子场景", file=sys.stderr)
-        sys.exit(1)
-
-    level = sys.argv[1].strip()
-    input_file, output_file = resolve_paths(level)
+    level       = LEVEL
+    input_file  = INPUT_FILE
+    output_file = OUTPUT_FILE
 
     try:
         import openpyxl
