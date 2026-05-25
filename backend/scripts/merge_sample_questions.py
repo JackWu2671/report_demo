@@ -8,8 +8,9 @@ merge_sample_questions.py — 合并 appSampleQuestion.json 和 sampleQuestion.j
 输出:
   expert_knowledge/评估指标.json
 
-字段顺序: nodeId, id, question, answer, domain, renderType, colX, colY
+字段顺序: nodeId, level, id, question, answer, domain, renderType, colX, colY
   nodeId  — 短编号 L5_001 / L5_002 ...（合并后按顺序生成）
+  level   — 固定 "评估指标"
   id      — 原始 UUID
 缺失字段补 null。
 """
@@ -92,8 +93,9 @@ def main():
                 continue
             seen_ids.add(rid)
             item["nodeId"] = make_node_id(NODE_START + len(merged))
-            # 调整字段顺序：nodeId 放最前
-            item = {"nodeId": item.pop("nodeId"), **item}
+            item["level"]  = "评估指标"
+            # 调整字段顺序：nodeId / level 放最前
+            item = {"nodeId": item.pop("nodeId"), "level": item.pop("level"), **item}
             merged.append(item)
 
         added = len(merged) - before
