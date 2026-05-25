@@ -25,10 +25,24 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
 _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 
-# ── 配置区（每次修改这里）────────────────────────────────────────────
-LEVEL       = "子场景"                                    # 写入每条记录的 level 字段
-INPUT_FILE  = os.path.join(_KB_DIR, "子场景.xlsx")        # 输入 Excel 路径
-OUTPUT_FILE = os.path.join(_KB_DIR, "子场景.json")        # 输出 JSON 路径
+# ── 配置区（按需增删）────────────────────────────────────────────────
+CONFIGS = [
+    {
+        "level":       "场景",
+        "input_file":  os.path.join(_KB_DIR, "场景.xlsx"),
+        "output_file": os.path.join(_KB_DIR, "场景.json"),
+    },
+    {
+        "level":       "子场景",
+        "input_file":  os.path.join(_KB_DIR, "子场景.xlsx"),
+        "output_file": os.path.join(_KB_DIR, "子场景.json"),
+    },
+    {
+        "level":       "评估维度",
+        "input_file":  os.path.join(_KB_DIR, "评估维度.xlsx"),
+        "output_file": os.path.join(_KB_DIR, "评估维度.json"),
+    },
+]
 # ────────────────────────────────────────────────────────────────────
 
 
@@ -76,41 +90,30 @@ def convert_row(scene_key: str, content_str: str, level: str) -> dict | None:
     }
 
 
-def main():
-    level       = LEVEL
-    input_file  = INPUT_FILE
-    output_file = OUTPUT_FILE
-
-    try:
-        import openpyxl
-    except ImportError:
-        print("[错误] 请先安装 openpyxl: pip install openpyxl", file=sys.stderr)
-        sys.exit(1)
-
+def process_one(level: str, input_file: str, output_file: str) -> None:
+    """处理单个 xlsx，转换后写入对应 json。"""
     if not os.path.exists(input_file):
-        print(f"[错误] 文件不存在: {input_file}", file=sys.stderr)
-        sys.exit(1)
+        print(f"[跳过] 文件不存在: {input_file}")
+        return
 
+    import openpyxl
     wb = openpyxl.load_workbook(input_file, data_only=True)
     ws = wb.active
 
-    # 读取表头，找 SCENEKEY / CONTENT 列索引（大小写不敏感）
     headers = [str(cell.value).strip().upper() if cell.value else "" for cell in ws[1]]
     try:
         idx_key     = headers.index("SCENEKEY")
         idx_content = headers.index("CONTENT")
     except ValueError:
-        print(f"[错误] 找不到必要列，实际表头: {headers}", file=sys.stderr)
-        sys.exit(1)
+        print(f"[错误] [{level}] 找不到必要列，实际表头: {headers}", file=sys.stderr)
+        return
 
     scenes = []
-    for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        scene_key    = str(row[idx_key]).strip()   if row[idx_key]     else ""
-        content_str  = str(row[idx_content]).strip() if row[idx_content] else ""
-
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        scene_key   = str(row[idx_key]).strip()    if row[idx_key]     else ""
+        content_str = str(row[idx_content]).strip() if row[idx_content] else ""
         if not scene_key and not content_str:
-            continue  # 跳过空行
-
+            continue
         item = convert_row(scene_key, content_str, level)
         if item:
             scenes.append(item)
@@ -118,7 +121,18 @@ def main():
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(scenes, f, ensure_ascii=False, indent=2)
 
-    print(f"转换完成，共 {len(scenes)} 条 [{level}] → {output_file}")
+    print(f"[{level}] 完成，共 {len(scenes)} 条 → {output_file}")
+
+
+def main():
+    try:
+        import openpyxl  # noqa: F401
+    except ImportError:
+        print("[错误] 请先安装 openpyxl: pip install openpyxl", file=sys.stderr)
+        sys.exit(1)
+
+    for cfg in CONFIGS:
+        process_one(cfg["level"], cfg["input_file"], cfg["output_file"])
 
 
 if __name__ == "__main__":
