@@ -6,7 +6,8 @@ parse_scene_xlsx.py — 将场景类 xlsx 转换为 JSON
   python3 parse_scene_xlsx.py
 
 字段说明:
-  id          — 场景唯一标识
+  id          — 原始 UUID
+  nodeId      — 短编号，LLM 大纲可见（L1_001 / L2_001 / L3_001）
   name        — 场景名称（同 SCENEKEY）
   level       — 由 LEVEL 变量指定
   description — 一句话描述
@@ -89,8 +90,8 @@ def convert_row(scene_key: str, content_str: str, level: str,
         return None
 
     return {
-        "id":          make_short_id(id_prefix, index),
-        "uuid":        obj.get("id", ""),
+        "id":          obj.get("id", ""),
+        "nodeId":      make_short_id(id_prefix, index),
         "name":        obj.get("name", scene_key),
         "level":       level,
         "description": obj.get("description", ""),

@@ -6,8 +6,8 @@ parse_evaluation_item_xlsx.py — 将评估项.xlsx 转换为 评估项.json
 输出: expert_knowledge/评估项.json
 
 字段说明:
-  id                — 短 id，LLM 大纲里可见（如 L4_001）
-  uuid              — 原始 UUID
+  id                — 原始 UUID
+  nodeId            — 短编号，LLM 大纲可见（如 L4_001）
   name              — 评估项名称
   level             — 固定 "评估项"
   description       — 一句话描述
@@ -69,8 +69,8 @@ def convert_row(scene_key: str, content_str: str, index: int) -> dict | None:
     expand_logic = obj.get("expandLogic", "")
 
     return {
-        "id":                make_short_id(index),
-        "uuid":              obj.get("id", ""),
+        "id":                obj.get("id", ""),
+        "nodeId":            make_short_id(index),
         "name":              obj.get("name", scene_key),
         "level":             "评估项",
         "description":       obj.get("description", ""),
