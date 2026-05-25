@@ -59,7 +59,7 @@ def main():
             nid = record.get("nodeId", "")
             if uid and nid:
                 uuid_to_nodeid[uid] = nid
-            if record.get("level") == "评估指标" and record.get("name") and nid:
+            if record.get("level") == 5 and record.get("name") and nid:
                 name_to_nodeid[record["name"]] = nid
 
     # ── 生成关系 ───────────────────────────────────────────────────────

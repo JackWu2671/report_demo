@@ -24,13 +24,13 @@ _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
 _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 
 # ── 配置区 ────────────────────────────────────────────────────────────
-# (文件名, level名, description 来源字段)
+# (文件名, level值, description 来源字段)
 INPUT_CONFIGS = [
-    ("场景.json",    "场景",    "description"),
-    ("子场景.json",  "子场景",  "description"),
-    ("评估维度.json", "评估维度", "description"),
-    ("评估项.json",  "评估项",  "description"),
-    ("评估指标.json", "评估指标", None),     # 无 description，留空字符串
+    ("场景.json",    1, "description"),
+    ("子场景.json",  2, "description"),
+    ("评估维度.json", 3, "description"),
+    ("评估项.json",  4, "description"),
+    ("评估指标.json", 5, None),     # 无 description，留空字符串
 ]
 OUTPUT_FILE = os.path.join(_KB_DIR, "knowledge_nodes.json")
 # ─────────────────────────────────────────────────────────────────────

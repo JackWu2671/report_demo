@@ -29,21 +29,21 @@ _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 # ── 配置区（按需增删）────────────────────────────────────────────────
 CONFIGS = [
     {
-        "level":       "场景",
+        "level":       1,
         "id_prefix":   "L1",
         "id_start":    1,
         "input_file":  os.path.join(_KB_DIR, "场景.xlsx"),
         "output_file": os.path.join(_KB_DIR, "场景.json"),
     },
     {
-        "level":       "子场景",
+        "level":       2,
         "id_prefix":   "L2",
         "id_start":    1,
         "input_file":  os.path.join(_KB_DIR, "子场景.xlsx"),
         "output_file": os.path.join(_KB_DIR, "子场景.json"),
     },
     {
-        "level":       "评估维度",
+        "level":       3,
         "id_prefix":   "L3",
         "id_start":    1,
         "input_file":  os.path.join(_KB_DIR, "评估维度.xlsx"),

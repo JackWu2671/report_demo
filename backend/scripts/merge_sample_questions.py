@@ -96,7 +96,7 @@ def main():
                 continue
             seen_ids.add(rid)
             item["nodeId"] = make_node_id(NODE_START + len(merged))
-            item["level"]  = "评估指标"
+            item["level"]  = 5
             # 调整字段顺序：nodeId / level 放最前
             item = {"nodeId": item.pop("nodeId"), "level": item.pop("level"), **item}
             merged.append(item)

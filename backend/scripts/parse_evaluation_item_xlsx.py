@@ -72,7 +72,7 @@ def convert_row(scene_key: str, content_str: str, index: int) -> dict | None:
         "id":                obj.get("id", ""),
         "nodeId":            make_short_id(index),
         "name":              obj.get("name", scene_key),
-        "level":             "评估项",
+        "level":             4,
         "description":       obj.get("description", ""),
         "keywords":          obj.get("keyWords") or [],
         "sampleIssue":       obj.get("sampleIssue", ""),
