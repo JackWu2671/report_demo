@@ -6,9 +6,11 @@ merge_sample_questions.py — 合并 appSampleQuestion.json 和 sampleQuestion.j
   python3 merge_sample_questions.py
 
 输出:
-  expert_knowledge/mergedSampleQuestions.json
+  expert_knowledge/评估指标.json
 
-字段顺序: id, question, answer, domain, renderType, colX, colY
+字段顺序: nodeId, id, question, answer, domain, renderType, colX, colY
+  nodeId  — 短编号 L5_001 / L5_002 ...（合并后按顺序生成）
+  id      — 原始 UUID
 缺失字段补 null。
 """
 
@@ -24,9 +26,15 @@ INPUT_FILES = [
     os.path.join(_KB_DIR, "appSampleQuestion.json"),
     os.path.join(_KB_DIR, "sampleQuestion.json"),
 ]
-OUTPUT_FILE = os.path.join(_KB_DIR, "mergedSampleQuestions.json")
+OUTPUT_FILE  = os.path.join(_KB_DIR, "评估指标.json")
+NODE_PREFIX  = "L5"
+NODE_START   = 1
 
 FIELDS = ["id", "question", "answer", "domain", "renderType", "colX", "colY"]
+
+
+def make_node_id(index: int) -> str:
+    return f"{NODE_PREFIX}_{index:03d}"
 
 
 def normalize_answer(raw_answer) -> str | None:
@@ -83,6 +91,9 @@ def main():
                 dup += 1
                 continue
             seen_ids.add(rid)
+            item["nodeId"] = make_node_id(NODE_START + len(merged))
+            # 调整字段顺序：nodeId 放最前
+            item = {"nodeId": item.pop("nodeId"), **item}
             merged.append(item)
 
         added = len(merged) - before
@@ -91,7 +102,7 @@ def main():
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
 
-    print(f"\n合并完成，共 {len(merged)} 条 → {OUTPUT_FILE}")
+    print(f"\n合并完成，共 {len(merged)} 条，nodeId 范围: {make_node_id(NODE_START)} ~ {make_node_id(NODE_START + len(merged) - 1)} → {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
