@@ -29,16 +29,22 @@ _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 CONFIGS = [
     {
         "level":       "场景",
+        "id_prefix":   "L1",
+        "id_start":    1,
         "input_file":  os.path.join(_KB_DIR, "场景.xlsx"),
         "output_file": os.path.join(_KB_DIR, "场景.json"),
     },
     {
         "level":       "子场景",
+        "id_prefix":   "L2",
+        "id_start":    1,
         "input_file":  os.path.join(_KB_DIR, "子场景.xlsx"),
         "output_file": os.path.join(_KB_DIR, "子场景.json"),
     },
     {
         "level":       "评估维度",
+        "id_prefix":   "L3",
+        "id_start":    1,
         "input_file":  os.path.join(_KB_DIR, "评估维度.xlsx"),
         "output_file": os.path.join(_KB_DIR, "评估维度.json"),
     },
@@ -70,7 +76,12 @@ def parse_content(content_str: str) -> dict | None:
         return None
 
 
-def convert_row(scene_key: str, content_str: str, level: str) -> dict | None:
+def make_short_id(prefix: str, index: int) -> str:
+    return f"{prefix}_{index:03d}"
+
+
+def convert_row(scene_key: str, content_str: str, level: str,
+                id_prefix: str, index: int) -> dict | None:
     """将一行 Excel 数据转换为目标结构。"""
     obj = parse_content(content_str)
     if obj is None:
@@ -78,7 +89,8 @@ def convert_row(scene_key: str, content_str: str, level: str) -> dict | None:
         return None
 
     return {
-        "id":          obj.get("id", ""),
+        "id":          make_short_id(id_prefix, index),
+        "uuid":        obj.get("id", ""),
         "name":        obj.get("name", scene_key),
         "level":       level,
         "description": obj.get("description", ""),
@@ -90,8 +102,12 @@ def convert_row(scene_key: str, content_str: str, level: str) -> dict | None:
     }
 
 
-def process_one(level: str, input_file: str, output_file: str) -> None:
+def process_one(cfg: dict) -> None:
     """处理单个 xlsx，转换后写入对应 json。"""
+    level       = cfg["level"]
+    input_file  = cfg["input_file"]
+    output_file = cfg["output_file"]
+
     if not os.path.exists(input_file):
         print(f"[跳过] 文件不存在: {input_file}")
         return
@@ -108,13 +124,17 @@ def process_one(level: str, input_file: str, output_file: str) -> None:
         print(f"[错误] [{level}] 找不到必要列，实际表头: {headers}", file=sys.stderr)
         return
 
+    id_prefix = cfg["id_prefix"]
+    id_start  = cfg["id_start"]
+
     scenes = []
     for row in ws.iter_rows(min_row=2, values_only=True):
         scene_key   = str(row[idx_key]).strip()    if row[idx_key]     else ""
         content_str = str(row[idx_content]).strip() if row[idx_content] else ""
         if not scene_key and not content_str:
             continue
-        item = convert_row(scene_key, content_str, level)
+        item = convert_row(scene_key, content_str, level,
+                           id_prefix, id_start + len(scenes))
         if item:
             scenes.append(item)
 
@@ -132,7 +152,7 @@ def main():
         sys.exit(1)
 
     for cfg in CONFIGS:
-        process_one(cfg["level"], cfg["input_file"], cfg["output_file"])
+        process_one(cfg)
 
 
 if __name__ == "__main__":
