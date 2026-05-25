@@ -16,7 +16,7 @@ parse_evaluation_item_xlsx.py — 将评估项.xlsx 转换为 评估项.json
   condition         — 整体展示条件（从 expandLogic showWhen 提取）
   summarySuggestion — LLM 总结指令
   template          — expandLogic 原文（含 ${} 占位符，执行引擎填充生成报告文字）
-  metrics           — 所有关联指标名列表
+  dimensions        — 关联的评估指标名列表
 """
 
 import json
@@ -79,7 +79,7 @@ def convert_row(scene_key: str, content_str: str, index: int) -> dict | None:
         "condition":         extract_condition(expand_logic),
         "summarySuggestion": obj.get("summarySuggestion") or "",
         "template":          expand_logic,
-        "metrics":           obj.get("metrics") or [],
+        "dimensions":        obj.get("metrics") or [],
     }
 
 
