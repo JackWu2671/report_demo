@@ -29,9 +29,32 @@ OUTPUT_FILE = os.path.join(_KB_DIR, "mergedSampleQuestions.json")
 FIELDS = ["id", "question", "answer", "domain", "renderType", "colX", "colY"]
 
 
+def normalize_answer(raw_answer) -> str | None:
+    """
+    确保 answer JSON 字符串里包含 apiName: "NL2SQL"。
+    - 若 answer 为 null / 非字符串，原样返回
+    - 若解析失败，原样返回（不破坏原始数据）
+    - 若已有 apiName，不覆盖
+    """
+    if not isinstance(raw_answer, str):
+        return raw_answer
+    try:
+        obj = json.loads(raw_answer)
+    except json.JSONDecodeError:
+        return raw_answer  # 解析失败，保持原样
+
+    if "apiName" not in obj:
+        # 把 apiName 插到最前面，保持可读性
+        obj = {"apiName": "NL2SQL", **obj}
+
+    return json.dumps(obj, ensure_ascii=False)
+
+
 def extract(record: dict) -> dict:
-    """从原始记录里只取 7 个字段，缺失的补 None。"""
-    return {field: record.get(field, None) for field in FIELDS}
+    """从原始记录里只取 7 个字段，缺失的补 None，并统一 answer 格式。"""
+    item = {field: record.get(field, None) for field in FIELDS}
+    item["answer"] = normalize_answer(item["answer"])
+    return item
 
 
 def main():

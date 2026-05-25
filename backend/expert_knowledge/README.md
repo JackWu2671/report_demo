@@ -61,7 +61,7 @@
 |------|------|
 | `id` | 唯一标识，合并时用于去重 |
 | `question` | 用户问题（自然语言） |
-| `answer` | JSON 字符串，含 `exec_sql`（SQL语句）和 `extracted_table`（涉及的表） |
+| `answer` | JSON 字符串，含 `apiName`（固定为 `"NL2SQL"`）、`exec_sql`（SQL语句）和 `extracted_table`（涉及的表） |
 | `domain` | 业务域，如"接入"、"数通" |
 | `renderType` | 渲染类型：`"TABLE"` / `"BAR"` / `"PIE"` 等，可为 `null` |
 | `colX` | 图表 X 轴列名，可为 `null` |
