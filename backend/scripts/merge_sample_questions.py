@@ -8,10 +8,11 @@ merge_sample_questions.py — 合并 appSampleQuestion.json 和 sampleQuestion.j
 输出:
   expert_knowledge/评估指标.json
 
-字段顺序: nodeId, level, id, question, answer, domain, renderType, colX, colY
+字段顺序: nodeId, level, id, name, answer, domain, renderType, colX, colY
   nodeId  — 短编号 L5_001 / L5_002 ...（合并后按顺序生成）
   level   — 固定 "评估指标"
   id      — 原始 UUID
+  name    — 指标名称（源字段 question）
 缺失字段补 null。
 """
 
@@ -63,6 +64,8 @@ def extract(record: dict) -> dict:
     """从原始记录里只取 7 个字段，缺失的补 None，并统一 answer 格式。"""
     item = {field: record.get(field, None) for field in FIELDS}
     item["answer"] = normalize_answer(item["answer"])
+    # question → name 对齐其他层级
+    item["name"] = item.pop("question")
     return item
 
 

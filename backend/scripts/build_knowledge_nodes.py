@@ -30,7 +30,7 @@ INPUT_CONFIGS = [
     ("子场景.json",  "子场景",  "description"),
     ("评估维度.json", "评估维度", "description"),
     ("评估项.json",  "评估项",  "description"),
-    ("评估指标.json", "评估指标", "question"),   # 无 description，用 question 代替
+    ("评估指标.json", "评估指标", "name"),
 ]
 OUTPUT_FILE = os.path.join(_KB_DIR, "knowledge_nodes.json")
 # ─────────────────────────────────────────────────────────────────────

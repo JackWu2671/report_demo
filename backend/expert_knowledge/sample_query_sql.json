@@ -1,7 +1,9 @@
 [
   {
+    "nodeId": "L5_001",
+    "level": "评估指标",
     "id": "adf960eb-7159-4611-a1fb-9ec790c2c882",
-    "question": "AEC覆盖用户数",
+    "name": "AEC覆盖用户数",
     "answer": "{\"apiName\": \"NL2SQL\", \"extracted_table\": \"[\\\"ads_aggr_unb_eval_an_pbb_user_info_pipeline\\\"]\", \"exec_sql\": \"select count(distinct ontId) AS `覆盖用户数` from ads_aggr_unb_eval_an_pbb_user_info_pipeline where ontId <> ''\"}",
     "domain": "接入",
     "renderType": "TABLE",
@@ -9,8 +11,10 @@
     "colY": null
   },
   {
+    "nodeId": "L5_002",
+    "level": "评估指标",
     "id": "1e5c9a92-da66-4925-a081-4d1117243ccc",
-    "question": "OLT设备总数",
+    "name": "OLT设备总数",
     "answer": "{\"apiName\": \"NL2SQL\", \"extracted_table\": \"[\\\"ads_aggr_unb_eval_an_all_netelement_info\\\"]\", \"exec_sql\": \"SELECT COUNT(DISTINCT CONCAT(neIPAddress, '-', neType)) AS `OLT设备总数` FROM ads_aggr_unb_eval_an_all_netelement_info WHERE neRole = 'OLT' ORDER BY `OLT设备总数`\"}",
     "domain": "接入",
     "renderType": null,
