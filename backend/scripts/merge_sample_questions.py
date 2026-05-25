@@ -64,8 +64,9 @@ def extract(record: dict) -> dict:
     """从原始记录里只取 7 个字段，缺失的补 None，并统一 answer 格式。"""
     item = {field: record.get(field, None) for field in FIELDS}
     item["answer"] = normalize_answer(item["answer"])
-    # question → name 对齐其他层级
+    # question → name 对齐其他层级；id(UUID) → uuid 对齐命名规范
     item["name"] = item.pop("question")
+    item["uuid"] = item.pop("id")
     return item
 
 
@@ -90,15 +91,15 @@ def main():
         dup = 0
         for record in data:
             item = extract(record)
-            rid = item["id"]
+            rid = item["uuid"]
             if rid in seen_ids:
                 dup += 1
                 continue
             seen_ids.add(rid)
-            item["nodeId"] = make_node_id(NODE_START + len(merged))
-            item["level"]  = 5
-            # 调整字段顺序：nodeId / level 放最前
-            item = {"nodeId": item.pop("nodeId"), "level": item.pop("level"), **item}
+            item["id"]    = make_node_id(NODE_START + len(merged))
+            item["level"] = 5
+            # 调整字段顺序：id / level 放最前
+            item = {"id": item.pop("id"), "level": item.pop("level"), **item}
             merged.append(item)
 
         added = len(merged) - before

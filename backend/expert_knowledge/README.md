@@ -47,9 +47,9 @@
 
 ```json
 {
-  "nodeId":     "L5_001",
+  "id":         "L5_001",
   "level":      5,
-  "id":         "adf960eb-...",
+  "uuid":       "adf960eb-...",
   "name":       "AEC覆盖用户数",
   "answer":     "{\"apiName\": \"NL2SQL\", \"exec_sql\": \"SELECT ...\", \"extracted_table\": \"[...]\"}",
   "domain":     "接入",
@@ -61,9 +61,9 @@
 
 | 字段 | 说明 |
 |------|------|
-| `nodeId` | 短编号 `L5_001`...，LLM 大纲可见 |
+| `id` | 短编号 `L5_001`...，LLM 大纲可见 |
 | `level` | 固定为 `5`，对应评估指标层级 |
-| `id` | 原始 UUID，合并时用于去重 |
+| `uuid` | 原始 UUID，合并时用于去重 |
 | `name` | 指标名称（自然语言） |
 | `answer` | JSON 字符串，含 `apiName`（固定为 `"NL2SQL"`）、`exec_sql`（SQL语句）和 `extracted_table`（涉及的表） |
 | `domain` | 业务域，如"接入"、"数通" |

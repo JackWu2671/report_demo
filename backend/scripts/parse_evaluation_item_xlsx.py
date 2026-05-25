@@ -69,8 +69,8 @@ def convert_row(scene_key: str, content_str: str, index: int) -> dict | None:
     expand_logic = obj.get("expandLogic", "")
 
     return {
-        "id":                obj.get("id", ""),
-        "nodeId":            make_short_id(index),
+        "uuid":              obj.get("id", ""),
+        "id":                make_short_id(index),
         "name":              obj.get("name", scene_key),
         "level":             4,
         "description":       obj.get("description", ""),

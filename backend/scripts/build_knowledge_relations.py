@@ -45,8 +45,8 @@ def load_json(filename: str) -> list[dict]:
 
 def main():
     # ── 建立查找表 ─────────────────────────────────────────────────────
-    uuid_to_nodeid: dict[str, str] = {}   # UUID → nodeId（所有层级）
-    name_to_nodeid: dict[str, str] = {}   # name → nodeId（仅评估指标）
+    uuid_to_id: dict[str, str] = {}   # uuid → id（所有层级）
+    name_to_id: dict[str, str] = {}   # name → id（仅评估指标）
 
     all_files = UUID_LEVELS + [NAME_LEVEL, LEAF_LEVEL]
     all_data: dict[str, list[dict]] = {}
@@ -55,12 +55,12 @@ def main():
         data = load_json(filename)
         all_data[filename] = data
         for record in data:
-            uid = record.get("id", "")
-            nid = record.get("nodeId", "")
+            uid = record.get("uuid", "")
+            nid = record.get("id", "")
             if uid and nid:
-                uuid_to_nodeid[uid] = nid
+                uuid_to_id[uid] = nid
             if record.get("level") == 5 and record.get("name") and nid:
-                name_to_nodeid[record["name"]] = nid
+                name_to_id[record["name"]] = nid
 
     # ── 生成关系 ───────────────────────────────────────────────────────
     relations = []
@@ -69,32 +69,32 @@ def main():
     # 场景 / 子场景 / 评估维度 → 下一层（UUID 匹配）
     for filename in UUID_LEVELS:
         for record in all_data.get(filename, []):
-            parent_nid = record.get("nodeId", "")
+            parent_id = record.get("id", "")
             dims = record.get("dimensions") or []
             for dim in dims:
-                child_uuid = dim.get("id", "")
-                child_nid  = uuid_to_nodeid.get(child_uuid)
-                if not child_nid:
+                child_uuid = dim.get("uuid", "")
+                child_id   = uuid_to_id.get(child_uuid)
+                if not child_id:
                     missing += 1
                     continue
                 relations.append({
-                    "parent": parent_nid,
-                    "child":  child_nid,
+                    "parent": parent_id,
+                    "child":  child_id,
                     "order":  dim.get("rank") or len(relations) + 1,
                 })
 
     # 评估项 → 评估指标（name 匹配）
     for record in all_data.get(NAME_LEVEL, []):
-        parent_nid = record.get("nodeId", "")
+        parent_id = record.get("id", "")
         dims = record.get("dimensions") or []   # list of str
         for i, metric_name in enumerate(dims):
-            child_nid = name_to_nodeid.get(metric_name)
-            if not child_nid:
+            child_id = name_to_id.get(metric_name)
+            if not child_id:
                 missing += 1
                 continue
             relations.append({
-                "parent": parent_nid,
-                "child":  child_nid,
+                "parent": parent_id,
+                "child":  child_id,
                 "order":  i + 1,
             })
 

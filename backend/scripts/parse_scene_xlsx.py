@@ -54,13 +54,13 @@ CONFIGS = [
 
 
 def parse_dimensions(raw) -> list[dict]:
-    """只保留每个 dimension 的 id / name / rank。"""
+    """只保留每个 dimension 的 uuid / name / rank。"""
     if not isinstance(raw, list):
         return []
     result = []
     for d in raw:
         result.append({
-            "id":   d.get("id",   ""),
+            "uuid": d.get("id",   ""),
             "name": d.get("name", ""),
             "rank": d.get("rank", None),
         })
@@ -90,8 +90,8 @@ def convert_row(scene_key: str, content_str: str, level: str,
         return None
 
     return {
-        "id":          obj.get("id", ""),
-        "nodeId":      make_short_id(id_prefix, index),
+        "uuid":        obj.get("id", ""),
+        "id":          make_short_id(id_prefix, index),
         "name":        obj.get("name", scene_key),
         "level":       level,
         "description": obj.get("description", ""),

@@ -38,9 +38,9 @@ OUTPUT_FILE = os.path.join(_KB_DIR, "knowledge_nodes.json")
 
 def extract_node(record: dict, desc_field: str | None) -> dict:
     return {
+        "uuid":        record.get("uuid", ""),
         "id":          record.get("id", ""),
         "level":       record.get("level", ""),
-        "nodeId":      record.get("nodeId", ""),
         "name":        record.get("name", ""),
         "description": record.get(desc_field, "") if desc_field else "",
     }
