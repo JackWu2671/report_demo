@@ -75,8 +75,6 @@ def main():
                 child_uuid = dim.get("id", "")
                 child_nid  = uuid_to_nodeid.get(child_uuid)
                 if not child_nid:
-                    print(f"[警告] 找不到子节点 UUID={child_uuid}（父={parent_nid}）",
-                          file=sys.stderr)
                     missing += 1
                     continue
                 relations.append({
@@ -92,8 +90,6 @@ def main():
         for i, metric_name in enumerate(dims):
             child_nid = name_to_nodeid.get(metric_name)
             if not child_nid:
-                print(f"[警告] 找不到评估指标 name={metric_name!r}（父={parent_nid}）",
-                      file=sys.stderr)
                 missing += 1
                 continue
             relations.append({
@@ -106,7 +102,7 @@ def main():
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(relations, f, ensure_ascii=False, indent=2)
 
-    print(f"\n生成完成，共 {len(relations)} 条关系，{missing} 条未匹配 → {OUTPUT_FILE}")
+    print(f"\n生成完成，共 {len(relations)} 条关系，{missing} 条未匹配（子节点数据不存在）→ {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
