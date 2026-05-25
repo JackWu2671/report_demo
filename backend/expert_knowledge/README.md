@@ -39,7 +39,7 @@
 来源于 dataEval 场景的问答缓存，共约 **522 条**。
 字段与 appSampleQuestion 大体相同，但 `renderType`、`colX`、`colY` 可能缺失。
 
-#### `mergedSampleQuestions.json`（**实际使用**，本地）
+#### `评估指标.json`（**实际使用**，本地）
 由 `backend/scripts/merge_sample_questions.py` 将上面两个源文件合并而成，共约 **922 条**。
 **代码中应读取此文件**，不要直接读源文件。
 
@@ -59,7 +59,8 @@
 
 | 字段 | 说明 |
 |------|------|
-| `id` | 唯一标识，合并时用于去重 |
+| `nodeId` | 短编号 `L5_001`...，LLM 大纲可见 |
+| `id` | 原始 UUID，合并时用于去重 |
 | `question` | 用户问题（自然语言） |
 | `answer` | JSON 字符串，含 `apiName`（固定为 `"NL2SQL"`）、`exec_sql`（SQL语句）和 `extracted_table`（涉及的表） |
 | `domain` | 业务域，如"接入"、"数通" |
