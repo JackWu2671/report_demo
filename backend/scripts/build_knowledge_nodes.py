@@ -30,19 +30,19 @@ INPUT_CONFIGS = [
     ("子场景.json",  "子场景",  "description"),
     ("评估维度.json", "评估维度", "description"),
     ("评估项.json",  "评估项",  "description"),
-    ("评估指标.json", "评估指标", "name"),
+    ("评估指标.json", "评估指标", None),     # 无 description，留空字符串
 ]
 OUTPUT_FILE = os.path.join(_KB_DIR, "knowledge_nodes.json")
 # ─────────────────────────────────────────────────────────────────────
 
 
-def extract_node(record: dict, desc_field: str) -> dict:
+def extract_node(record: dict, desc_field: str | None) -> dict:
     return {
         "id":          record.get("id", ""),
         "level":       record.get("level", ""),
         "nodeId":      record.get("nodeId", ""),
         "name":        record.get("name", ""),
-        "description": record.get(desc_field, ""),
+        "description": record.get(desc_field, "") if desc_field else "",
     }
 
 
