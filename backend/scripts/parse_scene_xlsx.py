@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """
-parse_scene_xlsx.py — 将 场景.xlsx 转换为 scene.json
+parse_scene_xlsx.py — 将场景类 xlsx 转换为 JSON
 
 用法:
-  python3 parse_scene_xlsx.py
+  python3 parse_scene_xlsx.py <level>
 
-输入: expert_knowledge/场景.xlsx
-输出: expert_knowledge/scene.json
+  <level>  场景层级名称，同时作为文件名前缀，例如：
+             python3 parse_scene_xlsx.py 场景       # 读 场景.xlsx，写 场景.json
+             python3 parse_scene_xlsx.py 子场景     # 读 子场景.xlsx，写 子场景.json
+
+输入: expert_knowledge/<level>.xlsx
+输出: expert_knowledge/<level>.json
 
 字段说明:
   id          — 场景唯一标识
   name        — 场景名称（同 SCENEKEY）
-  level       — 固定为 "场景"
+  level       — 由命令行参数指定（如 "场景" / "子场景"）
   description — 一句话描述
   detail      — 详细拓展逻辑（原字段名 expandLogic）
   keywords    — 关键词列表（原字段名 keyWords）
@@ -28,8 +32,11 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
 _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 
-INPUT_FILE  = os.path.join(_KB_DIR, "场景.xlsx")
-OUTPUT_FILE = os.path.join(_KB_DIR, "scene.json")
+
+def resolve_paths(level: str) -> tuple[str, str]:
+    input_file  = os.path.join(_KB_DIR, f"{level}.xlsx")
+    output_file = os.path.join(_KB_DIR, f"{level}.json")
+    return input_file, output_file
 
 
 def parse_dimensions(raw) -> list[dict]:
@@ -56,7 +63,7 @@ def parse_content(content_str: str) -> dict | None:
         return None
 
 
-def convert_row(scene_key: str, content_str: str) -> dict | None:
+def convert_row(scene_key: str, content_str: str, level: str) -> dict | None:
     """将一行 Excel 数据转换为目标结构。"""
     obj = parse_content(content_str)
     if obj is None:
@@ -66,7 +73,7 @@ def convert_row(scene_key: str, content_str: str) -> dict | None:
     return {
         "id":          obj.get("id", ""),
         "name":        obj.get("name", scene_key),
-        "level":       "场景",
+        "level":       level,
         "description": obj.get("description", ""),
         "detail":      obj.get("expandLogic", ""),
         "keywords":    obj.get("keyWords", []),
@@ -77,17 +84,26 @@ def convert_row(scene_key: str, content_str: str) -> dict | None:
 
 
 def main():
+    if len(sys.argv) < 2:
+        print("用法: python3 parse_scene_xlsx.py <level>", file=sys.stderr)
+        print("示例: python3 parse_scene_xlsx.py 场景", file=sys.stderr)
+        print("      python3 parse_scene_xlsx.py 子场景", file=sys.stderr)
+        sys.exit(1)
+
+    level = sys.argv[1].strip()
+    input_file, output_file = resolve_paths(level)
+
     try:
         import openpyxl
     except ImportError:
         print("[错误] 请先安装 openpyxl: pip install openpyxl", file=sys.stderr)
         sys.exit(1)
 
-    if not os.path.exists(INPUT_FILE):
-        print(f"[错误] 文件不存在: {INPUT_FILE}", file=sys.stderr)
+    if not os.path.exists(input_file):
+        print(f"[错误] 文件不存在: {input_file}", file=sys.stderr)
         sys.exit(1)
 
-    wb = openpyxl.load_workbook(INPUT_FILE, data_only=True)
+    wb = openpyxl.load_workbook(input_file, data_only=True)
     ws = wb.active
 
     # 读取表头，找 SCENEKEY / CONTENT 列索引（大小写不敏感）
@@ -107,14 +123,14 @@ def main():
         if not scene_key and not content_str:
             continue  # 跳过空行
 
-        item = convert_row(scene_key, content_str)
+        item = convert_row(scene_key, content_str, level)
         if item:
             scenes.append(item)
 
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump(scenes, f, ensure_ascii=False, indent=2)
 
-    print(f"转换完成，共 {len(scenes)} 条场景 → {OUTPUT_FILE}")
+    print(f"转换完成，共 {len(scenes)} 条 [{level}] → {output_file}")
 
 
 if __name__ == "__main__":
