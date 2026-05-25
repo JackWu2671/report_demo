@@ -23,5 +23,8 @@ python-dotenv>=1.0.0
 # YAML parsing
 pyyaml>=6.0.1
 
+# Excel file parsing (used by scripts/parse_scene_xlsx.py)
+openpyxl>=3.1.0
+
 # MCP server (Claude Code integration)
 mcp>=1.0.0
