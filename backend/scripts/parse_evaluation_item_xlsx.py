@@ -15,7 +15,7 @@ parse_evaluation_item_xlsx.py — 将评估项.xlsx 转换为 评估项.json
   sampleIssue       — 示例提问
   condition         — 整体展示条件（从 expandLogic showWhen 提取）
   summarySuggestion — LLM 总结指令
-  detail            — expandLogic 原文（含 ${} 模板，执行引擎填充）
+  template          — expandLogic 原文（含 ${} 占位符，执行引擎填充生成报告文字）
   metrics           — 所有关联指标名列表
 """
 
@@ -78,7 +78,7 @@ def convert_row(scene_key: str, content_str: str, index: int) -> dict | None:
         "sampleIssue":       obj.get("sampleIssue", ""),
         "condition":         extract_condition(expand_logic),
         "summarySuggestion": obj.get("summarySuggestion") or "",
-        "detail":            expand_logic,
+        "template":          expand_logic,
         "metrics":           obj.get("metrics") or [],
     }
 
