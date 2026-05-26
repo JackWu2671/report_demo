@@ -716,6 +716,30 @@ body {
   flex-shrink: 0;
 }
 
+.generate-report-btn {
+  margin-left: auto;
+  margin-right: 12px;
+  padding: 5px 14px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.generate-report-btn:hover:not(.generate-report-btn--disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+.generate-report-btn--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* =========================================
    Report Body
    ========================================= */

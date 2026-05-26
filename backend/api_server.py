@@ -142,3 +142,57 @@ async def chat(req: ChatRequest):
         _stream_agent(req.session_id, req.message),
         media_type="text/event-stream",
     )
+
+
+# —— 报告生成 SSE 流式接口 ————————————————————————————————————————————
+
+import asyncio
+import threading
+
+class ReportRequest(BaseModel):
+    outline_tree: dict
+
+
+async def _stream_report(outline_tree: dict):
+    """
+    在独立线程中运行同步的 run_report，通过 asyncio.Queue 桥接到 SSE 流。
+    每完成一个 L4 节立即推送，不等全部完成。
+    """
+    from services.report_executor import run_report
+
+    loop  = asyncio.get_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def on_chunk(text: str):
+        loop.call_soon_threadsafe(queue.put_nowait, text)
+
+    def worker():
+        try:
+            run_report(outline_tree, on_chunk)
+        except Exception as e:
+            logger.error("[Report] 生成异常: %s", e, exc_info=True)
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                f"\n\n**[错误]** {e}\n\n"
+            )
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)  # 结束哨兵
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        yield _sse({"type": "report", "chunk": chunk})
+
+    yield "data: [DONE]\n\n"
+
+
+@app.post("/api/report")
+async def generate_report(req: ReportRequest):
+    return StreamingResponse(
+        _stream_report(req.outline_tree),
+        media_type="text/event-stream",
+    )

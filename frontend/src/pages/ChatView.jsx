@@ -17,6 +17,7 @@ export default function ChatView() {
   const [sceneMeta, setSceneMeta] = useState(null)   // {scene_name, summary, keywords, usage_conditions}
   const [rightTab, setRightTab] = useState('outline') // 'outline' | 'report'
   const [report, setReport] = useState('')
+  const [generatingReport, setGeneratingReport] = useState(false)
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
   const assistantMsgIdxRef = useRef(-1)
@@ -118,6 +119,53 @@ export default function ChatView() {
     const text = input.trim()
     setInput('')
     await sendText(text)
+  }
+
+  async function generateReport() {
+    if (!outlineJson || generatingReport) return
+    setGeneratingReport(true)
+    setReport('')
+    setRightTab('report')
+
+    try {
+      const res = await fetch('/api/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outline_tree: outlineJson }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        setReport(`**错误：** ${err.detail}`)
+        return
+      }
+
+      const reader  = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const raw = line.slice(6)
+          if (raw === '[DONE]') break
+          try {
+            const evt = JSON.parse(raw)
+            if (evt.type === 'report') {
+              setReport(prev => prev + (evt.chunk ?? ''))
+            }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      setReport(`**错误：** ${e.message}`)
+    } finally {
+      setGeneratingReport(false)
+    }
   }
 
   function handleEvent(evt) {
@@ -285,6 +333,15 @@ case 'saved':
               )}
             </button>
           ))}
+          {outlineJson && (
+            <button
+              className={`generate-report-btn${streaming ? ' generate-report-btn--disabled' : ''}`}
+              disabled={streaming}
+              onClick={generateReport}
+            >
+              {generatingReport ? '生成中…' : '生成报告'}
+            </button>
+          )}
         </div>
 
         {/* 大纲面板 */}
