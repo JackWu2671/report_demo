@@ -85,8 +85,8 @@
 ## 合并脚本
 
 ```bash
-# 将 appSampleQuestion.json 和 sampleQuestion.json 合并为 mergedSampleQuestions.json
+# 将 appSampleQuestion.json 和 sampleQuestion.json 合并为 评估指标.json
 python3 backend/scripts/merge_sample_questions.py
 ```
 
-脚本位于 `backend/scripts/merge_sample_questions.py`，自动去重（以 `id` 为键），缺失字段补 `null`。
+脚本位于 `backend/scripts/merge_sample_questions.py`，自动去重（以 `uuid` 为键），缺失字段补 `null`。
