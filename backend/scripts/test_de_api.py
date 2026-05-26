@@ -57,7 +57,7 @@ def run_sql_test(sql: str, table: str) -> None:
 def run_metric_test(metric_name: str) -> None:
     """从 sample_query_sql.json 查找指标名对应的 SQL 并执行"""
     kb_dir = os.path.join(_BACKEND_DIR, "expert_knowledge")
-    sql_file = os.path.join(kb_dir, "sample_query_sql.json")
+    sql_file = os.path.join(kb_dir, "评估指标.json")
 
     if not os.path.exists(sql_file):
         logger.error("找不到 %s", sql_file)
