@@ -19,7 +19,7 @@ export default function App() {
           💬 对话生成
         </NavLink>
       </nav>
-      <main className="main" style={{ padding: 0, overflow: 'hidden' }}>
+      <main className="main" style={{ padding: 0, overflowY: 'auto' }}>
         <Routes>
           <Route path="/" element={<div style={{ padding: 32 }}><KBPage /></div>} />
           <Route path="/templates" element={<div style={{ padding: 32 }}><TemplatePage /></div>} />
