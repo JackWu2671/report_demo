@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import MarkdownOutline from '../components/MarkdownOutline'
+import ReportView from '../components/ReportView'
 import ChatMessage from '../components/ChatMessage'
 import QueryInput from '../components/QueryInput'
 
@@ -14,6 +15,8 @@ export default function ChatView() {
   const [outlineJson, setOutlineJson] = useState(null)
   const [outlineTab, setOutlineTab] = useState('md')  // 'md' | 'llm' | 'json'
   const [sceneMeta, setSceneMeta] = useState(null)   // {scene_name, summary, keywords, usage_conditions}
+  const [rightTab, setRightTab] = useState('outline') // 'outline' | 'report'
+  const [report, setReport] = useState('')
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
   const assistantMsgIdxRef = useRef(-1)
@@ -28,6 +31,8 @@ export default function ChatView() {
     setOutlineTab('md')
     setSceneMeta(null)
     setQuickReplies([])
+    setRightTab('outline')
+    setReport('')
 
     fetch('/api/session', {
       method: 'POST',
@@ -159,6 +164,11 @@ export default function ChatView() {
         setQuickReplies(evt.options || [])
         break
 
+      case 'report':
+        setReport(prev => prev + (evt.chunk ?? evt.content ?? ''))
+        setRightTab('report')
+        break
+
       case 'done':
         updateAssistant(msg => ({ ...msg, duration: evt.seconds }))
         break
@@ -255,67 +265,100 @@ case 'saved':
         />
       </div>
 
-      {/* 右：大纲预览 */}
+      {/* 右：大纲 / 报告 */}
       <div className="outline-panel">
-        <div className="outline-panel__header">
-          <span className="outline-panel__title">大纲预览</span>
-          {outline && (
-            <div className="outline-tabs">
-              {[
-                { key: 'md',   label: '用户' },
-                { key: 'llm',  label: 'LLM' },
-                { key: 'json', label: 'JSON' },
-              ].map(tab => (
-                <button
-                  key={tab.key}
-                  className={`outline-tab${outlineTab === tab.key ? ' outline-tab--active' : ''}`}
-                  onClick={() => setOutlineTab(tab.key)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          )}
+
+        {/* 顶层 Tab 栏 */}
+        <div className="right-panel-tabs">
+          {[
+            { key: 'outline', label: '大纲' },
+            { key: 'report',  label: '报告' },
+          ].map(t => (
+            <button
+              key={t.key}
+              className={`right-panel-tab${rightTab === t.key ? ' right-panel-tab--active' : ''}`}
+              onClick={() => setRightTab(t.key)}
+            >
+              {t.label}
+              {t.key === 'report' && report && (
+                <span className="right-panel-tab__dot" />
+              )}
+            </button>
+          ))}
         </div>
-        {sceneMeta && (
-          <div className="scene-meta">
-            <div className="scene-meta__row">
-              <span className="scene-meta__label">场景</span>
-              <span className="scene-meta__value">{sceneMeta.scene_name}</span>
-            </div>
-            <div className="scene-meta__row">
-              <span className="scene-meta__label">摘要</span>
-              <span className="scene-meta__value">{sceneMeta.summary}</span>
-            </div>
-            {sceneMeta.keywords.length > 0 && (
-              <div className="scene-meta__row">
-                <span className="scene-meta__label">关键词</span>
-                <span className="scene-meta__value">
-                  {sceneMeta.keywords.map(k => (
-                    <span key={k} className="scene-meta__tag">{k}</span>
+
+        {/* 大纲面板 */}
+        {rightTab === 'outline' && (
+          <>
+            <div className="outline-panel__header">
+              <span className="outline-panel__title">大纲预览</span>
+              {outline && (
+                <div className="outline-tabs">
+                  {[
+                    { key: 'md',   label: '用户' },
+                    { key: 'llm',  label: 'LLM' },
+                    { key: 'json', label: 'JSON' },
+                  ].map(tab => (
+                    <button
+                      key={tab.key}
+                      className={`outline-tab${outlineTab === tab.key ? ' outline-tab--active' : ''}`}
+                      onClick={() => setOutlineTab(tab.key)}
+                    >
+                      {tab.label}
+                    </button>
                   ))}
-                </span>
+                </div>
+              )}
+            </div>
+            {sceneMeta && (
+              <div className="scene-meta">
+                <div className="scene-meta__row">
+                  <span className="scene-meta__label">场景</span>
+                  <span className="scene-meta__value">{sceneMeta.scene_name}</span>
+                </div>
+                <div className="scene-meta__row">
+                  <span className="scene-meta__label">摘要</span>
+                  <span className="scene-meta__value">{sceneMeta.summary}</span>
+                </div>
+                {sceneMeta.keywords.length > 0 && (
+                  <div className="scene-meta__row">
+                    <span className="scene-meta__label">关键词</span>
+                    <span className="scene-meta__value">
+                      {sceneMeta.keywords.map(k => (
+                        <span key={k} className="scene-meta__tag">{k}</span>
+                      ))}
+                    </span>
+                  </div>
+                )}
+                {sceneMeta.usage_conditions && (
+                  <div className="scene-meta__row">
+                    <span className="scene-meta__label">适用条件</span>
+                    <span className="scene-meta__value">{sceneMeta.usage_conditions}</span>
+                  </div>
+                )}
               </div>
             )}
-            {sceneMeta.usage_conditions && (
-              <div className="scene-meta__row">
-                <span className="scene-meta__label">适用条件</span>
-                <span className="scene-meta__value">{sceneMeta.usage_conditions}</span>
-              </div>
-            )}
+            <div className="outline-panel__body">
+              {outlineTab === 'md' && <MarkdownOutline markdown={outlineMd} />}
+              {outlineTab === 'llm' && (
+                <pre className="outline-raw">{outlineLlm || '（暂无数据）'}</pre>
+              )}
+              {outlineTab === 'json' && (
+                <pre className="outline-raw">
+                  {outlineJson ? JSON.stringify(outlineJson, null, 2) : '（暂无数据）'}
+                </pre>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* 报告面板 */}
+        {rightTab === 'report' && (
+          <div className="outline-panel__body">
+            <ReportView markdown={report} />
           </div>
         )}
-        <div className="outline-panel__body">
-          {outlineTab === 'md' && <MarkdownOutline markdown={outlineMd} />}
-          {outlineTab === 'llm' && (
-            <pre className="outline-raw">{outlineLlm || '（暂无数据）'}</pre>
-          )}
-          {outlineTab === 'json' && (
-            <pre className="outline-raw">
-              {outlineJson ? JSON.stringify(outlineJson, null, 2) : '（暂无数据）'}
-            </pre>
-          )}
-        </div>
+
       </div>
     </div>
   )
