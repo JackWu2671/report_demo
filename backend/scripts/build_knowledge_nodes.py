@@ -38,13 +38,18 @@ OUTPUT_FILE = os.path.join(_KB_DIR, "knowledge_nodes.json")
 
 
 def extract_node(record: dict, desc_field: str | None) -> dict:
-    return {
+    node = {
         "uuid":        record.get("uuid", ""),
         "id":          record.get("id", ""),
         "level":       record.get("level", ""),
         "name":        record.get("name", ""),
         "description": record.get(desc_field, "") if desc_field else "",
     }
+    # L4 节点额外携带 condition / condition_queries，供大纲执行时判断是否展示
+    if record.get("level") == 4:
+        node["condition"]         = record.get("condition", "")
+        node["condition_queries"] = record.get("condition_queries", [])
+    return node
 
 
 def main():

@@ -171,7 +171,7 @@ def to_clean_json(tree: dict) -> dict:
 
     保留字段：id, name, level, description, children
     """
-    _KEEP = {"id", "name", "level", "description", "condition"}
+    _KEEP = {"id", "name", "level", "description", "condition", "condition_queries"}
     node = {k: v for k, v in tree.items() if k in _KEEP}
     node["children"] = [to_clean_json(c) for c in tree.get("children", [])]
     return node
