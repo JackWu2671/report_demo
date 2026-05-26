@@ -45,10 +45,11 @@ def extract_node(record: dict, desc_field: str | None) -> dict:
         "name":        record.get("name", ""),
         "description": record.get(desc_field, "") if desc_field else "",
     }
-    # L4 节点额外携带 condition / condition_queries，供大纲执行时判断是否展示
+    # L4 节点额外携带 condition / condition_queries / summarySuggestion，供报告执行引擎使用
     if record.get("level") == 4:
-        node["condition"]         = record.get("condition", "")
-        node["condition_queries"] = record.get("condition_queries", [])
+        node["condition"]          = record.get("condition", "")
+        node["condition_queries"]  = record.get("condition_queries", [])
+        node["summarySuggestion"]  = record.get("summarySuggestion", "")
     return node
 
 
