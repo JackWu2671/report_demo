@@ -17,6 +17,7 @@ build_knowledge_nodes.py — 将各层级 JSON 合并成统一的节点总表
 
 import json
 import os
+import shutil
 import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -70,6 +71,10 @@ def main():
         json.dump(all_nodes, f, ensure_ascii=False, indent=2)
 
     print(f"\n合并完成，共 {len(all_nodes)} 个节点 → {OUTPUT_FILE}")
+
+    sync_target = os.path.join(_KB_DIR, "node.json")
+    shutil.copy(OUTPUT_FILE, sync_target)
+    print(f"→ 已同步到 node.json")
 
 
 if __name__ == "__main__":

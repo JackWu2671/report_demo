@@ -19,6 +19,7 @@ build_knowledge_relations.py — 从各层级 JSON 自动生成 knowledge_relati
 
 import json
 import os
+import shutil
 import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -103,6 +104,10 @@ def main():
         json.dump(relations, f, ensure_ascii=False, indent=2)
 
     print(f"\n生成完成，共 {len(relations)} 条关系，{missing} 条未匹配（子节点数据不存在）→ {OUTPUT_FILE}")
+
+    sync_target = os.path.join(_KB_DIR, "relation.json")
+    shutil.copy(OUTPUT_FILE, sync_target)
+    print(f"→ 已同步到 relation.json")
 
 
 if __name__ == "__main__":
