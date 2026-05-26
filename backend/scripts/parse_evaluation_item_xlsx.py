@@ -5,17 +5,27 @@ parse_evaluation_item_xlsx.py — 将评估项.xlsx 转换为 评估项.json
 输入: expert_knowledge/评估项.xlsx
 输出: expert_knowledge/评估项.json
 
-字段说明:
-  id                — 原始 UUID
-  nodeId            — 短编号，LLM 大纲可见（如 L4_001）
+Excel 列说明:
+  SCENEKEY          — 场景标识（备用，取 name 优先）
+  CONTENT           — 原始 JSON 字符串
+  CONDITION         — 整体展示条件（手动填写，如 ${number("AEC覆盖用户数")>0}）
+                      为空时自动从 expandLogic showWhen 行提取
+  CONDITION_QUERIES — 条件相关的指标名，逗号分隔（如 AEC覆盖用户数）
+  DESCRIPTION       — 章节导语（手动撰写，无占位符）
+                      为空时回退到 CONTENT.description
+
+输出字段说明:
+  uuid              — 原始 UUID
+  id                — 短编号（如 L4_001）
   name              — 评估项名称
-  level             — 固定 "评估项"
-  description       — 一句话描述
+  level             — 固定 4
+  description       — 章节导语（无占位符，展示给用户）
   keywords          — 关键词列表
   sampleIssue       — 示例提问
-  condition         — 整体展示条件（从 expandLogic showWhen 提取）
+  condition         — 整体展示条件表达式
+  condition_queries — 条件相关指标名列表（用于执行前判断是否展示本节）
   summarySuggestion — LLM 总结指令
-  template          — expandLogic 原文（含 ${} 占位符，执行引擎填充生成报告文字）
+  template          — expandLogic 原文（含 ${} 占位符，执行引擎渲染报告）
   dimensions        — 关联的评估指标名列表
 """
 
@@ -29,10 +39,10 @@ _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
 _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 
 # ── 配置区 ────────────────────────────────────────────────────────────
-INPUT_FILE   = os.path.join(_KB_DIR, "评估项.xlsx")
-OUTPUT_FILE  = os.path.join(_KB_DIR, "评估项.json")
-ID_PREFIX    = "L4"   # 短 id 前缀，生成 L4_001 / L4_002 ...
-ID_START     = 1      # 起始序号
+INPUT_FILE  = os.path.join(_KB_DIR, "评估项.xlsx")
+OUTPUT_FILE = os.path.join(_KB_DIR, "评估项.json")
+ID_PREFIX   = "L4"   # 短 id 前缀，生成 L4_001 / L4_002 ...
+ID_START    = 1      # 起始序号
 # ─────────────────────────────────────────────────────────────────────
 
 
@@ -42,13 +52,13 @@ def make_short_id(index: int) -> str:
     return f"{ID_PREFIX}_{index:03d}"
 
 
-# ── expandLogic 解析 ──────────────────────────────────────────────────
+# ── 字段解析 ──────────────────────────────────────────────────────────
 
 def extract_condition(expand_logic: str) -> str:
     """
-    从 expandLogic 第一行提取 showWhen 条件表达式。
+    从 expandLogic 第一行提取 showWhen 条件（备用，Excel 有值时不调用）。
     示例：## 标题.showWhen(${number("AEC覆盖用户数")=0})
-    → 返回 ${number("AEC覆盖用户数")=0}
+    → ${number("AEC覆盖用户数")=0}
     """
     if not expand_logic:
         return ""
@@ -57,9 +67,28 @@ def extract_condition(expand_logic: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def parse_condition_queries(text: str) -> list[str]:
+    """
+    将 CONDITION_QUERIES 列解析为指标名列表。
+    支持中英文逗号或换行分隔，自动去除空项。
+    示例：'AEC覆盖用户数' → ['AEC覆盖用户数']
+    """
+    if not text or not text.strip():
+        return []
+    parts = re.split(r"[,，\n]", text)
+    return [p.strip() for p in parts if p.strip()]
+
+
 # ── 行转换 ────────────────────────────────────────────────────────────
 
-def convert_row(scene_key: str, content_str: str, index: int) -> dict | None:
+def convert_row(
+    scene_key: str,
+    content_str: str,
+    xl_condition: str,
+    xl_condition_queries: str,
+    xl_description: str,
+    index: int,
+) -> dict | None:
     try:
         obj = json.loads(content_str)
     except (json.JSONDecodeError, TypeError):
@@ -68,15 +97,27 @@ def convert_row(scene_key: str, content_str: str, index: int) -> dict | None:
 
     expand_logic = obj.get("expandLogic", "")
 
+    # condition: Excel 列优先，为空时从 expandLogic 提取
+    condition = xl_condition.strip() if xl_condition and xl_condition.strip() \
+        else extract_condition(expand_logic)
+
+    # condition_queries: 来自 Excel 列
+    condition_queries = parse_condition_queries(xl_condition_queries)
+
+    # description: Excel 列优先，为空时回退到 CONTENT.description
+    description = xl_description.strip() if xl_description and xl_description.strip() \
+        else obj.get("description", "")
+
     return {
         "uuid":              obj.get("id", ""),
         "id":                make_short_id(index),
         "name":              obj.get("name", scene_key),
         "level":             4,
-        "description":       obj.get("description", ""),
+        "description":       description,
         "keywords":          obj.get("keyWords") or [],
         "sampleIssue":       obj.get("sampleIssue", ""),
-        "condition":         extract_condition(expand_logic),
+        "condition":         condition,
+        "condition_queries": condition_queries,
         "summarySuggestion": obj.get("summarySuggestion") or "",
         "template":          expand_logic,
         "dimensions":        obj.get("metrics") or [],
@@ -100,26 +141,58 @@ def main():
     ws = wb.active
 
     headers = [str(c.value).strip().upper() if c.value else "" for c in ws[1]]
+
+    # 必要列
     try:
         idx_key     = headers.index("SCENEKEY")
         idx_content = headers.index("CONTENT")
     except ValueError:
-        print(f"[错误] 找不到必要列，实际表头: {headers}", file=sys.stderr)
+        print(f"[错误] 找不到必要列 SCENEKEY/CONTENT，实际表头: {headers}", file=sys.stderr)
         sys.exit(1)
+
+    # 可选新增列（兼容旧版 Excel）
+    def _col(name: str) -> int:
+        return headers.index(name) if name in headers else -1
+
+    idx_condition         = _col("CONDITION")
+    idx_condition_queries = _col("CONDITION_QUERIES")
+    idx_description       = _col("DESCRIPTION")
+
+    if idx_condition < 0:
+        print("[提示] 未找到 CONDITION 列，将从 expandLogic 自动提取")
+    if idx_condition_queries < 0:
+        print("[提示] 未找到 CONDITION_QUERIES 列，condition_queries 将为空列表")
+    if idx_description < 0:
+        print("[提示] 未找到 DESCRIPTION 列，将使用 CONTENT.description 字段")
+
+    def _cell(row, idx: int) -> str:
+        return str(row[idx]).strip() if idx >= 0 and row[idx] is not None else ""
 
     items = []
     for row in ws.iter_rows(min_row=2, values_only=True):
-        scene_key   = str(row[idx_key]).strip()    if row[idx_key]     else ""
-        content_str = str(row[idx_content]).strip() if row[idx_content] else ""
+        scene_key   = _cell(row, idx_key)
+        content_str = _cell(row, idx_content)
         if not scene_key and not content_str:
             continue
-        item = convert_row(scene_key, content_str, ID_START + len(items))
+        item = convert_row(
+            scene_key,
+            content_str,
+            _cell(row, idx_condition),
+            _cell(row, idx_condition_queries),
+            _cell(row, idx_description),
+            ID_START + len(items),
+        )
         if item:
             items.append(item)
 
-    has_cond = sum(1 for it in items if it["condition"])
+    has_cond  = sum(1 for it in items if it["condition"])
+    has_cq    = sum(1 for it in items if it["condition_queries"])
+    has_desc  = sum(1 for it in items if it["description"])
+
     print(f"转换完成，共 {len(items)} 条 [评估项]")
-    print(f"  有整体 condition (showWhen): {has_cond}")
+    print(f"  有 condition:         {has_cond}")
+    print(f"  有 condition_queries: {has_cq}")
+    print(f"  有 description:       {has_desc}")
     print(f"  id 范围: {make_short_id(ID_START)} ~ {make_short_id(ID_START + len(items) - 1)}")
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
