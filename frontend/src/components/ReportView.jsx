@@ -10,6 +10,7 @@ function buildSkeleton(tree) {
       const lv = node.level || 1
       if (lv >= 1 && lv <= 3) {
         lines.push('#'.repeat(lv) + ' ' + node.name + '\n\n')
+        if (node.description) lines.push(node.description + '\n\n')
         walk(node.children)
       } else if (lv === 4) {
         lines.push('#### ' + node.name + '\n\n')
