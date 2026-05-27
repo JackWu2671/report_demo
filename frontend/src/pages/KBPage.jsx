@@ -154,6 +154,31 @@ function KBCard({ node, map }) {
           </div>
         )}
 
+        {node.condition && (
+          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <div style={{
+              fontSize: 10, fontFamily: 'monospace',
+              padding: '3px 7px', borderRadius: 3,
+              background: '#fff7ed', color: '#c2410c',
+              border: '1px solid #fed7aa',
+              display: 'inline-flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+            }}>
+              <span style={{ opacity: 0.6 }}>@if</span> {node.condition}
+            </div>
+            {node.condition_queries && node.condition_queries.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                {node.condition_queries.map(q => (
+                  <span key={q} style={{
+                    fontSize: 10, padding: '1px 6px', borderRadius: 3,
+                    background: '#fff7ed', color: '#9a3412',
+                    border: '1px dashed #fdba74',
+                  }}>{q}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {node.uuid && (
           <div style={{ fontSize: 9, color: 'var(--color-text-placeholder)', fontFamily: 'monospace', marginTop: 6 }}>
             {node.uuid}
