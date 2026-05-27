@@ -136,6 +136,12 @@ class SqlExecutor:
         if not rows:
             return ""
 
+        dict_rows = [r for r in rows if isinstance(r, dict)]
+        if not dict_rows:
+            # API 返回了非 dict 行（如裸字符串），降级为逐行输出
+            return "\n".join(str(r) for r in rows)
+
+        rows = dict_rows
         headers = list(rows[0].keys())
         lines   = ["| " + " | ".join(str(h) for h in headers) + " |",
                    "| " + " | ".join("---" for _ in headers) + " |"]
