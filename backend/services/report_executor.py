@@ -6,14 +6,20 @@ report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件�
 
 事件格式：
   {"type": "report_metric",  "name": str, "chunk": str}   — 单条指标数据
-  {"type": "report_skip_l4", "name": str}                  — L4 节条件不满足，跳过
+
+并行策略：
+  condition 检查仍串行（共享单一 client）；
+  metric 查询用线程池并行，每个 worker 独立创建 DeApiClient。
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Dict, List
 
 from services.de_sql_execution_client import DeApiClient
 from services.sql_executor import SqlExecutor
+
+MAX_PARALLEL = 5  # 同时执行的 metric 查询数
 
 logger = logging.getLogger(__name__)
 
@@ -71,20 +77,41 @@ def _process_l4(
                 on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（条件不满足，已跳过）_\n\n"})
             return
 
-    # ── 逐条执行查询，即时推送 ────────────────────────────────────
-    for l5 in uncached:
-        metric_name = l5.get("name", "")
-        logger.info("[report] 查询: %r", metric_name)
+    # ── 并行执行查询，即时推送 ────────────────────────────────────
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+        futures = {
+            pool.submit(_run_metric, l5, executor, on_event): l5
+            for l5 in uncached
+        }
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                l5 = futures[future]
+                logger.error("[report] 查询异常 %r: %s", l5.get("name", ""), e)
+                on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（查询异常）_\n\n"})
+
+
+def _run_metric(
+    l5: Dict,
+    executor: SqlExecutor,
+    on_event: Callable[[dict], None],
+) -> None:
+    """在独立线程中执行单条指标查询并推送结果。每次创建自己的 DeApiClient。"""
+    metric_name = l5.get("name", "")
+    logger.info("[report] 查询: %r", metric_name)
+
+    with DeApiClient() as client:
         result = executor.execute_metric(metric_name, client)
 
-        if not result or not result.get("rows"):
-            chunk = "_（暂无数据）_\n\n"
+    if not result or not result.get("rows"):
+        chunk = "_（暂无数据）_\n\n"
+    else:
+        rows = result["rows"]
+        if len(rows) == 1 and len(rows[0]) == 1:
+            val = next(iter(rows[0].values()))
+            chunk = f"{val}\n\n"
         else:
-            rows = result["rows"]
-            if len(rows) == 1 and len(rows[0]) == 1:
-                val = next(iter(rows[0].values()))
-                chunk = f"{val}\n\n"
-            else:
-                chunk = SqlExecutor.rows_to_markdown(rows) + "\n\n"
+            chunk = SqlExecutor.rows_to_markdown(rows) + "\n\n"
 
-        on_event({"type": "report_metric", "name": metric_name, "chunk": chunk})
+    on_event({"type": "report_metric", "name": metric_name, "chunk": chunk})
