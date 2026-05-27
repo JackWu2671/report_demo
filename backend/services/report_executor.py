@@ -73,45 +73,32 @@ def _process_l4(
             logger.info("[report] 跳过 %r（condition 不满足）", name)
             return
 
-    # ── 2. 执行查询（跳过纯条件指标）────────────────────────────
-    query_nodes = [n for n in l5_nodes if n.get("name") not in condition_queries]
+    # ── 2. 立即推送标题和描述 ────────────────────────────────────
+    on_chunk(f"#### {name}\n\n")
+    if description:
+        on_chunk(f"{description}\n\n")
 
-    results: Dict[str, Dict] = {}
+    # ── 3. 逐条执行查询并即时推送 ────────────────────────────────
+    query_nodes = [n for n in l5_nodes if n.get("name") not in condition_queries]
     for l5 in query_nodes:
         metric_name = l5.get("name", "")
         logger.info("[report] 查询: %r", metric_name)
         result = executor.execute_metric(metric_name, client)
-        if result:
-            results[metric_name] = result
-        else:
-            logger.warning("[report] %r 查询失败，跳过", metric_name)
 
-    # ── 3. 拼装 Markdown ─────────────────────────────────────────
-    lines = [f"#### {name}\n\n"]
-
-    if description:
-        lines.append(f"{description}\n\n")
-
-    for l5 in query_nodes:
-        metric_name = l5.get("name", "")
-        result = results.get(metric_name)
-        if not result:
+        on_chunk(f"**{metric_name}**\n\n")
+        if not result or not result.get("rows"):
+            on_chunk("_（暂无数据）_\n\n")
             continue
 
         rows = result["rows"]
-        lines.append(f"**{metric_name}**\n\n")
-
-        if not rows:
-            lines.append("_（暂无数据）_\n\n")
-        elif len(rows) == 1 and len(rows[0]) == 1:
-            # 单值：内联显示
+        if len(rows) == 1 and len(rows[0]) == 1:
             val = next(iter(rows[0].values()))
-            lines.append(f"{val}\n\n")
+            on_chunk(f"{val}\n\n")
         else:
-            lines.append(SqlExecutor.rows_to_markdown(rows) + "\n\n")
+            on_chunk(SqlExecutor.rows_to_markdown(rows) + "\n\n")
 
+    # ── 4. 分析建议 ──────────────────────────────────────────────
     if summary_hint and summary_hint.strip().upper() != "NA":
-        lines.append(f"> **分析建议：** {summary_hint}\n\n")
+        on_chunk(f"> **分析建议：** {summary_hint}\n\n")
 
-    lines.append("---\n\n")
-    on_chunk("".join(lines))
+    on_chunk("---\n\n")

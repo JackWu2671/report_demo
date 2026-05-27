@@ -416,7 +416,7 @@ case 'saved':
         {/* 报告面板 */}
         {rightTab === 'report' && (
           <div className="outline-panel__body">
-            <ReportView markdown={report} />
+            <ReportView markdown={report} generating={generatingReport} outlineTree={outlineJson} />
           </div>
         )}
 
