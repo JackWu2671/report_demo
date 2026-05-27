@@ -25,6 +25,15 @@ metadata:
 python3 $SKILLS_DIR/analyze-network/scripts/<script>.py [参数]
 ```
 
+## 知识体系结构
+
+知识库按五级层次组织：**场景（L1）→ 子场景（L2）→ 评估维度（L3）→ 评估项（L4）→ 评估指标（L5/Q）**。
+
+**L5 query 节点的特殊性**：
+- `name` 就是查询语句本身（如"10GPON套餐用户占比"），是指标的唯一标识，系统据此执行 SQL
+- `description` **永远为空**，没有任何含义，禁止写入
+- 如需修改 L5 节点，**只能改 `name`**，且新 name 须对应知识库中真实存在的指标
+
 ## 脚本工具参考
 
 | 脚本 | 说明 |
@@ -83,11 +92,11 @@ python3 $SKILLS_DIR/analyze-network/scripts/build_outline.py L4_001
 
 输出带 id 的 Markdown 大纲，大纲同时写入会话状态并推送给前端。
 
-生成后，**立即通过一次 `modify_outline.py` 调用完成以下两项检查**，不要等待用户指示：
-1. **结构修剪**：删除与用户需求无关的节点，或用 `keep_only_node` 保留关键分支
-2. **范围过滤**：若用户已指定分析范围（城市、行业、时间段、阈值等），用 `modify_node_description` 将过滤条件写入相关 query 节点描述
+生成后，**立即通过一次 `modify_outline.py` 调用完成结构修剪**，不要等待用户指示：
+- 删除与用户需求无关的节点，或用 `keep_only_node` 保留关键分支
+- 无需修剪时可不调用
 
-两项均无需操作时可不调用。修改完成后，用一句话告知用户大纲已生成，并询问：「是否需要调整大纲？如果满意，我可以直接生成报告。」
+修改完成后，用一句话告知用户大纲已生成，并询问：「是否需要调整大纲？如果满意，我可以直接生成报告。」
 
 ### 步骤 4：按用户反馈修改大纲（按需）
 
@@ -95,7 +104,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/build_outline.py L4_001
 > 不可用单引号包裹——Windows cmd.exe 不把单引号当字符串边界，参数会被空格拆散。
 
 ```bash
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_003\"}, {\"op\": \"modify_node_description\", \"node_id\": \"L5_001\", \"value\": \"仅统计南宁市的企业\"}]"
+python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_003\"}, {\"op\": \"modify_node_name\", \"node_id\": \"L4_007\", \"value\": \"新名称\"}]"
 ```
 
 支持的 op 类型：
@@ -104,8 +113,8 @@ python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delet
 |----|---------|------|
 | `add_node` | `node_id`, `parent_id` | 从知识图谱新增节点；node_id 须来自 search_graph_tree 结果 |
 | `delete_node` | `node_id` | 删除节点及其全部子树 |
-| `modify_node_name` | `node_id`, `value` | 修改节点名称 |
-| `modify_node_description` | `node_id`, `value` | 修改节点描述（query 节点描述决定查询范围） |
+| `modify_node_name` | `node_id`, `value` | 修改节点名称（L5 query 节点只允许此操作） |
+| `modify_node_description` | `node_id`, `value` | 修改节点描述（**仅限 L1–L4**；L5 query 节点无 description，操作会被拒绝） |
 | `modify_node_condition` | `node_id`, `value` | 设置条件；格式「当……时，本节才展示」；value 传空字符串删除条件 |
 | `keep_only_node` | `node_id` | 保留该节点，同级其他节点自动删除 |
 
