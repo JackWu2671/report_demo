@@ -180,38 +180,34 @@ class ReportRequest(BaseModel):
 
 
 async def _stream_report(outline_tree: dict):
-    """
-    在独立线程中运行同步的 run_report，通过 asyncio.Queue 桥接到 SSE 流。
-    每完成一个 L4 节立即推送，不等全部完成。
-    """
     from services.report_executor import run_report
 
     loop  = asyncio.get_event_loop()
     queue: asyncio.Queue = asyncio.Queue()
 
-    def on_chunk(text: str):
-        loop.call_soon_threadsafe(queue.put_nowait, text)
+    def on_event(event: dict):
+        loop.call_soon_threadsafe(queue.put_nowait, event)
 
     def worker():
         try:
-            run_report(outline_tree, on_chunk)
+            run_report(outline_tree, on_event)
         except Exception as e:
             logger.error("[Report] 生成异常: %s", e, exc_info=True)
             loop.call_soon_threadsafe(
                 queue.put_nowait,
-                f"\n\n**[错误]** {e}\n\n"
+                {"type": "report_metric", "name": "__error__", "chunk": f"\n\n**[错误]** {e}\n\n"}
             )
         finally:
-            loop.call_soon_threadsafe(queue.put_nowait, None)  # 结束哨兵
+            loop.call_soon_threadsafe(queue.put_nowait, None)
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
 
     while True:
-        chunk = await queue.get()
-        if chunk is None:
+        event = await queue.get()
+        if event is None:
             break
-        yield _sse({"type": "report", "chunk": chunk})
+        yield _sse(event)
 
     yield "data: [DONE]\n\n"
 

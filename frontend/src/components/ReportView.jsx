@@ -2,37 +2,7 @@ import React from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-function buildSkeleton(tree) {
-  if (!tree) return ''
-  const lines = []
-  function walk(nodes) {
-    for (const node of nodes || []) {
-      const lv = node.level || 1
-      if (lv >= 1 && lv <= 3) {
-        lines.push('#'.repeat(lv) + ' ' + node.name + '\n\n')
-        if (node.description) lines.push(node.description + '\n\n')
-        walk(node.children)
-      } else if (lv === 4) {
-        lines.push('#### ' + node.name + '\n\n')
-        if (node.description) lines.push(node.description + '\n\n')
-        const queries = (node.children || []).filter(c => c.level === 5)
-        if (queries.length > 0) {
-          for (const q of queries) {
-            lines.push('**' + q.name + '**\n\n')
-            lines.push('_加载中…_\n\n')
-          }
-        } else {
-          lines.push('_数据加载中…_\n\n')
-        }
-        lines.push('---\n\n')
-      }
-    }
-  }
-  walk(tree.children || [])
-  return lines.join('')
-}
-
-export default function ReportView({ markdown, generating, outlineTree }) {
+export default function ReportView({ markdown, generating }) {
   if (!markdown && !generating) {
     return (
       <div className="report-empty">
@@ -42,11 +12,9 @@ export default function ReportView({ markdown, generating, outlineTree }) {
     )
   }
 
-  const content = markdown || buildSkeleton(outlineTree)
-
   return (
     <div className="report-body">
-      {generating && !markdown && (
+      {generating && (
         <div style={{
           fontSize: 12, color: 'var(--color-text-placeholder)',
           display: 'flex', alignItems: 'center', gap: 6,
@@ -57,7 +25,7 @@ export default function ReportView({ markdown, generating, outlineTree }) {
           正在生成报告…
         </div>
       )}
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
     </div>
   )
 }

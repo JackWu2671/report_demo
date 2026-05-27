@@ -4,6 +4,34 @@ import ReportView from '../components/ReportView'
 import ChatMessage from '../components/ChatMessage'
 import QueryInput from '../components/QueryInput'
 
+// 从大纲树生成带占位符的报告骨架
+// 占位符格式：<!--PH:指标名-->_加载中…_
+// ChatView 收到 report_metric 事件后，用实际数据替换对应占位符
+function buildSkeleton(tree) {
+  if (!tree) return ''
+  const lines = []
+  function walk(nodes) {
+    for (const node of nodes || []) {
+      const lv = node.level || 1
+      if (lv >= 1 && lv <= 3) {
+        lines.push('#'.repeat(lv) + ' ' + node.name + '\n\n')
+        if (node.description) lines.push(node.description + '\n\n')
+        walk(node.children)
+      } else if (lv === 4) {
+        lines.push('#### ' + node.name + '\n\n')
+        if (node.description) lines.push(node.description + '\n\n')
+        for (const q of (node.children || []).filter(c => c.level === 5)) {
+          lines.push('**' + q.name + '**\n\n')
+          lines.push('<!--PH:' + q.name + '-->_加载中…_\n\n')
+        }
+        lines.push('---\n\n')
+      }
+    }
+  }
+  walk(tree.children || [])
+  return lines.join('')
+}
+
 export default function ChatView() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -124,7 +152,7 @@ export default function ChatView() {
   async function generateReport() {
     if (!outlineJson || generatingReport) return
     setGeneratingReport(true)
-    setReport('')
+    setReport(buildSkeleton(outlineJson))  // 立即用骨架填充，不再空白
     setRightTab('report')
 
     try {
@@ -155,8 +183,12 @@ export default function ChatView() {
           if (raw === '[DONE]') break
           try {
             const evt = JSON.parse(raw)
-            if (evt.type === 'report') {
-              setReport(prev => prev + (evt.chunk ?? ''))
+            if (evt.type === 'report_metric') {
+              const ph = '<!--PH:' + evt.name + '-->_加载中…_'
+              setReport(prev => prev.includes(ph)
+                ? prev.replace(ph, evt.chunk ?? '')
+                : prev
+              )
             }
           } catch {}
         }
@@ -416,7 +448,7 @@ case 'saved':
         {/* 报告面板 */}
         {rightTab === 'report' && (
           <div className="outline-panel__body">
-            <ReportView markdown={report} generating={generatingReport} outlineTree={outlineJson} />
+            <ReportView markdown={report} generating={generatingReport} />
           </div>
         )}
 
