@@ -62,7 +62,8 @@ export default function ChatView() {
   const [skeleton, setSkeleton] = useState('')
   const [reportTab, setReportTab] = useState('view') // 'view' | 'skeleton' | 'md'
   const [generatingReport, setGeneratingReport] = useState(false)
-  const metricCacheRef = useRef({}) // name → chunk，跨次生成缓存
+  const [chartData, setChartData] = useState({}) // name → {render_type, col_x, col_y, rows}
+  const metricCacheRef = useRef({}) // name → chunk/placeholder，跨次生成缓存
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
   const assistantMsgIdxRef = useRef(-1)
@@ -82,6 +83,7 @@ export default function ChatView() {
     setSkeleton('')
     setReportTab('view')
     metricCacheRef.current = {}
+    setChartData({})
 
     fetch('/api/session', {
       method: 'POST',
@@ -217,9 +219,18 @@ export default function ChatView() {
             const evt = JSON.parse(raw)
             if (evt.type === 'report_metric') {
               const ph = '<span data-ph="' + evt.name + '" class="ph-spin"></span>'
-              const chunk = evt.chunk ?? ''
-              metricCacheRef.current[evt.name] = chunk
-              setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk) : prev)
+              const CHART = new Set(['BAR', 'LINE', 'PIE'])
+              if (CHART.has(evt.render_type) && evt.rows?.length) {
+                const info = { render_type: evt.render_type, col_x: evt.col_x, col_y: evt.col_y, rows: evt.rows }
+                setChartData(prev => ({ ...prev, [evt.name]: info }))
+                const placeholder = `<div data-echart="${evt.name}"></div>\n\n`
+                metricCacheRef.current[evt.name] = placeholder
+                setReport(prev => prev.includes(ph) ? prev.replace(ph, placeholder) : prev)
+              } else {
+                const chunk = evt.chunk ?? ''
+                metricCacheRef.current[evt.name] = chunk
+                setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk) : prev)
+              }
             }
           } catch {}
         }
@@ -501,7 +512,7 @@ case 'saved':
             </div>
             <div className="outline-panel__body">
               {reportTab === 'view' && (
-                <ReportView markdown={report} generating={generatingReport} />
+                <ReportView markdown={report} generating={generatingReport} chartData={chartData} />
               )}
               {reportTab === 'md' && (
                 <pre className="outline-raw">{report || '（暂无数据）'}</pre>

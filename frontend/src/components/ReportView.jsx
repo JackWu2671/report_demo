@@ -2,6 +2,7 @@ import React, { useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
+import ReactECharts from 'echarts-for-react'
 
 function slugify(text) {
   return text.replace(/\s+/g, '-').replace(/[^\w一-龥-]/g, '')
@@ -17,7 +18,6 @@ function extractHeadings(markdown) {
   return headings
 }
 
-// 自定义标题渲染，注入 id 供锚点跳转
 function headingComponent(level) {
   const Tag = `h${level}`
   return function Heading({ children, ...props }) {
@@ -38,8 +38,69 @@ const HEADING_COMPONENTS = {
 const INDENT = { 1: 0, 2: 10, 3: 18, 4: 26 }
 const TOC_COLOR = { 1: '#6c5ce7', 2: '#2563eb', 3: '#00b894', 4: '#e17055' }
 
-export default function ReportView({ markdown, generating }) {
+function buildChartOption(info) {
+  const { render_type, col_x, col_y, rows } = info
+  if (!rows || !rows.length) return null
+
+  const t = (render_type || '').toUpperCase()
+
+  if (t === 'PIE') {
+    const nameKey = col_x || Object.keys(rows[0])[0]
+    const valueKey = col_y || Object.keys(rows[0])[1]
+    return {
+      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      series: [{
+        type: 'pie',
+        radius: ['30%', '60%'],
+        data: rows.map(r => ({ name: String(r[nameKey] ?? ''), value: r[valueKey] })),
+        label: { formatter: '{b}\n{d}%' },
+      }],
+    }
+  }
+
+  // BAR / LINE
+  const xKey = col_x || Object.keys(rows[0])[0]
+  const yKey = col_y || Object.keys(rows[0])[1] || Object.keys(rows[0])[0]
+  const xData = rows.map(r => String(r[xKey] ?? ''))
+  const yData = rows.map(r => r[yKey])
+
+  return {
+    tooltip: { trigger: 'axis' },
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: xData,
+      axisLabel: { rotate: xData.length > 6 ? 30 : 0, overflow: 'truncate', width: 80 },
+    },
+    yAxis: { type: 'value' },
+    series: [{
+      type: t === 'LINE' ? 'line' : 'bar',
+      data: yData,
+      smooth: t === 'LINE',
+    }],
+  }
+}
+
+export default function ReportView({ markdown, generating, chartData = {} }) {
   const headings = useMemo(() => extractHeadings(markdown), [markdown])
+
+  const components = useMemo(() => ({
+    ...HEADING_COMPONENTS,
+    div: ({ node, children, ...props }) => {
+      const name = props['data-echart']
+      if (name && chartData[name]) {
+        const option = buildChartOption(chartData[name])
+        if (option) {
+          return (
+            <div style={{ margin: '12px 0' }}>
+              <ReactECharts option={option} style={{ height: 280 }} />
+            </div>
+          )
+        }
+      }
+      return <div {...props}>{children}</div>
+    },
+  }), [chartData])
 
   if (!markdown && !generating) {
     return (
@@ -108,7 +169,7 @@ export default function ReportView({ markdown, generating }) {
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeRaw]}
-            components={HEADING_COMPONENTS}
+            components={components}
           >
             {markdown}
           </ReactMarkdown>

@@ -92,6 +92,9 @@ def _process_l4(
                 on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（查询异常）_\n\n"})
 
 
+_CHART_TYPES = {"BAR", "LINE", "PIE"}
+
+
 def _run_metric(
     l5: Dict,
     executor: SqlExecutor,
@@ -105,13 +108,26 @@ def _run_metric(
         result = executor.execute_metric(metric_name, client)
 
     if not result or not result.get("rows"):
-        chunk = "_（暂无数据）_\n\n"
-    else:
-        rows = result["rows"]
-        if len(rows) == 1 and len(rows[0]) == 1:
-            val = next(iter(rows[0].values()))
-            chunk = f"{val}\n\n"
-        else:
-            chunk = SqlExecutor.rows_to_markdown(rows) + "\n\n"
+        on_event({"type": "report_metric", "name": metric_name, "chunk": "_（暂无数据）_\n\n"})
+        return
 
-    on_event({"type": "report_metric", "name": metric_name, "chunk": chunk})
+    rows = result["rows"]
+    dict_rows = [r for r in rows if isinstance(r, dict)]
+    render_type = (result.get("render_type") or "").upper()
+
+    if render_type in _CHART_TYPES and dict_rows:
+        # 图表类型：带上原始行数据，前端负责渲染
+        on_event({
+            "type":        "report_metric",
+            "name":        metric_name,
+            "chunk":       SqlExecutor.rows_to_markdown(dict_rows) + "\n\n",  # 降级文本
+            "render_type": render_type,
+            "col_x":       result.get("col_x") or "",
+            "col_y":       result.get("col_y") or "",
+            "rows":        dict_rows,
+        })
+    elif len(dict_rows) == 1 and len(dict_rows[0]) == 1:
+        val = next(iter(dict_rows[0].values()))
+        on_event({"type": "report_metric", "name": metric_name, "chunk": f"{val}\n\n"})
+    else:
+        on_event({"type": "report_metric", "name": metric_name, "chunk": SqlExecutor.rows_to_markdown(rows) + "\n\n"})
