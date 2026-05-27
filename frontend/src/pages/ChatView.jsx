@@ -9,16 +9,30 @@ import QueryInput from '../components/QueryInput'
 // ChatView 收到 report_metric 事件后，用实际数据替换对应占位符
 function buildSkeleton(tree) {
   if (!tree) return ''
+
+  // 找最浅的 level（L1-L4），让它对应 H1，其余相对偏移
+  let minLevel = Infinity
+  function scanMin(nodes) {
+    for (const node of nodes || []) {
+      const lv = node.level || 1
+      if (lv >= 1 && lv <= 4) minLevel = Math.min(minLevel, lv)
+      scanMin(node.children)
+    }
+  }
+  scanMin(tree.children || [])
+  if (minLevel === Infinity) minLevel = 1
+
   const lines = []
   function walk(nodes) {
     for (const node of nodes || []) {
       const lv = node.level || 1
+      const h = lv - minLevel + 1  // 相对标题层级，最小为 1
       if (lv >= 1 && lv <= 3) {
-        lines.push('#'.repeat(lv) + ' ' + node.name + '\n\n')
+        lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
         if (node.description) lines.push(node.description + '\n\n')
         walk(node.children)
       } else if (lv === 4) {
-        lines.push('#### ' + node.name + '\n\n')
+        lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
         if (node.description) lines.push(node.description + '\n\n')
         for (const q of (node.children || []).filter(c => c.level === 5)) {
           lines.push('**' + q.name + '**\n\n')
