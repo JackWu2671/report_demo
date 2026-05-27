@@ -62,6 +62,7 @@ export default function ChatView() {
   const [skeleton, setSkeleton] = useState('')
   const [reportTab, setReportTab] = useState('view') // 'view' | 'skeleton' | 'md'
   const [generatingReport, setGeneratingReport] = useState(false)
+  const metricCacheRef = useRef({}) // name → chunk，跨次生成缓存
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
   const assistantMsgIdxRef = useRef(-1)
@@ -80,6 +81,7 @@ export default function ChatView() {
     setReport('')
     setSkeleton('')
     setReportTab('view')
+    metricCacheRef.current = {}
 
     fetch('/api/session', {
       method: 'POST',
@@ -172,15 +174,24 @@ export default function ChatView() {
     setGeneratingReport(true)
     const sk = buildSkeleton(outlineJson)
     setSkeleton(sk)
-    setReport(sk)
     setReportTab('view')
     setRightTab('report')
+
+    // 预填缓存，收集本次需要后端执行的 name
+    const cache = metricCacheRef.current
+    const allNames = [...sk.matchAll(/data-ph="([^"]+)"/g)].map(m => m[1])
+    const cachedNames = allNames.filter(n => cache[n] !== undefined)
+    let prefilled = sk
+    for (const n of cachedNames) {
+      prefilled = prefilled.replace(`<span data-ph="${n}" class="ph-spin"></span>`, cache[n])
+    }
+    setReport(prefilled)
 
     try {
       const res = await fetch('/api/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ outline_tree: outlineJson }),
+        body: JSON.stringify({ outline_tree: outlineJson, cached_names: cachedNames }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -206,10 +217,9 @@ export default function ChatView() {
             const evt = JSON.parse(raw)
             if (evt.type === 'report_metric') {
               const ph = '<span data-ph="' + evt.name + '" class="ph-spin"></span>'
-              setReport(prev => prev.includes(ph)
-                ? prev.replace(ph, evt.chunk ?? '')
-                : prev
-              )
+              const chunk = evt.chunk ?? ''
+              metricCacheRef.current[evt.name] = chunk
+              setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk) : prev)
             }
           } catch {}
         }

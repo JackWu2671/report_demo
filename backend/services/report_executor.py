@@ -21,10 +21,12 @@ logger = logging.getLogger(__name__)
 def run_report(
     outline_tree: Dict,
     on_event: Callable[[dict], None],
+    cached_names: set = None,
 ) -> None:
+    cached_names = cached_names or set()
     executor = SqlExecutor()
     with DeApiClient() as client:
-        _walk(outline_tree.get("children", []), client, executor, on_event)
+        _walk(outline_tree.get("children", []), client, executor, on_event, cached_names)
 
 
 def _walk(
@@ -32,13 +34,14 @@ def _walk(
     client: DeApiClient,
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
+    cached_names: set,
 ) -> None:
     for node in nodes:
         level = node.get("level", 0)
         if level == 4:
-            _process_l4(node, client, executor, on_event)
+            _process_l4(node, client, executor, on_event, cached_names)
         elif 1 <= level <= 3:
-            _walk(node.get("children", []), client, executor, on_event)
+            _walk(node.get("children", []), client, executor, on_event, cached_names)
 
 
 def _process_l4(
@@ -46,6 +49,7 @@ def _process_l4(
     client: DeApiClient,
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
+    cached_names: set,
 ) -> None:
     name              = node.get("name", "")
     condition         = node.get("condition", "")
@@ -53,16 +57,22 @@ def _process_l4(
     l5_nodes          = [c for c in node.get("children", []) if c.get("level") == 5]
     query_nodes       = [n for n in l5_nodes if n.get("name") not in condition_queries]
 
+    # 过滤掉前端已缓存的指标，无需重新执行
+    uncached = [n for n in query_nodes if n.get("name") not in cached_names]
+    if not uncached:
+        logger.info("[report] L4 %r 所有指标均已缓存，跳过", name)
+        return
+
     # ── condition 检查 ───────────────────────────────────────────
     if condition:
         if not executor.eval_condition(condition, client):
             logger.info("[report] 跳过 L4 %r（condition 不满足）", name)
-            for l5 in query_nodes:
+            for l5 in uncached:
                 on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（条件不满足，已跳过）_\n\n"})
             return
 
     # ── 逐条执行查询，即时推送 ────────────────────────────────────
-    for l5 in query_nodes:
+    for l5 in uncached:
         metric_name = l5.get("name", "")
         logger.info("[report] 查询: %r", metric_name)
         result = executor.execute_metric(metric_name, client)
