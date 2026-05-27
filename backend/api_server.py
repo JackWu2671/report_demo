@@ -55,14 +55,27 @@ _sessions: dict[str, AgentWithSkills] = {}
 
 @app.get("/api/kb")
 def get_kb():
-    try:
-        with open(os.path.join(_KB_DIR, "node.json"), encoding="utf-8") as f:
-            nodes = json.load(f)
-        with open(os.path.join(_KB_DIR, "relation.json"), encoding="utf-8") as f:
-            relations = json.load(f)
-        return {"nodes": nodes, "relations": relations}
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    def _load(name):
+        p = os.path.join(_KB_DIR, name)
+        if not os.path.exists(p):
+            return []
+        with open(p, encoding="utf-8") as f:
+            return json.load(f) or []
+
+    nodes     = _load("knowledge_nodes.json")
+    relations = _load("knowledge_relations.json")
+
+    # 合并 L5 query 节点（含 SQL）
+    for item in _load("sample_query_sql.json"):
+        node = {k: v for k, v in item.items() if k != "answer"}
+        if item.get("answer"):
+            try:
+                node["exec_sql"] = json.loads(item["answer"]).get("exec_sql", "")
+            except Exception:
+                node["exec_sql"] = ""
+        nodes.append(node)
+
+    return {"nodes": nodes, "relations": relations}
 
 
 @app.get("/api/templates")

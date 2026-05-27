@@ -103,6 +103,8 @@ function KBCard({ node, map }) {
   const [open, setOpen] = useState(false)
   const color = LEVEL_COLOR[node.level] || '#636e72'
   const hasChildren = node.children && node.children.length > 0
+  const isQuery = node.level === 5
+  const canExpand = hasChildren || (isQuery && node.exec_sql)
 
   return (
     <div style={{
@@ -113,10 +115,10 @@ function KBCard({ node, map }) {
       overflow: 'hidden',
     }}>
       <div
-        onClick={() => hasChildren && setOpen(o => !o)}
+        onClick={() => canExpand && setOpen(o => !o)}
         style={{
           padding: '10px 12px',
-          cursor: hasChildren ? 'pointer' : 'default',
+          cursor: canExpand ? 'pointer' : 'default',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
@@ -127,9 +129,9 @@ function KBCard({ node, map }) {
           }}>
             {node.id}
           </span>
-          {hasChildren && (
+          {canExpand && (
             <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-placeholder)' }}>
-              {open ? '▾' : '▸'} {node.children.length} 子节点
+              {open ? '▾' : '▸'} {hasChildren ? `${node.children.length} 子节点` : 'SQL'}
             </span>
           )}
         </div>
@@ -164,6 +166,25 @@ function KBCard({ node, map }) {
           {node.children.map(child => (
             <SubTree key={child.id} node={map[child.id] || child} map={map} />
           ))}
+        </div>
+      )}
+
+      {open && isQuery && node.exec_sql && (
+        <div style={{ borderTop: '1px solid var(--color-border)', background: '#0d1117', padding: '10px 12px' }}>
+          <div style={{ fontSize: 10, color: '#8b949e', marginBottom: 6, fontFamily: 'monospace', letterSpacing: '0.05em' }}>
+            SQL
+          </div>
+          <pre style={{
+            margin: 0,
+            fontSize: 11,
+            color: '#e6edf3',
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+            lineHeight: 1.6,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+          }}>
+            {node.exec_sql}
+          </pre>
         </div>
       )}
     </div>
