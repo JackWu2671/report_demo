@@ -14,7 +14,16 @@ function buildSkeleton(tree) {
       } else if (lv === 4) {
         lines.push('#### ' + node.name + '\n\n')
         if (node.description) lines.push(node.description + '\n\n')
-        lines.push('_数据加载中…_\n\n---\n\n')
+        const queries = (node.children || []).filter(c => c.level === 5)
+        if (queries.length > 0) {
+          for (const q of queries) {
+            lines.push('**' + q.name + '**\n\n')
+            lines.push('_加载中…_\n\n')
+          }
+        } else {
+          lines.push('_数据加载中…_\n\n')
+        }
+        lines.push('---\n\n')
       }
     }
   }
