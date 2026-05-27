@@ -19,10 +19,10 @@ export default function App() {
           💬 对话生成
         </NavLink>
       </nav>
-      <main className="main" style={{ padding: 0, overflowY: 'auto' }}>
+      <main className="main" style={{ padding: 0, overflow: 'hidden' }}>
         <Routes>
-          <Route path="/" element={<div style={{ padding: 32 }}><KBPage /></div>} />
-          <Route path="/templates" element={<div style={{ padding: 32 }}><TemplatePage /></div>} />
+          <Route path="/" element={<KBPage />} />
+          <Route path="/templates" element={<div style={{ padding: 32, height: '100%', overflowY: 'auto' }}><TemplatePage /></div>} />
           <Route path="/chat" element={<ChatView />} />
         </Routes>
       </main>
