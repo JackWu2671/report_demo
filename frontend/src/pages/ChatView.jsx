@@ -22,7 +22,7 @@ function buildSkeleton(tree) {
         if (node.description) lines.push(node.description + '\n\n')
         for (const q of (node.children || []).filter(c => c.level === 5)) {
           lines.push('**' + q.name + '**\n\n')
-          lines.push('<!--PH:' + q.name + '-->_加载中…_\n\n')
+          lines.push('<span data-ph="' + q.name + '" class="ph-spin"></span>\n\n')
         }
         lines.push('---\n\n')
       }
@@ -184,7 +184,7 @@ export default function ChatView() {
           try {
             const evt = JSON.parse(raw)
             if (evt.type === 'report_metric') {
-              const ph = '<!--PH:' + evt.name + '-->_加载中…_'
+              const ph = '<span data-ph="' + evt.name + '" class="ph-spin"></span>'
               setReport(prev => prev.includes(ph)
                 ? prev.replace(ph, evt.chunk ?? '')
                 : prev
