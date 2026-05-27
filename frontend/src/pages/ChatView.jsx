@@ -45,6 +45,8 @@ export default function ChatView() {
   const [sceneMeta, setSceneMeta] = useState(null)   // {scene_name, summary, keywords, usage_conditions}
   const [rightTab, setRightTab] = useState('outline') // 'outline' | 'report'
   const [report, setReport] = useState('')
+  const [skeleton, setSkeleton] = useState('')
+  const [reportTab, setReportTab] = useState('view') // 'view' | 'skeleton' | 'md'
   const [generatingReport, setGeneratingReport] = useState(false)
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
@@ -62,6 +64,8 @@ export default function ChatView() {
     setQuickReplies([])
     setRightTab('outline')
     setReport('')
+    setSkeleton('')
+    setReportTab('view')
 
     fetch('/api/session', {
       method: 'POST',
@@ -152,7 +156,10 @@ export default function ChatView() {
   async function generateReport() {
     if (!outlineJson || generatingReport) return
     setGeneratingReport(true)
-    setReport(buildSkeleton(outlineJson))  // 立即用骨架填充，不再空白
+    const sk = buildSkeleton(outlineJson)
+    setSkeleton(sk)
+    setReport(sk)
+    setReportTab('view')
     setRightTab('report')
 
     try {
@@ -447,9 +454,39 @@ case 'saved':
 
         {/* 报告面板 */}
         {rightTab === 'report' && (
-          <div className="outline-panel__body">
-            <ReportView markdown={report} generating={generatingReport} />
-          </div>
+          <>
+            <div className="outline-panel__header">
+              <span className="outline-panel__title">报告预览</span>
+              {(report || skeleton) && (
+                <div className="outline-tabs">
+                  {[
+                    { key: 'view',     label: '报告' },
+                    { key: 'md',       label: 'Markdown' },
+                    { key: 'skeleton', label: '骨架' },
+                  ].map(tab => (
+                    <button
+                      key={tab.key}
+                      className={`outline-tab${reportTab === tab.key ? ' outline-tab--active' : ''}`}
+                      onClick={() => setReportTab(tab.key)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="outline-panel__body">
+              {reportTab === 'view' && (
+                <ReportView markdown={report} generating={generatingReport} />
+              )}
+              {reportTab === 'md' && (
+                <pre className="outline-raw">{report || '（暂无数据）'}</pre>
+              )}
+              {reportTab === 'skeleton' && (
+                <pre className="outline-raw">{skeleton || '（暂无数据）'}</pre>
+              )}
+            </div>
+          </>
         )}
 
       </div>
