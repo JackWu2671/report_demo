@@ -55,7 +55,7 @@ async def set_outline_from_markdown(md_with_ids: str) -> dict:
             'id': node_id.strip(),
             'name': name.strip(),
             'level': level,
-            'description': description.strip(),
+            'description': '' if level == 5 else description.strip(),  # L5 query 节点 description 永远为空
             'condition': condition.strip(),
             'children': [],
         }

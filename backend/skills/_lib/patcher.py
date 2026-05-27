@@ -4,8 +4,8 @@ patcher.py — 将结构化操作列表应用到大纲树。
 支持的 patch 操作:
   add_node              — 从知识图谱新增节点，挂到指定父节点下
   delete_node           — 删除指定节点及其所有子节点
-  modify_node_name      — 修改节点的 name
-  modify_node_description — 修改节点的 description
+  modify_node_name      — 修改节点的 name（L5 query 节点仅允许此操作）
+  modify_node_description — 修改节点的 description（L5 query 节点禁止，会被 skip）
   modify_node_condition — 设置或修改节点展示条件
   keep_only_node        — 保留指定节点，删除同级兄弟节点
 """
@@ -111,13 +111,19 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
                 skipped.append({**op, "_skip_reason": msg})
 
         elif op_name == "modify_node_description":
-            found = _modify_field(tree, node_id, "description", op.get("value", ""))
-            if found:
-                logger.info("[Step 9] modify_node_description: 节点 %s | 原因: %s", node_id, reason)
-            else:
-                msg = f"节点 {node_id} 不存在"
-                logger.warning("[Step 9] modify_node_description: 未找到节点 %s", node_id)
+            target_level = _find_node_level(tree, node_id)
+            if target_level == 5:
+                msg = f"L5 query 节点 {node_id} 的 description 禁止修改"
+                logger.warning("[Step 9] modify_node_description: %s", msg)
                 skipped.append({**op, "_skip_reason": msg})
+            else:
+                found = _modify_field(tree, node_id, "description", op.get("value", ""))
+                if found:
+                    logger.info("[Step 9] modify_node_description: 节点 %s | 原因: %s", node_id, reason)
+                else:
+                    msg = f"节点 {node_id} 不存在"
+                    logger.warning("[Step 9] modify_node_description: 未找到节点 %s", node_id)
+                    skipped.append({**op, "_skip_reason": msg})
 
         elif op_name == "modify_node_condition":
             found = _modify_field(tree, node_id, "condition", op.get("value", ""))
@@ -234,3 +240,14 @@ def _modify_field(tree: dict, node_id: str, field: str, value: str) -> bool:
         if _modify_field(child, node_id, field, value):
             return True
     return False
+
+
+def _find_node_level(tree: dict, node_id: str) -> int | None:
+    """返回 node_id 节点的 level，未找到返回 None。"""
+    if tree["id"] == node_id:
+        return tree.get("level")
+    for child in tree.get("children", []):
+        result = _find_node_level(child, node_id)
+        if result is not None:
+            return result
+    return None
