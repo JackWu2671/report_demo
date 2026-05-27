@@ -498,7 +498,7 @@ body {
   color: var(--color-success);
 }
 
-.outline-panel__body { flex: 1; overflow-y: auto; }
+.outline-panel__body { flex: 1; min-height: 0; overflow-y: auto; }
 .outline-panel__body::-webkit-scrollbar { width: 4px; }
 .outline-panel__body::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }
 
