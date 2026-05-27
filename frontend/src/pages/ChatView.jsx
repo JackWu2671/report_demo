@@ -217,6 +217,10 @@ export default function ChatView() {
         setRightTab('report')
         break
 
+      case 'start_report':
+        generateReport()
+        break
+
       case 'done':
         updateAssistant(msg => ({ ...msg, duration: evt.seconds }))
         break

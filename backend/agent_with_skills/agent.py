@@ -250,6 +250,11 @@ class AgentWithSkills:
                     "summary":    after_ext.get("summary", ""),
                 })
 
+        if after.get("generate_report") and not before.get("generate_report"):
+            after["generate_report"] = False
+            _write_session(self.session_id, after)
+            events.append({"type": "start_report"})
+
         return events
 
 
