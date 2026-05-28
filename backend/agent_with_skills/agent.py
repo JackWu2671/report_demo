@@ -237,6 +237,7 @@ class AgentWithSkills:
                 "md_with_ids": after.get("md_with_ids", ""),
                 "outline_tree": after_outline,
             })
+            events.append({"type": "confirm", "options": ["生成报告"]})
 
         after_ext = after.get("extraction") or {}
         before_ext = before.get("extraction") or {}
