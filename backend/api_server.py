@@ -16,6 +16,8 @@ import os
 import sys
 import uuid
 
+from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,8 +37,21 @@ if _DIR not in sys.path:
     sys.path.insert(0, _DIR)
 
 from agent_with_skills.agent import AgentWithSkills
+from skills._lib.loader import load_resources
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        logger.info("[Startup] 检查 FAISS 索引…")
+        await load_resources()
+        logger.info("[Startup] FAISS 索引就绪")
+    except Exception as e:
+        logger.warning("[Startup] FAISS 索引初始化失败（不影响启动）: %s", e)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
