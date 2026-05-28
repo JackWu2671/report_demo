@@ -660,10 +660,8 @@ body {
 .quick-replies {
   display: flex;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 4px 16px 8px 52px;
   flex-wrap: wrap;
-  border-top: 1px solid var(--color-border);
-  background: var(--color-bg);
 }
 
 .quick-reply-btn {

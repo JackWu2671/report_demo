@@ -387,24 +387,22 @@ case 'saved':
               isStreaming={streaming && i === messages.length - 1 && msg.role === 'assistant'}
             />
           ))}
+          {quickReplies.length > 0 && (
+            <div className="quick-replies">
+              {quickReplies.map(opt => (
+                <button
+                  key={opt}
+                  className="quick-reply-btn"
+                  disabled={streaming}
+                  onClick={() => sendText(opt)}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
-
-        {/* 快捷回复按钮（pending_confirm 时显示） */}
-        {quickReplies.length > 0 && (
-          <div className="quick-replies">
-            {quickReplies.map(opt => (
-              <button
-                key={opt}
-                className="quick-reply-btn"
-                disabled={streaming}
-                onClick={() => sendText(opt)}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        )}
 
         {messages.length === 0 && (
           <div className="preset-questions">
