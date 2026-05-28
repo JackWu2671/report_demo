@@ -193,9 +193,10 @@ import threading
 class ReportRequest(BaseModel):
     outline_tree: dict
     cached_names: list[str] = []
+    cached_summary_ids: list[str] = []
 
 
-async def _stream_report(outline_tree: dict, cached_names: set):
+async def _stream_report(outline_tree: dict, cached_names: set, cached_summary_ids: set):
     from services.report_executor import run_report
 
     loop  = asyncio.get_event_loop()
@@ -206,7 +207,7 @@ async def _stream_report(outline_tree: dict, cached_names: set):
 
     def worker():
         try:
-            run_report(outline_tree, on_event, cached_names)
+            run_report(outline_tree, on_event, cached_names, cached_summary_ids)
         except Exception as e:
             logger.error("[Report] 生成异常: %s", e, exc_info=True)
             loop.call_soon_threadsafe(
@@ -232,6 +233,6 @@ async def _stream_report(outline_tree: dict, cached_names: set):
 @app.post("/api/report")
 async def generate_report(req: ReportRequest):
     return StreamingResponse(
-        _stream_report(req.outline_tree, set(req.cached_names)),
+        _stream_report(req.outline_tree, set(req.cached_names), set(req.cached_summary_ids)),
         media_type="text/event-stream",
     )

@@ -35,13 +35,15 @@ def run_report(
     outline_tree: Dict,
     on_event: Callable[[dict], None],
     cached_names: set = None,
+    cached_summary_ids: set = None,
 ) -> None:
     cached_names = cached_names or set()
+    cached_summary_ids = cached_summary_ids or set()
     executor = SqlExecutor()
     # collected 贯穿全局，所有 metric 的 rows 都写入这里
     collected: Dict[str, List] = {}
     with DeApiClient() as client:
-        _walk(outline_tree.get("children", []), client, executor, on_event, cached_names, collected)
+        _walk(outline_tree.get("children", []), client, executor, on_event, cached_names, cached_summary_ids, collected)
 
 
 def _walk(
@@ -50,18 +52,19 @@ def _walk(
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
     cached_names: set,
+    cached_summary_ids: set,
     collected: Dict[str, List],
 ) -> None:
     standalone_l5 = []
     for node in nodes:
         level = node.get("level", 0)
         if level == 4:
-            _process_l4(node, client, executor, on_event, cached_names, collected)
+            _process_l4(node, client, executor, on_event, cached_names, cached_summary_ids, collected)
         elif 1 <= level <= 3:
             # 先递归处理所有后代
-            _walk(node.get("children", []), client, executor, on_event, cached_names, collected)
-            # 后代全部完成后，若本节点有 summarySuggestion 则生成总结
-            if node.get("summarySuggestion"):
+            _walk(node.get("children", []), client, executor, on_event, cached_names, cached_summary_ids, collected)
+            # 后代全部完成后，若本节点有 summarySuggestion 且未缓存则生成总结
+            if node.get("summarySuggestion") and node.get("id") not in cached_summary_ids:
                 _generate_summary(node, _collect_node_data(node, collected), on_event)
         elif level == 5:
             standalone_l5.append(node)
@@ -83,7 +86,7 @@ def _walk(
 
         # 孤立 L5 节点自身的总结
         for l5 in standalone_l5:
-            if l5.get("summarySuggestion") and l5.get("name") in collected:
+            if l5.get("summarySuggestion") and l5.get("name") in collected and l5.get("id") not in cached_summary_ids:
                 _generate_summary(l5, {l5["name"]: collected[l5["name"]]}, on_event)
 
 
@@ -137,6 +140,7 @@ def _process_l4(
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
     cached_names: set,
+    cached_summary_ids: set,
     collected: Dict[str, List],
 ) -> None:
     name              = node.get("name", "")
@@ -178,7 +182,7 @@ def _process_l4(
     _run_batch(regular_l5)
 
     # ── L4 自身总结 ───────────────────────────────────────────────
-    if node.get("summarySuggestion"):
+    if node.get("summarySuggestion") and node.get("id") not in cached_summary_ids:
         _generate_summary(node, _collect_node_data(node, collected), on_event)
 
 

@@ -72,7 +72,8 @@ export default function ChatView() {
   const [generatingReport, setGeneratingReport] = useState(false)
   const [chartData, setChartData] = useState({}) // name → {render_type, col_x, col_y, rows}
   const [tableData, setTableData] = useState({}) // name → rows[]
-  const metricCacheRef = useRef({}) // name → chunk/placeholder，跨次生成缓存
+  const metricCacheRef = useRef({})   // name → chunk/placeholder，跨次生成缓存
+  const summaryCacheRef = useRef({})  // node_id → { key, chunk }，subtree 不变时复用
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
   const assistantMsgIdxRef = useRef(-1)
@@ -92,6 +93,7 @@ export default function ChatView() {
     setSkeleton('')
     setReportTab('view')
     metricCacheRef.current = {}
+    summaryCacheRef.current = {}
     setChartData({})
     setTableData({})
 
@@ -181,6 +183,30 @@ export default function ChatView() {
     await sendText(text)
   }
 
+  function collectSummaryNodes(nodes, acc = []) {
+    for (const node of nodes || []) {
+      if (node.summarySuggestion) acc.push(node)
+      collectSummaryNodes(node.children, acc)
+    }
+    return acc
+  }
+
+  function findNodeById(nodes, id) {
+    for (const node of nodes || []) {
+      if (node.id === id) return node
+      const found = findNodeById(node.children, id)
+      if (found) return found
+    }
+    return null
+  }
+
+  function applySummaryChunk(str, nodeId, chunk) {
+    const ph = '> <span data-ph-summary="' + nodeId + '" class="ph-spin"></span>'
+    if (!str.includes(ph)) return str
+    const replacement = chunk.trim().split('\n').map(l => '> ' + l).join('\n') + '\n'
+    return str.replace(ph, replacement)
+  }
+
   async function generateReport() {
     if (!outlineJson || generatingReport) return
     setGeneratingReport(true)
@@ -189,7 +215,7 @@ export default function ChatView() {
     setReportTab('view')
     setRightTab('report')
 
-    // 预填缓存，收集本次需要后端执行的 name
+    // 预填指标缓存
     const cache = metricCacheRef.current
     const allNames = [...sk.matchAll(/data-ph="([^"]+)"/g)].map(m => m[1])
     const cachedNames = allNames.filter(n => cache[n] !== undefined)
@@ -197,13 +223,25 @@ export default function ChatView() {
     for (const n of cachedNames) {
       prefilled = prefilled.replace(`<span data-ph="${n}" class="ph-spin"></span>`, cache[n])
     }
+
+    // 预填 summary 缓存：子树 JSON 未变则直接填充，无需 LLM 重新生成
+    const summaryNodes = collectSummaryNodes(outlineJson.children || [])
+    const cachedSummaryIds = []
+    for (const node of summaryNodes) {
+      const cached = summaryCacheRef.current[node.id]
+      if (cached?.key === JSON.stringify(node)) {
+        prefilled = applySummaryChunk(prefilled, node.id, cached.chunk)
+        cachedSummaryIds.push(node.id)
+      }
+    }
+
     setReport(prefilled)
 
     try {
       const res = await fetch('/api/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ outline_tree: outlineJson, cached_names: cachedNames }),
+        body: JSON.stringify({ outline_tree: outlineJson, cached_names: cachedNames, cached_summary_ids: cachedSummaryIds }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -252,6 +290,9 @@ export default function ChatView() {
               const chunk = (evt.chunk ?? '').trim()
               const replacement = chunk.split('\n').map(l => '> ' + l).join('\n') + '\n'
               setReport(prev => prev.includes(ph) ? prev.replace(ph, replacement) : prev)
+              // 以当前大纲该节点的子树 JSON 为 key 写入缓存
+              const node = findNodeById(outlineJson.children || [], evt.node_id)
+              if (node) summaryCacheRef.current[evt.node_id] = { key: JSON.stringify(node), chunk: evt.chunk ?? '' }
             } else if (evt.type === 'report_done') {
               appendMsg({ role: 'success', content: '报告已生成完成，请查看右侧报告面板。' })
             }
