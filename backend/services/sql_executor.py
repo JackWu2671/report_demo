@@ -102,10 +102,13 @@ class SqlExecutor:
         except (TypeError, ValueError):
             return None
 
-    def eval_condition(self, condition: str, client: DeApiClient) -> bool:
+    def eval_condition(self, condition: str, client: DeApiClient,
+                       collected: Dict[str, List] = None) -> bool:
         """
         评估 L4 的 condition 表达式，决定该节是否展示。
 
+        优先从 collected（已查询缓存）取值，避免重复 SQL；
+        collected 中无数据时回落到 get_scalar 查询。
         支持: ${number("指标名") > 0}  / =0 / >=N / <N 等
         无法解析时默认返回 True（展示）。
         """
@@ -124,7 +127,21 @@ class SqlExecutor:
         operator    = m.group(2)
         threshold   = m.group(3).strip()
 
-        scalar = self.get_scalar(metric_name, client)
+        # 优先用已收集的查询结果
+        scalar = None
+        if collected and metric_name in collected:
+            rows = collected[metric_name]
+            if rows:
+                first_val = next(iter(rows[0].values()), None)
+                try:
+                    scalar = float(first_val)
+                except (TypeError, ValueError):
+                    pass
+            logger.debug("[SqlExecutor] condition 指标 %r 从 collected 取值: %s", metric_name, scalar)
+
+        if scalar is None:
+            scalar = self.get_scalar(metric_name, client)
+
         if scalar is None:
             logger.debug("[SqlExecutor] 条件指标 %r 无数据，默认展示", metric_name)
             return True

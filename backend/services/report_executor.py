@@ -99,38 +99,42 @@ def _process_l4(
     condition         = node.get("condition", "")
     condition_queries = node.get("condition_queries", [])
     l5_nodes          = [c for c in node.get("children", []) if c.get("level") == 5]
-    query_nodes       = [n for n in l5_nodes if n.get("name") not in condition_queries]
 
-    uncached = [n for n in query_nodes if n.get("name") not in cached_names]
-    if not uncached:
-        logger.info("[report] L4 %r 所有指标均已缓存，跳过", name)
+    # condition 指标和普通指标分开：condition 指标先查（正常显示），用结果判断条件
+    cond_l5    = [n for n in l5_nodes if n.get("name") in condition_queries]
+    regular_l5 = [n for n in l5_nodes if n.get("name") not in condition_queries]
+
+    def _run_batch(nodes: List[Dict]) -> None:
+        uncached = [n for n in nodes if n.get("name") not in cached_names]
+        if not uncached:
+            return
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+            futures = {pool.submit(_run_metric, l5, executor, on_event): l5 for l5 in uncached}
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result and result.get("rows"):
+                        collected[result["name"]] = result["rows"]
+                except Exception as e:
+                    l5 = futures[future]
+                    logger.error("[report] 查询异常 %r: %s", l5.get("name", ""), e)
+                    on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（查询异常）_\n\n"})
+
+    # ── Step 1: 查 condition 指标（正常推送到报告） ───────────────
+    _run_batch(cond_l5)
+
+    # ── Step 2: 用已收集结果评估 condition ────────────────────────
+    if condition and not executor.eval_condition(condition, client, collected):
+        logger.info("[report] 跳过 L4 %r（condition 不满足）", name)
+        for l5 in regular_l5:
+            if l5.get("name") not in cached_names:
+                on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（条件不满足，已跳过）_\n\n"})
         return
 
-    # ── condition 检查 ───────────────────────────────────────────
-    if condition:
-        if not executor.eval_condition(condition, client):
-            logger.info("[report] 跳过 L4 %r（condition 不满足）", name)
-            for l5 in uncached:
-                on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（条件不满足，已跳过）_\n\n"})
-            return
+    # ── Step 3: 查普通指标 ────────────────────────────────────────
+    _run_batch(regular_l5)
 
-    # ── 并行执行查询，即时推送，写入全局 collected ───────────────
-    with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
-        futures = {
-            pool.submit(_run_metric, l5, executor, on_event): l5
-            for l5 in uncached
-        }
-        for future in as_completed(futures):
-            try:
-                result = future.result()
-                if result and result.get("rows"):
-                    collected[result["name"]] = result["rows"]
-            except Exception as e:
-                l5 = futures[future]
-                logger.error("[report] 查询异常 %r: %s", l5.get("name", ""), e)
-                on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（查询异常）_\n\n"})
-
-    # ── L4 自身总结：用子树数据 ──────────────────────────────────
+    # ── L4 自身总结 ───────────────────────────────────────────────
     if node.get("summarySuggestion"):
         _generate_summary(node, _collect_node_data(node, collected), on_event)
 
