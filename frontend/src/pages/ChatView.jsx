@@ -38,6 +38,7 @@ function buildSkeleton(tree) {
         for (const q of (node.children || []).filter(c => c.level === 5)) {
           lines.push('**' + q.name + '**\n\n')
           lines.push('<span data-ph="' + q.name + '" class="ph-spin"></span>\n\n')
+          if (q.summarySuggestion) lines.push('> ' + q.summarySuggestion + '\n\n')
         }
         if (node.summarySuggestion) lines.push('> ' + node.summarySuggestion + '\n\n')
         lines.push('---\n\n')
@@ -45,6 +46,7 @@ function buildSkeleton(tree) {
         // L5 直接挂在根节点或 L1-L3 下，没有 L4 父节点
         lines.push('**' + node.name + '**\n\n')
         lines.push('<span data-ph="' + node.name + '" class="ph-spin"></span>\n\n')
+        if (node.summarySuggestion) lines.push('> ' + node.summarySuggestion + '\n\n')
       }
     }
   }
