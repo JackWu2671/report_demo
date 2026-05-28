@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
@@ -149,27 +149,39 @@ function buildChartOption(info) {
 export default function ReportView({ markdown, generating, chartData = {}, tableData = {} }) {
   const headings = useMemo(() => extractHeadings(markdown), [markdown])
 
+  // Refs so the components memo stays stable ([] deps) and never causes remounts.
+  // chartOptionsRef caches built option objects per chart name — stable reference
+  // means ECharts won't call setOption and won't re-animate existing charts.
+  const chartDataRef = useRef(chartData)
+  chartDataRef.current = chartData
+  const tableDataRef = useRef(tableData)
+  tableDataRef.current = tableData
+  const chartOptionsRef = useRef({})
+  for (const [name, info] of Object.entries(chartData)) {
+    if (!chartOptionsRef.current[name]) {
+      chartOptionsRef.current[name] = buildChartOption(info)
+    }
+  }
+
   const components = useMemo(() => ({
     ...HEADING_COMPONENTS,
     div: ({ node, children, ...props }) => {
       const echart = props['data-echart']
-      if (echart && chartData[echart]) {
-        const option = buildChartOption(chartData[echart])
-        if (option) {
-          return (
-            <div style={{ margin: '12px 0' }}>
-              <ReactECharts option={option} style={{ height: 280 }} />
-            </div>
-          )
-        }
+      if (echart && chartOptionsRef.current[echart]) {
+        return (
+          <div style={{ margin: '12px 0' }}>
+            <ReactECharts option={chartOptionsRef.current[echart]} style={{ height: 280 }} />
+          </div>
+        )
+      }
       }
       const table = props['data-table']
-      if (table && tableData[table]) {
-        return <PaginatedTable rows={tableData[table]} />
+      if (table && tableDataRef.current[table]) {
+        return <PaginatedTable rows={tableDataRef.current[table]} />
       }
       return <div {...props}>{children}</div>
     },
-  }), [chartData, tableData])
+  }), [])  // stable — refs give access to latest data without invalidating memo
 
   if (!markdown && !generating) {
     return (
