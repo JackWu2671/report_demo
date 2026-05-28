@@ -255,6 +255,7 @@ def _generate_summary(
     )
 
     logger.info("[report] 生成总结: %r（数据指标数: %d）", node_name, len(node_data))
+    logger.info("[report] 总结 prompt:\n%s", prompt)
     try:
         llm     = LLMService.from_env()
         summary = asyncio.run(llm.complete([{"role": "user", "content": prompt}]))
