@@ -252,6 +252,8 @@ export default function ChatView() {
               const chunk = (evt.chunk ?? '').trim()
               const replacement = chunk.split('\n').map(l => '> ' + l).join('\n') + '\n'
               setReport(prev => prev.includes(ph) ? prev.replace(ph, replacement) : prev)
+            } else if (evt.type === 'report_done') {
+              appendMsg({ role: 'success', content: '报告已生成完成，请查看右侧报告面板。' })
             }
           } catch {}
         }

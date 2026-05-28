@@ -225,6 +225,7 @@ async def _stream_report(outline_tree: dict, cached_names: set):
             break
         yield _sse(event)
 
+    yield _sse({"type": "report_done"})
     yield "data: [DONE]\n\n"
 
 
