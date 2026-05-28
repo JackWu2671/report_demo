@@ -99,36 +99,69 @@ Embedding: 64/238
 
 `data/faiss.index` 是二进制文件，**不提交到 git**（`.gitignore` 里排除了 `backend/data/`）。
 
-每次新克隆仓库或清空 data 目录后，索引文件就不存在了。为了不需要手动跑脚本，`loader.py` 在每次加载资源时先检测索引是否存在：
+每次新克隆仓库或清空 data 目录后，索引文件就不存在了。系统通过两层机制保证索引始终可用。
+
+### 检测逻辑（loader.py）
+
+`_build_index_if_missing()` 是 async 函数，每次 `load_resources()` 被调用时都会先执行检查：
 
 ```python
-# skills/_lib/loader.py  _build_index_if_missing()
+# skills/_lib/loader.py
 
-def _build_index_if_missing() -> None:
-    index_path  = os.path.join(_DATA_DIR, "faiss.index")
-    id_map_path = os.path.join(_DATA_DIR, "faiss_id_map.json")
-
-    # 两个文件都存在 → 直接返回，不重建
+async def _build_index_if_missing() -> None:
     if os.path.exists(index_path) and os.path.exists(id_map_path):
-        return
+        return  # 已存在，直接跳过
 
-    # 有一个不存在 → 自动触发构建（和 build_index.py 做的事完全一样）
-    logger.info("[Step 1] FAISS 索引不存在，开始自动构建…")
-    ...构建逻辑...
+    # 缺失 → 调 Embedding 服务批量向量化，构建并保存
+    embeddings = await emb_svc.get_embeddings_batch(texts, batch_size=32)
+    faiss_svc.build(nodes, embeddings)
     faiss_svc.save(index_path, id_map_path)
-```
 
-`load_resources()` 在每次调用时都会先执行这个检查：
-
-```python
-def load_resources():
-    _build_index_if_missing()   # ← 先检查，缺失则构建
+async def load_resources():
+    await _build_index_if_missing()  # ← 先检查，缺失则构建
     faiss_svc = FAISSService(...)
-    faiss_svc.load(...)         # 然后加载
+    await faiss_svc.load(...)
     ...
 ```
 
-触发时机：第一次有用户发问、调用检索的时候。构建完成后写入文件，后续调用不再重建。
+### 触发时机：服务器启动时（api_server.py）
+
+FastAPI 提供 `lifespan` 钩子，在服务器启动完成后立即执行初始化逻辑。`api_server.py` 在这里调用 `load_resources()`，确保索引在第一个用户请求到来之前就已就绪：
+
+```python
+# api_server.py
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        logger.info("[Startup] 检查 FAISS 索引…")
+        await load_resources()
+        logger.info("[Startup] FAISS 索引就绪")
+    except Exception as e:
+        logger.warning("[Startup] FAISS 索引初始化失败（不影响启动）: %s", e)
+    yield
+
+app = FastAPI(lifespan=lifespan)
+```
+
+启动日志示例：
+
+```
+# 索引已存在
+[Startup] 检查 FAISS 索引…
+[Startup] FAISS 索引就绪
+
+# 索引不存在，自动构建
+[Startup] 检查 FAISS 索引…
+[Step 1] FAISS 索引不存在，开始自动构建…
+Embedding: 32/238
+Embedding: 64/238
+...
+[Step 1] FAISS 索引自动构建完成，共 238 条向量
+[Startup] FAISS 索引就绪
+```
+
+如果 Embedding 服务不可用导致构建失败，只打 warning、不崩服务器，其他功能正常使用。
 
 ---
 
