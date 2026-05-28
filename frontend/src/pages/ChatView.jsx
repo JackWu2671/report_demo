@@ -31,6 +31,7 @@ function buildSkeleton(tree) {
         lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
         if (node.description) lines.push(node.description + '\n\n')
         walk(node.children)
+        if (node.summarySuggestion) lines.push('> ' + node.summarySuggestion + '\n\n')
       } else if (lv === 4) {
         lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
         if (node.description) lines.push(node.description + '\n\n')
@@ -38,6 +39,7 @@ function buildSkeleton(tree) {
           lines.push('**' + q.name + '**\n\n')
           lines.push('<span data-ph="' + q.name + '" class="ph-spin"></span>\n\n')
         }
+        if (node.summarySuggestion) lines.push('> ' + node.summarySuggestion + '\n\n')
         lines.push('---\n\n')
       } else if (lv === 5) {
         // L5 直接挂在根节点或 L1-L3 下，没有 L4 父节点
