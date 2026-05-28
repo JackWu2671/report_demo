@@ -4,6 +4,48 @@ AI 驱动的网络分析报告生成系统。用户用自然语言描述分析�
 
 ---
 
+## 快速启动
+
+### 前置条件
+
+- Python 3.10+
+- Node.js 18+
+- 可访问的 LLM 服务和 Embedding 服务
+
+### 1. 配置
+
+```bash
+# 后端环境变量
+cp backend/.env.example backend/.env
+# 编辑 .env，填写 LLM_BASE_URL、EMBEDDING_BASE_URL 等
+
+# SQL 查询 API 配置（可选，不填则使用 mock 数据）
+cp backend/config.example.yaml backend/config.yaml
+# 编辑 config.yaml，填写 base_url、operator、user_id 等
+```
+
+### 2. 启动后端
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn api_server:app --host 0.0.0.0 --port 8888 --reload
+```
+
+首次启动会自动构建 FAISS 索引（需要 Embedding 服务可用），之后直接加载。
+
+### 3. 启动前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+默认在 `http://localhost:5173` 启动，API 请求代理到 `http://localhost:8888`。
+
+---
+
 ## 目录结构
 
 ```
