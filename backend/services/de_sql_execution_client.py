@@ -253,3 +253,30 @@ class DeApiClient:
         datas    = inner.get("datas")
         logger.info("获取到 %d 条数据", len(datas) if datas else 0)
         return datas
+
+
+def setup_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    )
+
+
+def main() -> None:
+    """使用示例"""
+    setup_logging()
+
+    sql        = "SELECT neType FROM ads_aggr_unb_eval_ip_networkelement LIMIT 1"
+    table_name = "ads_aggr_unb_eval_ip_networkelement"
+
+    with DeApiClient() as client:
+        result = client.execute_sql_query(sql, table_name)
+
+    if result:
+        logger.info("查询结果: %s", result)
+    else:
+        logger.warning("未获取到数据")
+
+
+if __name__ == "__main__":
+    main()
