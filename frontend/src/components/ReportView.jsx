@@ -149,30 +149,31 @@ function buildChartOption(info) {
 export default function ReportView({ markdown, generating, chartData = {}, tableData = {} }) {
   const headings = useMemo(() => extractHeadings(markdown), [markdown])
 
-  // Refs so the components memo stays stable ([] deps) and never causes remounts.
-  // chartOptionsRef caches built option objects per chart name — stable reference
-  // means ECharts won't call setOption and won't re-animate existing charts.
+  // Refs keep components memo stable ([] deps) so ReactMarkdown never remounts
+  // existing chart/table components when new ones arrive.
   const chartDataRef = useRef(chartData)
   chartDataRef.current = chartData
   const tableDataRef = useRef(tableData)
   tableDataRef.current = tableData
-  const chartOptionsRef = useRef({})
-  for (const [name, info] of Object.entries(chartData)) {
-    if (!chartOptionsRef.current[name]) {
-      chartOptionsRef.current[name] = buildChartOption(info)
-    }
-  }
 
   const components = useMemo(() => ({
     ...HEADING_COMPONENTS,
     div: ({ node, children, ...props }) => {
       const echart = props['data-echart']
-      if (echart && chartOptionsRef.current[echart]) {
-        return (
-          <div style={{ margin: '12px 0' }}>
-            <ReactECharts option={chartOptionsRef.current[echart]} style={{ height: 280 }} />
-          </div>
-        )
+      if (echart) {
+        const info = chartDataRef.current[echart]
+        if (info) {
+          const option = buildChartOption(info)
+          if (option) {
+            return (
+              <div style={{ margin: '12px 0' }}>
+                <ReactECharts option={option} style={{ height: 280 }} />
+              </div>
+            )
+          }
+        }
+        // data not yet arrived — show a small placeholder
+        return <div style={{ height: 60, display: 'flex', alignItems: 'center', paddingLeft: 4, color: 'var(--color-text-muted)', fontSize: 12 }}>图表加载中…</div>
       }
       const table = props['data-table']
       if (table && tableDataRef.current[table]) {
@@ -180,7 +181,7 @@ export default function ReportView({ markdown, generating, chartData = {}, table
       }
       return <div {...props}>{children}</div>
     },
-  }), [])  // stable — refs give access to latest data without invalidating memo
+  }), [])  // stable — never changes reference, refs provide latest data
 
   if (!markdown && !generating) {
     return (
