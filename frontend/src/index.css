@@ -756,37 +756,35 @@ body {
   font-size: 14px;
   line-height: 1.8;
   color: var(--color-text);
-  counter-reset: h1cnt;
+  counter-reset: h2cnt;
 }
 .report-body h1 {
   font-size: 20px; font-weight: 700; margin: 0 0 16px; color: var(--color-text);
   counter-reset: h2cnt;
-  counter-increment: h1cnt;
 }
-.report-body h1::before { content: counter(h1cnt) "  "; }
 .report-body h2 {
   font-size: 17px; font-weight: 700; margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--color-border);
   counter-reset: h3cnt;
   counter-increment: h2cnt;
 }
-.report-body h2::before { content: counter(h1cnt) "." counter(h2cnt) "  "; }
+.report-body h2::before { content: counter(h2cnt) "  "; }
 .report-body h3 {
   font-size: 15px; font-weight: 600; margin: 18px 0 8px;
   counter-reset: h4cnt;
   counter-increment: h3cnt;
 }
-.report-body h3::before { content: counter(h1cnt) "." counter(h2cnt) "." counter(h3cnt) "  "; }
+.report-body h3::before { content: counter(h2cnt) "." counter(h3cnt) "  "; }
 .report-body h4 {
   font-size: 14px; font-weight: 600; margin: 14px 0 6px; color: var(--color-text-secondary);
   counter-reset: h5cnt;
   counter-increment: h4cnt;
 }
-.report-body h4::before { content: counter(h1cnt) "." counter(h2cnt) "." counter(h3cnt) "." counter(h4cnt) "  "; }
+.report-body h4::before { content: counter(h2cnt) "." counter(h3cnt) "." counter(h4cnt) "  "; }
 .report-body h5 {
   font-size: 13px; font-weight: 600; margin: 12px 0 4px; color: var(--color-text-secondary);
   counter-increment: h5cnt;
 }
-.report-body h5::before { content: counter(h1cnt) "." counter(h2cnt) "." counter(h3cnt) "." counter(h4cnt) "." counter(h5cnt) "  "; }
+.report-body h5::before { content: counter(h2cnt) "." counter(h3cnt) "." counter(h4cnt) "." counter(h5cnt) "  "; }
 .report-body p  { margin: 0 0 12px; }
 .report-body ul, .report-body ol { margin: 0 0 12px 20px; }
 .report-body li { margin-bottom: 4px; }
