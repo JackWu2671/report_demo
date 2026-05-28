@@ -49,6 +49,8 @@ class DeApiClient:
                  user_id: str = None,
                  country: str = None,
                  app_name: str = None,
+                 domain: str = None,
+                 data_type: str = None,
                  verify_ssl: bool = None,
                  timeout: int = None,
                  max_retries: int = None):
@@ -60,6 +62,8 @@ class DeApiClient:
             "user_id":     user_id,
             "country":     country,
             "app_name":    app_name,
+            "domain":      domain,
+            "data_type":   data_type,
             "verify_ssl":  verify_ssl,
             "timeout":     timeout,
             "max_retries": max_retries,
@@ -117,6 +121,8 @@ class DeApiClient:
             "user_id":     "",
             "country":     "",
             "app_name":    "",
+            "domain":      "",
+            "data_type":   "AGGR",
             "verify_ssl":  False,
             "timeout":     60,
             "max_retries": 10,
@@ -166,16 +172,20 @@ class DeApiClient:
     def _build_task_request(self, sql: str, table_name: str) -> Dict[str, Any]:
         return {
             "apiId":    "SQL_EXECUTOR",
-            "city":     self.city,
             "operator": self.operator,
+            "country":  self.country,
+            "userId":   self.user_id,
             "param": {
                 "cache": "true",
                 "param": json.dumps({
-                    "country":  self.country,
-                    "city":     self.city,
-                    "appName":  self.app_name,
-                    "operator": self.operator,
-                    "sql":      sql,
+                    "country":   self.country,
+                    "dataId":    None,
+                    "appName":   self.app_name,
+                    "domain":    self.domain,
+                    "dataType":  self.data_type,
+                    "userId":    self.user_id,
+                    "operator":  self.operator,
+                    "sql":       sql,
                     "tableName": table_name,
                 }, ensure_ascii=False),
                 "operationId": str(uuid.uuid4()),
@@ -184,8 +194,6 @@ class DeApiClient:
                 "version": "LATEST",
                 "apiId":   "SQL_EXECUTOR",
             },
-            "province": self.province,
-            "userId":   self.user_id,
         }
 
     def _do_post_request(self, url: str, data: Dict) -> Optional[requests.Response]:

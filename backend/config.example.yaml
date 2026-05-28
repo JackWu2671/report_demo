@@ -2,13 +2,13 @@
 # config.yaml 已在 .gitignore 中，不会提交到仓库
 
 api:
-  base_url: "https://<HOST>:<PORT>/rest/nmeatomapigatewayservice/open-api/v1/api-task"
-  city: ""
-  operator: ""
-  province: ""
-  user_id: ""
-  country: ""
+  base_url: "https://<HOST>:<PORT>/rest/nmeatomapigatewayservice/open-api/v1"
+  operator: ""       # 运营商代码，如 "10110"
+  country:  ""       # 国家代码，如 "10000044"
+  user_id:  ""       # 用户ID，如 "test15"
   app_name: "smart-u"
+  domain:   ""       # 业务域，如 "数通"
+  data_type: "AGGR"  # 数据类型，固定 AGGR
   verify_ssl: false
   timeout: 60
   max_retries: 10
