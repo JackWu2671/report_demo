@@ -169,9 +169,14 @@ def to_clean_json(tree: dict) -> dict:
     """
     将大纲树导出为干净 JSON，去除检索/内部字段（keywords、score 等）。
 
-    保留字段：id, name, level, description, children
+    保留字段：id, name, level, description, condition, condition_queries, summarySuggestion, children
+    缺失的通用字段补默认值，确保所有层级的节点结构一致。
     """
     _KEEP = {"id", "name", "level", "description", "condition", "condition_queries", "summarySuggestion"}
     node = {k: v for k, v in tree.items() if k in _KEEP}
+    # 补默认值：保证任意层级的节点都有这三个字段
+    node.setdefault("condition", "")
+    node.setdefault("condition_queries", [])
+    node.setdefault("summarySuggestion", "")
     node["children"] = [to_clean_json(c) for c in tree.get("children", [])]
     return node
