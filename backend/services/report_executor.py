@@ -11,7 +11,11 @@ report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件�
 并行策略：
   condition 检查仍串行（共享单一 client）；
   metric 查询用线程池并行，每个 worker 独立创建 DeApiClient；
-  所有 metric 完成后，若节点有 summarySuggestion 则调 LLM 生成总结。
+  某节点的所有后代 metric 都完成后，若该节点有 summarySuggestion 则调 LLM 生成总结。
+
+总结范围：
+  任意层级（L1~L5）节点均支持。_collect_node_data() 递归收集该节点
+  子树下所有 L5 指标的查询结果，作为总结的数据输入。
 """
 
 import asyncio
@@ -34,8 +38,10 @@ def run_report(
 ) -> None:
     cached_names = cached_names or set()
     executor = SqlExecutor()
+    # collected 贯穿全局，所有 metric 的 rows 都写入这里
+    collected: Dict[str, List] = {}
     with DeApiClient() as client:
-        _walk(outline_tree.get("children", []), client, executor, on_event, cached_names)
+        _walk(outline_tree.get("children", []), client, executor, on_event, cached_names, collected)
 
 
 def _walk(
@@ -44,14 +50,21 @@ def _walk(
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
     cached_names: set,
+    collected: Dict[str, List],
 ) -> None:
     standalone_l5 = []
     for node in nodes:
         level = node.get("level", 0)
         if level == 4:
-            _process_l4(node, client, executor, on_event, cached_names)
+            _process_l4(node, client, executor, on_event, cached_names, collected)
         elif 1 <= level <= 3:
-            _walk(node.get("children", []), client, executor, on_event, cached_names)
+            # 先递归处理所有后代
+            _walk(node.get("children", []), client, executor, on_event, cached_names, collected)
+            # 后代全部完成后，若本节点有 summarySuggestion 则生成总结
+            if node.get("summarySuggestion"):
+                node_data = _collect_node_data(node, collected)
+                if node_data:
+                    _generate_summary(node, node_data, on_event)
         elif level == 5:
             standalone_l5.append(node)
 
@@ -62,11 +75,18 @@ def _walk(
             futures = {pool.submit(_run_metric, l5, executor, on_event): l5 for l5 in uncached}
             for future in as_completed(futures):
                 try:
-                    future.result()
+                    result = future.result()
+                    if result and result.get("rows"):
+                        collected[result["name"]] = result["rows"]
                 except Exception as e:
                     l5 = futures[future]
                     logger.error("[report] 查询异常 %r: %s", l5.get("name", ""), e)
                     on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（查询异常）_\n\n"})
+
+        # 孤立 L5 节点自身的总结
+        for l5 in standalone_l5:
+            if l5.get("summarySuggestion") and l5.get("name") in collected:
+                _generate_summary(l5, {l5["name"]: collected[l5["name"]]}, on_event)
 
 
 def _process_l4(
@@ -75,6 +95,7 @@ def _process_l4(
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
     cached_names: set,
+    collected: Dict[str, List],
 ) -> None:
     name              = node.get("name", "")
     condition         = node.get("condition", "")
@@ -82,7 +103,6 @@ def _process_l4(
     l5_nodes          = [c for c in node.get("children", []) if c.get("level") == 5]
     query_nodes       = [n for n in l5_nodes if n.get("name") not in condition_queries]
 
-    # 过滤掉前端已缓存的指标，无需重新执行
     uncached = [n for n in query_nodes if n.get("name") not in cached_names]
     if not uncached:
         logger.info("[report] L4 %r 所有指标均已缓存，跳过", name)
@@ -96,8 +116,7 @@ def _process_l4(
                 on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（条件不满足，已跳过）_\n\n"})
             return
 
-    # ── 并行执行查询，即时推送，同时收集 rows ────────────────────
-    collected: Dict[str, List] = {}  # metric_name -> rows
+    # ── 并行执行查询，即时推送，写入全局 collected ───────────────
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
         futures = {
             pool.submit(_run_metric, l5, executor, on_event): l5
@@ -113,9 +132,27 @@ def _process_l4(
                 logger.error("[report] 查询异常 %r: %s", l5.get("name", ""), e)
                 on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（查询异常）_\n\n"})
 
-    # ── 所有指标完成后，有 summarySuggestion 则生成总结 ──────────
-    if node.get("summarySuggestion") and collected:
-        _generate_summary(node, collected, on_event)
+    # ── L4 自身总结：用子树数据 ──────────────────────────────────
+    if node.get("summarySuggestion"):
+        node_data = _collect_node_data(node, collected)
+        if node_data:
+            _generate_summary(node, node_data, on_event)
+
+
+def _collect_node_data(node: Dict, collected: Dict[str, List]) -> Dict[str, List]:
+    """
+    递归收集节点子树下所有 L5 指标的查询结果。
+    适用于任意层级（L1~L4）节点的总结数据准备。
+    """
+    data = {}
+    for child in node.get("children", []):
+        if child.get("level") == 5:
+            name = child.get("name", "")
+            if name in collected:
+                data[name] = collected[name]
+        else:
+            data.update(_collect_node_data(child, collected))
+    return data
 
 
 _CHART_TYPES = {"BAR", "LINE", "PIE"}
@@ -128,7 +165,7 @@ def _run_metric(
 ) -> Optional[Dict]:
     """
     在独立线程中执行单条指标查询并推送结果。每次创建自己的 DeApiClient。
-    返回 {"name": ..., "rows": [...]} 供调用方收集用于总结，失败返回 None。
+    返回 {"name": ..., "rows": [...]} 供 collected 收集，失败返回 None。
     """
     metric_name = l5.get("name", "")
     logger.info("[report] 查询: %r", metric_name)
@@ -165,32 +202,49 @@ def _run_metric(
 
 def _generate_summary(
     node: Dict,
-    collected: Dict[str, List],
+    node_data: Dict[str, List],
     on_event: Callable[[dict], None],
 ) -> None:
-    """所有指标查询完成后，调 LLM 生成节点总结并推送 report_summary 事件。"""
+    """
+    调 LLM 生成节点总结并推送 report_summary 事件。
+    node_data 是 _collect_node_data() 返回的该节点子树所有 L5 查询结果。
+    """
     from services.llm_service import LLMService
 
     node_id   = node.get("id", "")
     node_name = node.get("name", "")
 
-    # ── 拼接详细信息 ─────────────────────────────────────────────
-    lines = [f"章节名称：{node_name}"]
-    if node.get("description"):
-        lines.append(f"章节说明：{node['description']}")
-    lines.append("\n指标查询结果：")
-    for child in node.get("children", []):
-        if child.get("level") != 5:
-            continue
-        child_name = child.get("name", "")
-        lines.append(f"\n■ {child_name}")
-        rows = collected.get(child_name)
-        if rows:
-            lines.append(SqlExecutor.rows_to_markdown(rows))
+    # ── 拼接详细信息（按大纲 JSON 中的子节点顺序展示）────────────
+    def _render_node(n: Dict, depth: int = 0) -> List[str]:
+        lines = []
+        indent = "  " * depth
+        level  = n.get("level", 0)
+        name   = n.get("name", "")
+        if level == 5:
+            lines.append(f"{indent}■ {name}")
+            rows = node_data.get(name)
+            if rows:
+                for row_line in SqlExecutor.rows_to_markdown(rows).splitlines():
+                    lines.append(f"{indent}{row_line}")
+            else:
+                lines.append(f"{indent}  （暂无数据）")
         else:
-            lines.append("（暂无数据）")
+            if depth > 0:  # 根节点自身已在外层写了章节名/说明
+                lines.append(f"\n{indent}【{name}】")
+                if n.get("description"):
+                    lines.append(f"{indent}{n['description']}")
+            for child in n.get("children", []):
+                lines.extend(_render_node(child, depth + 1))
+        return lines
 
-    detail = "\n".join(lines)
+    detail_lines = [f"章节名称：{node_name}"]
+    if node.get("description"):
+        detail_lines.append(f"章节说明：{node['description']}")
+    detail_lines.append("\n指标查询结果：")
+    for child in node.get("children", []):
+        detail_lines.extend(_render_node(child, depth=0))
+
+    detail            = "\n".join(detail_lines)
     summary_suggestion = node["summarySuggestion"]
 
     prompt = (
@@ -200,7 +254,7 @@ def _generate_summary(
         "直接输出总结内容，不要解释。"
     )
 
-    logger.info("[report] 生成总结: %r", node_name)
+    logger.info("[report] 生成总结: %r（数据指标数: %d）", node_name, len(node_data))
     try:
         llm     = LLMService.from_env()
         summary = asyncio.run(llm.complete([{"role": "user", "content": prompt}]))
