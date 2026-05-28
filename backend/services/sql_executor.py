@@ -24,8 +24,9 @@ from services.de_sql_execution_client import DeApiClient
 
 logger = logging.getLogger(__name__)
 
-_KB_DIR       = os.path.join(_BACKEND_DIR, "expert_knowledge")
-_METRICS_FILE = os.path.join(_KB_DIR, "评估指标.json")
+_KB_DIR        = os.path.join(_BACKEND_DIR, "expert_knowledge")
+_METRICS_FILE  = os.path.join(_KB_DIR, "评估指标_mock.json")   # 优先用含 mock_data 的版本
+_METRICS_FALLBACK = os.path.join(_KB_DIR, "评估指标.json")
 
 
 class SqlExecutor:
@@ -48,17 +49,30 @@ class SqlExecutor:
         """
         按指标名执行 SQL，返回:
           {
-            "rows":        List[Dict],   # 原始行数据
-            "render_type": str,          # "TABLE" / "BAR" / "LINE" / None
+            "rows":        List[Dict],
+            "render_type": str,
             "col_x":       str | None,
             "col_y":       str | None,
           }
+        若记录含 mock_data 字段，直接返回缓存，不走 API。
         失败返回 None。
         """
         record = self._index.get(name)
         if not record:
             logger.warning("[SqlExecutor] 未找到指标: %r", name)
             return None
+
+        # 优先使用预先缓存的 mock_data
+        if "mock_data" in record:
+            rows = record["mock_data"]
+            if rows is None:
+                return None
+            return {
+                "rows":        rows,
+                "render_type": record.get("renderType"),
+                "col_x":       record.get("colX"),
+                "col_y":       record.get("colY"),
+            }
 
         sql, table = self._parse_sql(record)
         if not sql:
@@ -152,13 +166,16 @@ class SqlExecutor:
     # ── 内部 ──────────────────────────────────────────────────
 
     def _load(self) -> None:
-        if not os.path.exists(_METRICS_FILE):
-            logger.warning("[SqlExecutor] 找不到 %s", _METRICS_FILE)
+        path = _METRICS_FILE if os.path.exists(_METRICS_FILE) else _METRICS_FALLBACK
+        if not os.path.exists(path):
+            logger.warning("[SqlExecutor] 找不到指标文件")
             return
-        with open(_METRICS_FILE, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             records = json.load(f)
         self._index = {r["name"]: r for r in records if r.get("name")}
-        logger.info("[SqlExecutor] 加载 %d 条指标", len(self._index))
+        mock_count = sum(1 for r in records if "mock_data" in r)
+        logger.info("[SqlExecutor] 加载 %d 条指标（%d 条含 mock_data）from %s",
+                    len(self._index), mock_count, os.path.basename(path))
 
     @staticmethod
     def _parse_sql(record: Dict) -> tuple[str, str]:
