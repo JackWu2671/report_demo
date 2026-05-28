@@ -72,10 +72,10 @@ class SqlExecutor:
         sql, table = self._parse_sql(record)
         if sql:
             rows = client.execute_sql_query(sql, table)
-            if rows is not None:
+            if rows:
                 logger.info("[SqlExecutor] 真实查询成功: %r，%d 行", name, len(rows))
                 return _wrap(rows)
-            logger.warning("[SqlExecutor] 真实查询失败: %r，尝试 mock_data", name)
+            logger.warning("[SqlExecutor] 真实查询返回空结果: %r，尝试 mock_data", name)
         else:
             logger.warning("[SqlExecutor] 指标 %r 无 exec_sql，尝试 mock_data", name)
 

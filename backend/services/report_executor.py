@@ -62,9 +62,7 @@ def _walk(
             _walk(node.get("children", []), client, executor, on_event, cached_names, collected)
             # 后代全部完成后，若本节点有 summarySuggestion 则生成总结
             if node.get("summarySuggestion"):
-                node_data = _collect_node_data(node, collected)
-                if node_data:
-                    _generate_summary(node, node_data, on_event)
+                _generate_summary(node, _collect_node_data(node, collected), on_event)
         elif level == 5:
             standalone_l5.append(node)
 
@@ -134,9 +132,7 @@ def _process_l4(
 
     # ── L4 自身总结：用子树数据 ──────────────────────────────────
     if node.get("summarySuggestion"):
-        node_data = _collect_node_data(node, collected)
-        if node_data:
-            _generate_summary(node, node_data, on_event)
+        _generate_summary(node, _collect_node_data(node, collected), on_event)
 
 
 def _collect_node_data(node: Dict, collected: Dict[str, List]) -> Dict[str, List]:
