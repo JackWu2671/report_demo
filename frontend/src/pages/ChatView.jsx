@@ -31,22 +31,22 @@ function buildSkeleton(tree) {
         lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
         if (node.description) lines.push(node.description + '\n\n')
         walk(node.children)
-        if (node.summarySuggestion) lines.push('> 总结\n> \n<span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
+        if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
       } else if (lv === 4) {
         lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
         if (node.description) lines.push(node.description + '\n\n')
         for (const q of (node.children || []).filter(c => c.level === 5)) {
           lines.push('**' + q.name + '**\n\n')
           lines.push('<span data-ph="' + q.name + '" class="ph-spin"></span>\n\n')
-          if (q.summarySuggestion) lines.push('> 总结\n> \n<span data-ph-summary="' + q.id + '" class="ph-spin"></span>\n\n')
+          if (q.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + q.id + '" class="ph-spin"></span>\n\n')
         }
-        if (node.summarySuggestion) lines.push('> 总结\n> \n<span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
+        if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
         lines.push('---\n\n')
       } else if (lv === 5) {
         // L5 直接挂在根节点或 L1-L3 下，没有 L4 父节点
         lines.push('**' + node.name + '**\n\n')
         lines.push('<span data-ph="' + node.name + '" class="ph-spin"></span>\n\n')
-        if (node.summarySuggestion) lines.push('> 总结\n> \n<span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
+        if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
       }
     }
   }
@@ -247,7 +247,8 @@ export default function ChatView() {
                 setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk) : prev)
               }
             } else if (evt.type === 'report_summary') {
-              const ph = '<span data-ph-summary="' + evt.node_id + '" class="ph-spin"></span>'
+              const span = '<span data-ph-summary="' + evt.node_id + '" class="ph-spin"></span>'
+              const ph = '> ' + span  // span lives on a '> ' line inside the blockquote
               const chunk = (evt.chunk ?? '').trim()
               const replacement = chunk.split('\n').map(l => '> ' + l).join('\n') + '\n'
               setReport(prev => prev.includes(ph) ? prev.replace(ph, replacement) : prev)
