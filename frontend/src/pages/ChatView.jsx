@@ -406,7 +406,7 @@ case 'saved':
 
         {messages.length === 0 && (
           <div className="preset-questions">
-            {['OLT现网评估分析', 'WiFi7升级怎么引导'].map(q => (
+            {['OLT现网评估分析', 'WiFi7升级怎么引导', '50GPON价值站点分析'].map(q => (
               <button
                 key={q}
                 className="preset-question-btn"
