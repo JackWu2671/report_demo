@@ -54,19 +54,14 @@ class SqlExecutor:
             "col_x":       str | None,
             "col_y":       str | None,
           }
-        若记录含 mock_data 字段，直接返回缓存，不走 API。
-        失败返回 None。
+        优先走真实 API；查询失败或无数据时回落到 mock_data；都没有返回 None。
         """
         record = self._index.get(name)
         if not record:
             logger.warning("[SqlExecutor] 未找到指标: %r", name)
             return None
 
-        # 优先使用预先缓存的 mock_data
-        if "mock_data" in record:
-            rows = record["mock_data"]
-            if rows is None:
-                return None
+        def _wrap(rows):
             return {
                 "rows":        rows,
                 "render_type": record.get("renderType"),
@@ -75,20 +70,22 @@ class SqlExecutor:
             }
 
         sql, table = self._parse_sql(record)
-        if not sql:
-            logger.warning("[SqlExecutor] 指标 %r 无 exec_sql", name)
-            return None
+        if sql:
+            rows = client.execute_sql_query(sql, table)
+            if rows is not None:
+                logger.info("[SqlExecutor] 真实查询成功: %r，%d 行", name, len(rows))
+                return _wrap(rows)
+            logger.warning("[SqlExecutor] 真实查询失败: %r，尝试 mock_data", name)
+        else:
+            logger.warning("[SqlExecutor] 指标 %r 无 exec_sql，尝试 mock_data", name)
 
-        rows = client.execute_sql_query(sql, table)
-        if rows is None:
-            return None
+        # 回落到 mock_data
+        mock = record.get("mock_data")
+        if mock is not None:
+            logger.info("[SqlExecutor] 使用 mock_data: %r", name)
+            return _wrap(mock)
 
-        return {
-            "rows":        rows,
-            "render_type": record.get("renderType"),
-            "col_x":       record.get("colX"),
-            "col_y":       record.get("colY"),
-        }
+        return None
 
     def get_scalar(self, name: str, client: DeApiClient) -> Optional[float]:
         """
