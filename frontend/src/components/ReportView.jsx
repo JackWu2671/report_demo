@@ -15,9 +15,10 @@ function extractHeadings(markdown) {
     const m = line.match(/^(#{1,4})\s+(.+)/)
     if (m) headings.push({ level: m[1].length, text: m[2].trim() })
   }
+  const minLevel = headings.length ? Math.min(...headings.map(h => h.level)) : 1
   const counters = [0, 0, 0, 0]
   return headings.map(h => {
-    const idx = h.level - 1
+    const idx = h.level - minLevel
     counters[idx]++
     for (let i = idx + 1; i < 4; i++) counters[i] = 0
     return { ...h, number: counters.slice(0, idx + 1).join('.') }
