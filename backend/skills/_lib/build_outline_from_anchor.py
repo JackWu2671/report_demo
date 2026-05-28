@@ -35,7 +35,7 @@ async def build_outline_from_anchor(anchor_id: str) -> dict:
     """
     logger.info("[Tool:build_outline_from_anchor] anchor_id=%r", anchor_id)
 
-    _, nodes_dict, children_map = load_resources()
+    _, nodes_dict, children_map = await load_resources()
 
     try:
         tree = build_subtree(anchor_id, nodes_dict, children_map)

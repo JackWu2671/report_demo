@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # ── apply_patch ───────────────────────────────────────────────
 
-def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
+async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
     """
     将 patch 操作列表应用到大纲树，返回 (新树, 跳过/失败的操作列表)。
 
@@ -42,10 +42,10 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
     # 懒加载 KB 资源，仅当存在 add_node op 时才加载
     _kb_cache: dict | None = None
 
-    def _get_kb():
+    async def _get_kb():
         nonlocal _kb_cache
         if _kb_cache is None:
-            _, nd, cm = load_resources()
+            _, nd, cm = await load_resources()
             _kb_cache = {"nodes_dict": nd, "children_map": cm}
         return _kb_cache
 
@@ -67,7 +67,7 @@ def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[dict]]:
         elif op_name == "add_node":
             subtree = op.get("subtree")
             if not subtree:
-                kb = _get_kb()
+                kb = await _get_kb()
                 subtree = _build_kb_subtree(node_id, kb["nodes_dict"], kb["children_map"])
             if not subtree:
                 msg = f"节点 {node_id} 在知识图谱中不存在"

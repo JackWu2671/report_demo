@@ -153,7 +153,7 @@ async def search_graph_tree(question: str) -> tuple[list[dict], list[dict]]:
     Returns:
         根节点列表（通常 1～3 个），每个根节点下挂完整子树
     """
-    faiss_svc, nodes_dict, children_map = load_resources()
+    faiss_svc, nodes_dict, children_map = await load_resources()
     query_embedding = await embed_query(question)
     hits = search_nodes(query_embedding, faiss_svc)
     if not hits:
