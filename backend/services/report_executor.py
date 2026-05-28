@@ -187,6 +187,13 @@ def _run_metric(
             "col_y":       result.get("col_y") or "",
             "rows":        dict_rows,
         })
+    elif render_type == "TABLE" and dict_rows:
+        on_event({
+            "type":        "report_metric",
+            "name":        metric_name,
+            "render_type": "TABLE",
+            "rows":        dict_rows,
+        })
     else:
         on_event({"type": "report_metric", "name": metric_name, "chunk": SqlExecutor.rows_to_markdown(dict_rows or rows) + "\n\n"})
 

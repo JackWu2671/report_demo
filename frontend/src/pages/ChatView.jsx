@@ -71,6 +71,7 @@ export default function ChatView() {
   const [reportTab, setReportTab] = useState('view') // 'view' | 'skeleton' | 'md'
   const [generatingReport, setGeneratingReport] = useState(false)
   const [chartData, setChartData] = useState({}) // name → {render_type, col_x, col_y, rows}
+  const [tableData, setTableData] = useState({}) // name → rows[]
   const metricCacheRef = useRef({}) // name → chunk/placeholder，跨次生成缓存
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
@@ -92,6 +93,7 @@ export default function ChatView() {
     setReportTab('view')
     metricCacheRef.current = {}
     setChartData({})
+    setTableData({})
 
     fetch('/api/session', {
       method: 'POST',
@@ -232,6 +234,11 @@ export default function ChatView() {
                 const info = { render_type: evt.render_type, col_x: evt.col_x, col_y: evt.col_y, rows: evt.rows }
                 setChartData(prev => ({ ...prev, [evt.name]: info }))
                 const placeholder = `<div data-echart="${evt.name}"></div>\n\n`
+                metricCacheRef.current[evt.name] = placeholder
+                setReport(prev => prev.includes(ph) ? prev.replace(ph, placeholder) : prev)
+              } else if (evt.render_type === 'TABLE' && evt.rows?.length) {
+                setTableData(prev => ({ ...prev, [evt.name]: evt.rows }))
+                const placeholder = `<div data-table="${evt.name}"></div>\n\n`
                 metricCacheRef.current[evt.name] = placeholder
                 setReport(prev => prev.includes(ph) ? prev.replace(ph, placeholder) : prev)
               } else {
@@ -525,7 +532,7 @@ case 'saved':
             </div>
             <div className="outline-panel__body">
               {reportTab === 'view' && (
-                <ReportView markdown={report} generating={generatingReport} chartData={chartData} />
+                <ReportView markdown={report} generating={generatingReport} chartData={chartData} tableData={tableData} />
               )}
               {reportTab === 'md' && (
                 <pre className="outline-raw">{report || '（暂无数据）'}</pre>

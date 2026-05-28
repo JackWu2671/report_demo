@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
@@ -37,6 +37,71 @@ const HEADING_COMPONENTS = {
 
 const INDENT = { 1: 0, 2: 10, 3: 18, 4: 26 }
 const TOC_COLOR = { 1: '#6c5ce7', 2: '#2563eb', 3: '#00b894', 4: '#e17055' }
+
+const PAGE_SIZE = 20
+
+function PaginatedTable({ rows }) {
+  const [page, setPage] = useState(0)
+  if (!rows || !rows.length) return null
+
+  const headers = Object.keys(rows[0])
+  const totalPages = Math.ceil(rows.length / PAGE_SIZE)
+  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  return (
+    <div style={{ margin: '8px 0' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
+          <thead>
+            <tr>
+              {headers.map(h => (
+                <th key={h} style={{
+                  border: '1px solid var(--color-border)',
+                  padding: '6px 12px',
+                  background: 'var(--color-bg-secondary)',
+                  textAlign: 'left',
+                  whiteSpace: 'nowrap',
+                  fontWeight: 600,
+                }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.map((row, i) => (
+              <tr key={i} style={{ background: i % 2 === 0 ? 'var(--color-bg)' : 'var(--color-bg-secondary)' }}>
+                {headers.map(h => (
+                  <td key={h} style={{
+                    border: '1px solid var(--color-border)',
+                    padding: '5px 12px',
+                    maxWidth: 320,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>{String(row[h] ?? '')}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>
+          <button
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page === 0}
+            style={{ padding: '3px 12px', cursor: page === 0 ? 'default' : 'pointer', opacity: page === 0 ? 0.4 : 1 }}
+          >‹ 上一页</button>
+          <span>第 {page + 1} / {totalPages} 页（共 {rows.length} 行）</span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={page === totalPages - 1}
+            style={{ padding: '3px 12px', cursor: page === totalPages - 1 ? 'default' : 'pointer', opacity: page === totalPages - 1 ? 0.4 : 1 }}
+          >下一页 ›</button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function buildChartOption(info) {
   const { render_type, col_x, col_y, rows } = info
@@ -81,15 +146,15 @@ function buildChartOption(info) {
   }
 }
 
-export default function ReportView({ markdown, generating, chartData = {} }) {
+export default function ReportView({ markdown, generating, chartData = {}, tableData = {} }) {
   const headings = useMemo(() => extractHeadings(markdown), [markdown])
 
   const components = useMemo(() => ({
     ...HEADING_COMPONENTS,
     div: ({ node, children, ...props }) => {
-      const name = props['data-echart']
-      if (name && chartData[name]) {
-        const option = buildChartOption(chartData[name])
+      const echart = props['data-echart']
+      if (echart && chartData[echart]) {
+        const option = buildChartOption(chartData[echart])
         if (option) {
           return (
             <div style={{ margin: '12px 0' }}>
@@ -98,9 +163,13 @@ export default function ReportView({ markdown, generating, chartData = {} }) {
           )
         }
       }
+      const table = props['data-table']
+      if (table && tableData[table]) {
+        return <PaginatedTable rows={tableData[table]} />
+      }
       return <div {...props}>{children}</div>
     },
-  }), [chartData])
+  }), [chartData, tableData])
 
   if (!markdown && !generating) {
     return (
