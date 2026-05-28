@@ -174,7 +174,6 @@ export default function ReportView({ markdown, generating, chartData = {}, table
           </div>
         )
       }
-      }
       const table = props['data-table']
       if (table && tableDataRef.current[table]) {
         return <PaginatedTable rows={tableDataRef.current[table]} />
