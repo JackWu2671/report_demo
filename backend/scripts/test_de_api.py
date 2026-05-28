@@ -5,7 +5,17 @@ test_de_api.py — 测试 DeApiClient 能否正常查询数据
 用法:
   python3 backend/scripts/test_de_api.py
   python3 backend/scripts/test_de_api.py --sql "SELECT neType FROM ... LIMIT 5" --table "..."
-  python3 backend/scripts/test_de_api.py --metric "AEC覆盖用户数"
+  python3 backend/scripts/test_de_api.py --metric "OLT总数"
+  python3 backend/scripts/test_de_api.py --metric "OLT槽位利用率分布"
+
+示例输出（--metric "OLT总数"）:
+  [1] {"OLT总数": "1602"}
+
+示例输出（--metric "OLT槽位利用率分布"）:
+  [1] {"档位": "低(<20%)", "设备数量": "399"}
+  [2] {"档位": "中(20%~50%)", "设备数量": "274"}
+  [3] {"档位": "中高(50%~70%)", "设备数量": "326"}
+  [4] {"档位": "高(>=70%)", "设备数量": "736"}
 
 前置条件:
   backend/config.yaml 已按 config.example.yaml 填写完整
