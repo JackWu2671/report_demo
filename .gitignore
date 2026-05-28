@@ -21,6 +21,7 @@ backend/*.faiss
 backend/*.index
 backend/*.pkl
 backend/*.bin
+backend/data/
 
 # 模板（用户本地数据）
 backend/templates/
