@@ -172,9 +172,6 @@ def _process_l4(
         cond_data = {n: collected.get(n, []) for n in condition_queries}
         if not _eval_condition_llm(node, cond_data):
             logger.info("[report] 跳过 L4 %r（LLM 判断 condition 不满足）", name)
-            for l5 in regular_l5:
-                if l5.get("name") not in cached_names:
-                    on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（条件不满足，已跳过）_\n\n"})
             return
 
     # ── Step 3: 查普通指标 ────────────────────────────────────────
