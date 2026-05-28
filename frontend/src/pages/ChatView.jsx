@@ -56,7 +56,7 @@ function buildSkeleton(tree) {
 
 export default function ChatView() {
   const [messages, setMessages] = useState([])
-  const [input, setInput] = useState('OLT现网评估分析')
+  const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [outline, setOutline] = useState('')
   const [quickReplies, setQuickReplies] = useState([])
@@ -404,6 +404,19 @@ case 'saved':
           </div>
         )}
 
+        {messages.length === 0 && (
+          <div className="preset-questions">
+            {['OLT现网评估分析', 'WiFi7升级怎么引导'].map(q => (
+              <button
+                key={q}
+                className="preset-question-btn"
+                onClick={() => setInput(q)}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
         <QueryInput
           value={input}
           onChange={setInput}
