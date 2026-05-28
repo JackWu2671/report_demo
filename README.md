@@ -28,7 +28,7 @@ cp backend/config.example.yaml backend/config.yaml
 
 ```bash
 cd backend
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 uvicorn api_server:app --host 0.0.0.0 --port 8888 --reload
 ```
 
