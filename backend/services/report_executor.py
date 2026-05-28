@@ -187,11 +187,8 @@ def _run_metric(
             "col_y":       result.get("col_y") or "",
             "rows":        dict_rows,
         })
-    elif len(dict_rows) == 1 and len(dict_rows[0]) == 1:
-        val = next(iter(dict_rows[0].values()))
-        on_event({"type": "report_metric", "name": metric_name, "chunk": f"{val}\n\n"})
     else:
-        on_event({"type": "report_metric", "name": metric_name, "chunk": SqlExecutor.rows_to_markdown(rows) + "\n\n"})
+        on_event({"type": "report_metric", "name": metric_name, "chunk": SqlExecutor.rows_to_markdown(dict_rows or rows) + "\n\n"})
 
     return {"name": metric_name, "rows": dict_rows or rows}
 
