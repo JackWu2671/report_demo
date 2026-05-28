@@ -87,6 +87,50 @@ def _walk(
                 _generate_summary(l5, {l5["name"]: collected[l5["name"]]}, on_event)
 
 
+def _eval_condition_llm(node: Dict, cond_data: Dict[str, List]) -> bool:
+    """
+    调 LLM 判断 L4 节点是否有必要展示。
+
+    cond_data: condition_queries 的实际查询结果（可能为空列表）。
+    返回 True 表示展示，False 表示跳过；LLM 调用失败时默认返回 True。
+    """
+    from services.llm_service import LLMService
+
+    node_name = node.get("name", "")
+    condition = node.get("condition", "")
+
+    # 构建数据描述
+    data_lines = []
+    for metric_name, rows in cond_data.items():
+        data_lines.append(f"■ {metric_name}")
+        if rows:
+            data_lines.append(SqlExecutor.rows_to_markdown(rows))
+        else:
+            data_lines.append("  （未查询到数据）")
+    data_str = "\n".join(data_lines) if data_lines else "（无条件查询数据）"
+
+    prompt = (
+        f"你是报告生成助手，请判断以下报告章节是否有必要展示给用户。\n\n"
+        f"【章节名称】{node_name}\n"
+        f"【展示条件】{condition}\n"
+        f"【条件指标查询结果】\n{data_str}\n\n"
+        f"请综合考虑展示条件和实际查询结果（包括数据为空的情况），"
+        f"判断该章节是否应该展示。\n"
+        f"只回答 true 或 false，不要解释。"
+    )
+
+    logger.info("[report] LLM 判断 L4 %r condition（条件指标数: %d）", node_name, len(cond_data))
+    try:
+        llm      = LLMService.from_env()
+        response = asyncio.run(llm.complete([{"role": "user", "content": prompt}]))
+        result   = response.strip().lower().startswith("true")
+        logger.info("[report] LLM condition 判断 %r → %s", node_name, result)
+        return result
+    except Exception as e:
+        logger.error("[report] LLM condition 判断失败 %r: %s，默认展示", node_name, e)
+        return True
+
+
 def _process_l4(
     node: Dict,
     client: DeApiClient,
@@ -123,13 +167,15 @@ def _process_l4(
     # ── Step 1: 查 condition 指标（正常推送到报告） ───────────────
     _run_batch(cond_l5)
 
-    # ── Step 2: 用已收集结果评估 condition ────────────────────────
-    if condition and not executor.eval_condition(condition, client, collected):
-        logger.info("[report] 跳过 L4 %r（condition 不满足）", name)
-        for l5 in regular_l5:
-            if l5.get("name") not in cached_names:
-                on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（条件不满足，已跳过）_\n\n"})
-        return
+    # ── Step 2: LLM 判断 condition ───────────────────────────────
+    if condition:
+        cond_data = {n: collected.get(n, []) for n in condition_queries}
+        if not _eval_condition_llm(node, cond_data):
+            logger.info("[report] 跳过 L4 %r（LLM 判断 condition 不满足）", name)
+            for l5 in regular_l5:
+                if l5.get("name") not in cached_names:
+                    on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（条件不满足，已跳过）_\n\n"})
+            return
 
     # ── Step 3: 查普通指标 ────────────────────────────────────────
     _run_batch(regular_l5)
