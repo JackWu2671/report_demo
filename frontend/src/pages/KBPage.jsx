@@ -154,6 +154,18 @@ function KBCard({ node, map }) {
           </div>
         )}
 
+        {node.summarySuggestion && (
+          <div style={{
+            marginTop: 6, fontSize: 11,
+            padding: '4px 8px', borderRadius: 4,
+            background: '#f0fdf4', color: '#15803d',
+            border: '1px solid #bbf7d0',
+          }}>
+            <span style={{ opacity: 0.6, fontSize: 10, marginRight: 4 }}>总结</span>
+            {node.summarySuggestion}
+          </div>
+        )}
+
         {node.condition && (
           <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
             <div style={{
