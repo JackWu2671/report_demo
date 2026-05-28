@@ -16,9 +16,13 @@ function extractHeadings(markdown) {
     if (m) headings.push({ level: m[1].length, text: m[2].trim() })
   }
   const minLevel = headings.length ? Math.min(...headings.map(h => h.level)) : 1
+  // 最浅层级只出现一次时视为报告总标题，从下一级开始编号
+  const minCount = headings.filter(h => h.level === minLevel).length
+  const baseLevel = minCount === 1 ? minLevel + 1 : minLevel
   const counters = [0, 0, 0, 0]
   return headings.map(h => {
-    const idx = h.level - minLevel
+    if (h.level < baseLevel) return { ...h, number: '' }
+    const idx = h.level - baseLevel
     counters[idx]++
     for (let i = idx + 1; i < 4; i++) counters[i] = 0
     return { ...h, number: counters.slice(0, idx + 1).join('.') }
