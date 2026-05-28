@@ -42,12 +42,28 @@ def _walk(
     on_event: Callable[[dict], None],
     cached_names: set,
 ) -> None:
+    standalone_l5 = []
     for node in nodes:
         level = node.get("level", 0)
         if level == 4:
             _process_l4(node, client, executor, on_event, cached_names)
         elif 1 <= level <= 3:
             _walk(node.get("children", []), client, executor, on_event, cached_names)
+        elif level == 5:
+            standalone_l5.append(node)
+
+    # 没有 L4 父节点的孤立 L5 节点，直接并行执行（无 condition 检查）
+    if standalone_l5:
+        uncached = [n for n in standalone_l5 if n.get("name") not in cached_names]
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+            futures = {pool.submit(_run_metric, l5, executor, on_event): l5 for l5 in uncached}
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    l5 = futures[future]
+                    logger.error("[report] 查询异常 %r: %s", l5.get("name", ""), e)
+                    on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（查询异常）_\n\n"})
 
 
 def _process_l4(

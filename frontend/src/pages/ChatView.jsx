@@ -39,6 +39,10 @@ function buildSkeleton(tree) {
           lines.push('<span data-ph="' + q.name + '" class="ph-spin"></span>\n\n')
         }
         lines.push('---\n\n')
+      } else if (lv === 5) {
+        // L5 直接挂在根节点或 L1-L3 下，没有 L4 父节点
+        lines.push('**' + node.name + '**\n\n')
+        lines.push('<span data-ph="' + node.name + '" class="ph-spin"></span>\n\n')
       }
     }
   }
