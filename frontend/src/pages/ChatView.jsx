@@ -56,7 +56,7 @@ function buildSkeleton(tree) {
 
 export default function ChatView() {
   const [messages, setMessages] = useState([])
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState('OLT现网评估分析')
   const [streaming, setStreaming] = useState(false)
   const [outline, setOutline] = useState('')
   const [quickReplies, setQuickReplies] = useState([])
