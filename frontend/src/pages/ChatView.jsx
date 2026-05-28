@@ -239,6 +239,10 @@ export default function ChatView() {
                 metricCacheRef.current[evt.name] = chunk
                 setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk) : prev)
               }
+            } else if (evt.type === 'report_summary') {
+              const ph = '<span data-ph-summary="' + evt.node_id + '" class="ph-spin"></span>'
+              const chunk = evt.chunk ?? ''
+              setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk) : prev)
             }
           } catch {}
         }

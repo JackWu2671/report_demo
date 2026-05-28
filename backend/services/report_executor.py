@@ -5,16 +5,19 @@ report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件�
 本模块只负责执行查询并推送每条指标的数据，不再推送标题文本。
 
 事件格式：
-  {"type": "report_metric",  "name": str, "chunk": str}   — 单条指标数据
+  {"type": "report_metric",  "name": str, "chunk": str}         — 单条指标数据
+  {"type": "report_summary", "node_id": str, "chunk": str}      — 节点总结（LLM 生成）
 
 并行策略：
   condition 检查仍串行（共享单一 client）；
-  metric 查询用线程池并行，每个 worker 独立创建 DeApiClient。
+  metric 查询用线程池并行，每个 worker 独立创建 DeApiClient；
+  所有 metric 完成后，若节点有 summarySuggestion 则调 LLM 生成总结。
 """
 
+import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 from services.de_sql_execution_client import DeApiClient
 from services.sql_executor import SqlExecutor
@@ -93,7 +96,8 @@ def _process_l4(
                 on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（条件不满足，已跳过）_\n\n"})
             return
 
-    # ── 并行执行查询，即时推送 ────────────────────────────────────
+    # ── 并行执行查询，即时推送，同时收集 rows ────────────────────
+    collected: Dict[str, List] = {}  # metric_name -> rows
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
         futures = {
             pool.submit(_run_metric, l5, executor, on_event): l5
@@ -101,11 +105,17 @@ def _process_l4(
         }
         for future in as_completed(futures):
             try:
-                future.result()
+                result = future.result()
+                if result and result.get("rows"):
+                    collected[result["name"]] = result["rows"]
             except Exception as e:
                 l5 = futures[future]
                 logger.error("[report] 查询异常 %r: %s", l5.get("name", ""), e)
                 on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（查询异常）_\n\n"})
+
+    # ── 所有指标完成后，有 summarySuggestion 则生成总结 ──────────
+    if node.get("summarySuggestion") and collected:
+        _generate_summary(node, collected, on_event)
 
 
 _CHART_TYPES = {"BAR", "LINE", "PIE"}
@@ -115,8 +125,11 @@ def _run_metric(
     l5: Dict,
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
-) -> None:
-    """在独立线程中执行单条指标查询并推送结果。每次创建自己的 DeApiClient。"""
+) -> Optional[Dict]:
+    """
+    在独立线程中执行单条指标查询并推送结果。每次创建自己的 DeApiClient。
+    返回 {"name": ..., "rows": [...]} 供调用方收集用于总结，失败返回 None。
+    """
     metric_name = l5.get("name", "")
     logger.info("[report] 查询: %r", metric_name)
 
@@ -125,18 +138,17 @@ def _run_metric(
 
     if not result or not result.get("rows"):
         on_event({"type": "report_metric", "name": metric_name, "chunk": "_（暂无数据）_\n\n"})
-        return
+        return None
 
     rows = result["rows"]
     dict_rows = [r for r in rows if isinstance(r, dict)]
     render_type = (result.get("render_type") or "").upper()
 
     if render_type in _CHART_TYPES and dict_rows:
-        # 图表类型：带上原始行数据，前端负责渲染
         on_event({
             "type":        "report_metric",
             "name":        metric_name,
-            "chunk":       SqlExecutor.rows_to_markdown(dict_rows) + "\n\n",  # 降级文本
+            "chunk":       SqlExecutor.rows_to_markdown(dict_rows) + "\n\n",
             "render_type": render_type,
             "col_x":       result.get("col_x") or "",
             "col_y":       result.get("col_y") or "",
@@ -147,3 +159,53 @@ def _run_metric(
         on_event({"type": "report_metric", "name": metric_name, "chunk": f"{val}\n\n"})
     else:
         on_event({"type": "report_metric", "name": metric_name, "chunk": SqlExecutor.rows_to_markdown(rows) + "\n\n"})
+
+    return {"name": metric_name, "rows": dict_rows or rows}
+
+
+def _generate_summary(
+    node: Dict,
+    collected: Dict[str, List],
+    on_event: Callable[[dict], None],
+) -> None:
+    """所有指标查询完成后，调 LLM 生成节点总结并推送 report_summary 事件。"""
+    from services.llm_service import LLMService
+
+    node_id   = node.get("id", "")
+    node_name = node.get("name", "")
+
+    # ── 拼接详细信息 ─────────────────────────────────────────────
+    lines = [f"章节名称：{node_name}"]
+    if node.get("description"):
+        lines.append(f"章节说明：{node['description']}")
+    lines.append("\n指标查询结果：")
+    for child in node.get("children", []):
+        if child.get("level") != 5:
+            continue
+        child_name = child.get("name", "")
+        lines.append(f"\n■ {child_name}")
+        rows = collected.get(child_name)
+        if rows:
+            lines.append(SqlExecutor.rows_to_markdown(rows))
+        else:
+            lines.append("（暂无数据）")
+
+    detail = "\n".join(lines)
+    summary_suggestion = node["summarySuggestion"]
+
+    prompt = (
+        f"【详细信息】\n{detail}\n\n"
+        f"【总结建议规则】\n{summary_suggestion}\n\n"
+        "请严格按照总结建议规则的格式，用上方真实数据中的具体数字替换其中的 XX，"
+        "直接输出总结内容，不要解释。"
+    )
+
+    logger.info("[report] 生成总结: %r", node_name)
+    try:
+        llm     = LLMService.from_env()
+        summary = asyncio.run(llm.complete([{"role": "user", "content": prompt}]))
+        on_event({"type": "report_summary", "node_id": node_id, "chunk": summary + "\n\n"})
+        logger.info("[report] 总结完成: %r", node_name)
+    except Exception as e:
+        logger.error("[report] 总结生成失败 %r: %s", node_name, e)
+        on_event({"type": "report_summary", "node_id": node_id, "chunk": "_（总结生成失败）_\n\n"})
