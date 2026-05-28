@@ -15,7 +15,13 @@ function extractHeadings(markdown) {
     const m = line.match(/^(#{1,4})\s+(.+)/)
     if (m) headings.push({ level: m[1].length, text: m[2].trim() })
   }
-  return headings
+  const counters = [0, 0, 0, 0]
+  return headings.map(h => {
+    const idx = h.level - 1
+    counters[idx]++
+    for (let i = idx + 1; i < 4; i++) counters[i] = 0
+    return { ...h, number: counters.slice(0, idx + 1).join('.') }
+  })
 }
 
 function headingComponent(level) {
@@ -238,6 +244,7 @@ export default function ReportView({ markdown, generating, chartData = {}, table
                 e.currentTarget.style.background = 'transparent'
               }}
             >
+              <span style={{ color: TOC_COLOR[h.level], marginRight: 5, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{h.number}</span>
               {h.text}
             </a>
           ))}
