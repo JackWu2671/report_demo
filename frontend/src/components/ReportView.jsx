@@ -167,7 +167,7 @@ export default function ReportView({ markdown, generating, chartData = {}, table
           if (option) {
             return (
               <div style={{ margin: '12px 0' }}>
-                <ReactECharts option={option} style={{ height: 280 }} />
+                <ReactECharts key={echart} option={option} notMerge={true} style={{ height: 280 }} />
               </div>
             )
           }
