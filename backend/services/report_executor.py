@@ -330,7 +330,7 @@ def _generate_summary(
         detail_lines.append(f"章节说明：{node['description']}")
     detail_lines.append("\n指标查询结果：")
     for child in node.get("children", []):
-        detail_lines.extend(_render_node(child, depth=0))
+        detail_lines.extend(_render_node(child, depth=1))
 
     detail            = "\n".join(detail_lines)
     summary_suggestion = node["summarySuggestion"]
