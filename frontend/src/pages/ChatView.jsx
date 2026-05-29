@@ -207,6 +207,23 @@ export default function ChatView() {
     return str.replace(ph, replacement)
   }
 
+  // 把 metric 缓存和 summary 缓存回填进 skeleton，返回已预填的报告字符串
+  function replayCaches(sk, tree) {
+    let out = sk
+    const cache = metricCacheRef.current
+    for (const [name, chunk] of Object.entries(cache)) {
+      const ph = `<span data-ph="${name}" class="ph-spin"></span>`
+      if (out.includes(ph)) out = out.replace(ph, chunk)
+    }
+    for (const [nodeId, cached] of Object.entries(summaryCacheRef.current)) {
+      const node = findNodeById((tree || outlineJson)?.children || [], nodeId)
+      if (node && cached?.key === JSON.stringify(node)) {
+        out = applySummaryChunk(out, nodeId, cached.chunk)
+      }
+    }
+    return out
+  }
+
   async function generateReport() {
     if (!outlineJson || generatingReport) return
     setGeneratingReport(true)
@@ -219,10 +236,6 @@ export default function ChatView() {
     const cache = metricCacheRef.current
     const allNames = [...sk.matchAll(/data-ph="([^"]+)"/g)].map(m => m[1])
     const cachedNames = allNames.filter(n => cache[n] !== undefined)
-    let prefilled = sk
-    for (const n of cachedNames) {
-      prefilled = prefilled.replace(`<span data-ph="${n}" class="ph-spin"></span>`, cache[n])
-    }
 
     // 预填 summary 缓存：子树 JSON 未变则直接填充，无需 LLM 重新生成
     const summaryNodes = collectSummaryNodes(outlineJson.children || [])
@@ -230,18 +243,22 @@ export default function ChatView() {
     for (const node of summaryNodes) {
       const cached = summaryCacheRef.current[node.id]
       if (cached?.key === JSON.stringify(node)) {
-        prefilled = applySummaryChunk(prefilled, node.id, cached.chunk)
         cachedSummaryIds.push(node.id)
       }
     }
 
-    setReport(prefilled)
+    setReport(replayCaches(sk, outlineJson))
 
     try {
       const res = await fetch('/api/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ outline_tree: outlineJson, cached_names: cachedNames, cached_summary_ids: cachedSummaryIds }),
+        body: JSON.stringify({
+          session_id: sessionIdRef.current,
+          outline_tree: outlineJson,
+          cached_names: cachedNames,
+          cached_summary_ids: cachedSummaryIds,
+        }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -295,6 +312,15 @@ export default function ChatView() {
               if (node) summaryCacheRef.current[evt.node_id] = { key: JSON.stringify(node), chunk: evt.chunk ?? '' }
             } else if (evt.type === 'report_skip') {
               appendMsg({ role: 'info', content: `「${evt.node_name}」不符合展示条件，已从报告中跳过。` })
+            } else if (evt.type === 'outline') {
+              // 条件跳过后，后端同步推送更新后的大纲，前端重建所有视图
+              const newTree = evt.outline_tree
+              setOutlineJson(newTree)
+              setOutlineMd(evt.markdown || '')
+              setOutlineLlm(evt.md_with_ids || '')
+              const newSk = buildSkeleton(newTree)
+              setSkeleton(newSk)
+              setReport(replayCaches(newSk, newTree))
             } else if (evt.type === 'report_done') {
               appendMsg({ role: 'success', content: '报告已生成完成，请查看右侧报告面板。' })
             }
