@@ -77,15 +77,14 @@ generateReport()
 
 ---
 
-## 二、报告三视图
+## 二、报告两视图
 
-报告三视图也在 `ChatView.jsx` 中，对应报告面板的三个 Tab，数据来源于后端 `/api/report` SSE 流。
+报告面板在 `ChatView.jsx` 中，对应两个 Tab，数据来源于后端 `/api/report` SSE 流。
 
 | 视图 | Tab 名称 | State 变量 | 消费者 |
 |------|---------|-----------|--------|
 | 渲染视图（view） | "报告" | `report` + `chartData` + `tableData` | 用户阅读 |
 | 源码视图（md） | "Markdown" | `report`（同上） | 调试 / 复制 |
-| 骨架视图（skeleton） | "骨架" | `skeleton` | 调试 |
 
 ### 1. 渲染视图 — `report` / `chartData` / `tableData`
 
@@ -100,26 +99,7 @@ generateReport()
 
 与渲染视图共享同一个字符串 state，只是在 "Markdown" Tab 下用 `<pre>` 直接展示原始文本，方便复制或排查占位符替换是否正确。
 
-### 3. 骨架视图 — `skeleton`
-
-报告生成开始时，前端根据 `outlineJson` 调用 `buildSkeleton(tree)` 生成一个带占位符的 Markdown 模板，并在 "骨架" Tab 展示：
-
-```markdown
-## 50GPON升级站点-套餐和超标
-
-### AEC覆盖用户数
-
-<span data-ph="AEC覆盖用户数" class="ph-spin"></span>
-
-> 总结
->
-> <span data-ph-summary="L4_018" class="ph-spin"></span>
-```
-
-`<span data-ph="指标名">` 是指标占位符，后端推送 `report_metric` 事件时替换为实际数据。  
-`<span data-ph-summary="节点ID">` 是总结占位符，后端推送 `report_summary` 事件时替换。
-
-骨架本身不变，`report` state 是在骨架基础上持续替换占位符的结果。
+**骨架说明**：`buildSkeleton(tree)` 生成的带占位符模板（`<span data-ph="...">` / `<span data-ph-summary="...">`）在内部作为局部变量使用，不再独立展示。`report` state 以骨架为初始值，随 SSE 事件持续替换占位符直到报告完成。如需调试骨架结构，在 `generateReport()` 里临时 `console.log(sk)` 即可。
 
 ---
 
@@ -144,6 +124,8 @@ generateReport()
     ├─ report_metric ──→  替换 data-ph 占位符  ─┐
     ├─ report_summary──→  替换 data-ph-summary  ─┤─→  report ──→ ReportView（"报告"Tab）
     └─ report_done   ──→  结束标记               ─┘         └──→ <pre>（"Markdown"Tab）
+
+（骨架 buildSkeleton() 结果作为局部变量，不再单独展示为 Tab）
 ```
 
 ---
@@ -154,5 +136,5 @@ generateReport()
 |---------------|------|
 | LLM 视图 ≠ 用户视图 | 用户不需要看节点 ID；大模型必须看 ID 才能引用节点 |
 | JSON 视图 ≠ 两者 | 报告生成逻辑需要遍历树结构（level、condition_queries、summarySuggestion），文本无法满足 |
-| 骨架 ≠ 最终报告 | 骨架是模板，报告是结果；调试时两个都需要看，且骨架在 `outline` 事件更新后需要重建 |
+| 骨架是内部中间产物 | 骨架是模板，`report` state 是结果；两者共享同一字符串类型，合并为一个 Tab 即可 |
 | `outlineJsonRef` 存在 | React setState 异步，同一批 SSE 事件内若需要立即读最新树（如自动触发报告），只能用 ref |

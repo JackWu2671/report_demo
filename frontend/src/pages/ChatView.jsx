@@ -61,8 +61,7 @@ export default function ChatView() {
   const [sceneMeta, setSceneMeta] = useState(null)   // {scene_name, summary, keywords, usage_conditions}
   const [rightTab, setRightTab] = useState('outline') // 'outline' | 'report'
   const [report, setReport] = useState('')
-  const [skeleton, setSkeleton] = useState('')
-  const [reportTab, setReportTab] = useState('view') // 'view' | 'skeleton' | 'md'
+  const [reportTab, setReportTab] = useState('view') // 'view' | 'md'
   const [generatingReport, setGeneratingReport] = useState(false)
   const [chartData, setChartData] = useState({}) // name → {render_type, col_x, col_y, rows}
   const [tableData, setTableData] = useState({}) // name → rows[]
@@ -86,7 +85,6 @@ export default function ChatView() {
     setQuickReplies([])
     setRightTab('outline')
     setReport('')
-    setSkeleton('')
     setReportTab('view')
     metricCacheRef.current = {}
     summaryCacheRef.current = {}
@@ -227,7 +225,6 @@ export default function ChatView() {
     if (!tree || generatingReport) return
     setGeneratingReport(true)
     const sk = buildSkeleton(tree)
-    setSkeleton(sk)
     setReportTab('view')
     setRightTab('report')
 
@@ -319,7 +316,6 @@ export default function ChatView() {
               setOutlineMd(evt.markdown || '')
               setOutlineLlm(evt.md_with_ids || '')
               const newSk = buildSkeleton(newTree)
-              setSkeleton(newSk)
               setReport(replayCaches(newSk, newTree))
             } else if (evt.type === 'report_done') {
               appendMsg({ role: 'success', content: '报告已生成完成，请查看右侧报告面板。' })
@@ -598,12 +594,11 @@ case 'saved':
           <>
             <div className="outline-panel__header">
               <span className="outline-panel__title">报告预览</span>
-              {(report || skeleton) && (
+              {report && (
                 <div className="outline-tabs">
                   {[
-                    { key: 'view',     label: '报告' },
-                    { key: 'md',       label: 'Markdown' },
-                    { key: 'skeleton', label: '骨架' },
+                    { key: 'view', label: '报告' },
+                    { key: 'md',   label: 'Markdown' },
                   ].map(tab => (
                     <button
                       key={tab.key}
@@ -622,9 +617,6 @@ case 'saved':
               )}
               {reportTab === 'md' && (
                 <pre className="outline-raw">{report || '（暂无数据）'}</pre>
-              )}
-              {reportTab === 'skeleton' && (
-                <pre className="outline-raw">{skeleton || '（暂无数据）'}</pre>
               )}
             </div>
           </>
