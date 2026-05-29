@@ -61,7 +61,33 @@ def _walk(
         if level == 4:
             _process_l4(node, client, executor, on_event, cached_names, cached_summary_ids, collected)
         elif 1 <= level <= 3:
-            # 先递归处理所有后代
+            condition         = node.get("condition", "")
+            condition_queries = node.get("condition_queries") or []
+
+            # condition 指标先查（同 L4 逻辑）
+            if condition_queries:
+                cond_l5 = _find_l5_by_names(node, set(condition_queries))
+                uncached = [n for n in cond_l5 if n.get("name") not in cached_names]
+                if uncached:
+                    with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+                        futures = {pool.submit(_run_metric, n, executor, on_event): n for n in uncached}
+                        for future in as_completed(futures):
+                            try:
+                                result = future.result()
+                                if result and result.get("rows"):
+                                    collected[result["name"]] = result["rows"]
+                            except Exception as e:
+                                n = futures[future]
+                                logger.error("[report] condition 查询异常 %r: %s", n.get("name", ""), e)
+
+            # condition 判断
+            if condition:
+                cond_data = {n: collected.get(n, []) for n in condition_queries}
+                if not _eval_condition_llm(node, cond_data):
+                    logger.info("[report] 跳过节点 %r（LLM 判断 condition 不满足）", node.get("name", ""))
+                    continue
+
+            # 递归处理所有后代
             _walk(node.get("children", []), client, executor, on_event, cached_names, cached_summary_ids, collected)
             # 后代全部完成后，若本节点有 summarySuggestion 且未缓存则生成总结
             if node.get("summarySuggestion") and node.get("id") not in cached_summary_ids:
@@ -92,7 +118,7 @@ def _walk(
 
 def _eval_condition_llm(node: Dict, cond_data: Dict[str, List]) -> bool:
     """
-    调 LLM 判断 L4 节点是否有必要展示。
+    调 LLM 判断节点是否有必要展示。适用于任意层级（L1~L5）。
 
     cond_data: condition_queries 的实际查询结果（可能为空列表）。
     返回 True 表示展示，False 表示跳过；LLM 调用失败时默认返回 True。
@@ -184,6 +210,17 @@ def _process_l4(
     # ── L4 自身总结 ───────────────────────────────────────────────
     if node.get("summarySuggestion") and node.get("id") not in cached_summary_ids:
         _generate_summary(node, _collect_node_data(node, collected), on_event)
+
+
+def _find_l5_by_names(node: Dict, names: set) -> List[Dict]:
+    """在节点子树中找到 name 在 names 集合内的所有 L5 节点。"""
+    result = []
+    for child in node.get("children", []):
+        if child.get("level") == 5 and child.get("name") in names:
+            result.append(child)
+        else:
+            result.extend(_find_l5_by_names(child, names))
+    return result
 
 
 def _collect_node_data(node: Dict, collected: Dict[str, List]) -> Dict[str, List]:
