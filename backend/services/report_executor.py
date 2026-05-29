@@ -125,8 +125,9 @@ def _process_structural(
     cond_deep   = _find_l5_by_names({"children": structural_children},
                                      condition_queries - {n.get("name") for n in cond_direct})
 
-    # Step 1: 查 condition 指标
-    _run_batch(cond_direct + cond_deep, cached_names, executor, on_event, collected)
+    # Step 1: 查 condition 指标（不走缓存——collected 每次报告都是全新的，
+    # 若被 cached_names 跳过则 collected 里没有数据，条件判断会误判为 False）
+    _run_batch(cond_direct + cond_deep, set(), executor, on_event, collected)
 
     # Step 2: condition 判断
     if condition:
