@@ -246,7 +246,7 @@ async def _stream_report(session_id: str, outline_tree: dict, cached_names: set,
 
             proc = await asyncio.to_thread(
                 subprocess.run,
-                ["python3", script, ops],
+                [sys.executable, script, ops],
                 env=env, capture_output=True, text=True, timeout=30,
             )
 
