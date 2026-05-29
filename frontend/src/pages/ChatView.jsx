@@ -68,6 +68,7 @@ export default function ChatView() {
   const [tableData, setTableData] = useState({}) // name → rows[]
   const metricCacheRef = useRef({})   // name → chunk/placeholder，跨次生成缓存
   const summaryCacheRef = useRef({})  // node_id → { key, chunk }，subtree 不变时复用
+  const outlineJsonRef = useRef(null) // 同步镜像 outlineJson state，供事件回调同帧读取
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
   const assistantMsgIdxRef = useRef(-1)
@@ -79,6 +80,7 @@ export default function ChatView() {
     setOutlineMd('')
     setOutlineLlm('')
     setOutlineJson(null)
+    outlineJsonRef.current = null
     setOutlineTab('md')
     setSceneMeta(null)
     setQuickReplies([])
@@ -219,9 +221,12 @@ export default function ChatView() {
   }
 
   async function generateReport() {
-    if (!outlineJson || generatingReport) return
+    // 读 ref 而非 state：当 start_report 与 outline 事件在同一 SSE 批次内触发时，
+    // React state 尚未刷新，但 ref 已同步更新
+    const tree = outlineJsonRef.current
+    if (!tree || generatingReport) return
     setGeneratingReport(true)
-    const sk = buildSkeleton(outlineJson)
+    const sk = buildSkeleton(tree)
     setSkeleton(sk)
     setReportTab('view')
     setRightTab('report')
@@ -232,7 +237,7 @@ export default function ChatView() {
     const cachedNames = allNames.filter(n => cache[n] !== undefined)
 
     // 预填 summary 缓存：子树 JSON 未变则直接填充，无需 LLM 重新生成
-    const summaryNodes = collectSummaryNodes(outlineJson.children || [])
+    const summaryNodes = collectSummaryNodes(tree.children || [])
     const cachedSummaryIds = []
     for (const node of summaryNodes) {
       const cached = summaryCacheRef.current[node.id]
@@ -241,7 +246,7 @@ export default function ChatView() {
       }
     }
 
-    setReport(replayCaches(sk, outlineJson))
+    setReport(replayCaches(sk, tree))
 
     try {
       const res = await fetch('/api/report', {
@@ -249,7 +254,7 @@ export default function ChatView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionIdRef.current,
-          outline_tree: outlineJson,
+          outline_tree: tree,
           cached_names: cachedNames,
           cached_summary_ids: cachedSummaryIds,
         }),
@@ -309,6 +314,7 @@ export default function ChatView() {
             } else if (evt.type === 'outline') {
               // 条件跳过后，后端同步推送更新后的大纲，前端重建所有视图
               const newTree = evt.outline_tree
+              outlineJsonRef.current = newTree
               setOutlineJson(newTree)
               setOutlineMd(evt.markdown || '')
               setOutlineLlm(evt.md_with_ids || '')
@@ -364,7 +370,10 @@ export default function ChatView() {
         setOutline(md)
         setOutlineMd(md)
         if (evt.md_with_ids) setOutlineLlm(evt.md_with_ids)
-        if (evt.outline_tree) setOutlineJson(evt.outline_tree)
+        if (evt.outline_tree) {
+          outlineJsonRef.current = evt.outline_tree
+          setOutlineJson(evt.outline_tree)
+        }
         break
       }
 
