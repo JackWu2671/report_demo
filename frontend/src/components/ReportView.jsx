@@ -207,7 +207,7 @@ export default function ReportView({ markdown, generating, chartData = {}, table
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* 左：目录导航 */}
       {headings.length > 0 && (
-        <div style={{
+        <div className="report-toc" style={{
           width: 180, flexShrink: 0,
           borderRight: '1px solid var(--color-border)',
           overflowY: 'auto', padding: '12px 0',

@@ -873,3 +873,53 @@ body {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
+
+/* =========================================
+   打印样式（下载 PDF）
+   ========================================= */
+@media print {
+  /* 隐藏所有 UI 外壳，只保留报告正文 */
+  .chat-panel,
+  .right-panel-tabs,
+  .outline-panel__header,
+  .report-toc,
+  .ph-spin { display: none !important; }
+
+  /* 重置布局，让报告占满整页 */
+  html, body { background: #fff !important; }
+  .chat-view  { display: block !important; height: auto !important; }
+  .outline-panel {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    border: none !important;
+    overflow: visible !important;
+  }
+  .outline-panel__body {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  /* 报告正文：重置暗色主题变量 */
+  .report-body {
+    color: #000 !important;
+    background: #fff !important;
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .report-body table  { border-color: #ccc !important; }
+  .report-body th     { background: #f0f0f0 !important; color: #000 !important; }
+  .report-body td     { background: #fff !important; color: #000 !important; }
+  .report-body tr:nth-child(even) td { background: #f8f8f8 !important; }
+  .report-body code   { background: #f0f0f0 !important; color: #000 !important; }
+  .report-body pre    { background: #f0f0f0 !important; }
+  .report-body blockquote { background: #f5f5f5 !important; border-color: #ccc !important; }
+
+  /* 分页提示：标题后不断页，表格行不断页 */
+  .report-body h1,
+  .report-body h2,
+  .report-body h3 { page-break-after: avoid; }
+  .report-body tr  { page-break-inside: avoid; }
+  .report-body img,
+  .report-body canvas { page-break-inside: avoid; }
+}
