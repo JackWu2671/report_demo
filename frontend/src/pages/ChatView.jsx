@@ -10,12 +10,12 @@ import QueryInput from '../components/QueryInput'
 function buildSkeleton(tree) {
   if (!tree) return ''
 
-  // 找最浅的 level（L1-L4），让它对应 H1，其余相对偏移
+  // 找最浅的非 L5 level，作为 H1 基准
   let minLevel = Infinity
   function scanMin(nodes) {
     for (const node of nodes || []) {
       const lv = node.level || 1
-      if (lv >= 1 && lv <= 4) minLevel = Math.min(minLevel, lv)
+      if (lv !== 5) minLevel = Math.min(minLevel, lv)
       scanMin(node.children)
     }
   }
@@ -26,27 +26,21 @@ function buildSkeleton(tree) {
   function walk(nodes) {
     for (const node of nodes || []) {
       const lv = node.level || 1
-      const h = lv - minLevel + 1  // 相对标题层级，最小为 1
-      if (lv >= 1 && lv <= 3) {
+      const h = Math.min(Math.max(1, lv - minLevel + 1), 6)
+      if (lv === 5) {
+        // L5 = 查询叶子节点，只渲染占位符
+        lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
+        lines.push('<span data-ph="' + node.name + '" class="ph-spin"></span>\n\n')
+        if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
+      } else {
+        // 结构节点（任意非 L5 层级）：递归处理所有子节点
         lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
         if (node.description) lines.push(node.description + '\n\n')
         walk(node.children)
         if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
-      } else if (lv === 4) {
-        lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
-        if (node.description) lines.push(node.description + '\n\n')
-        for (const q of (node.children || []).filter(c => c.level === 5)) {
-          lines.push('#'.repeat(Math.min(h + 1, 6)) + ' ' + q.name + '\n\n')
-          lines.push('<span data-ph="' + q.name + '" class="ph-spin"></span>\n\n')
-          if (q.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + q.id + '" class="ph-spin"></span>\n\n')
-        }
-        if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
-        lines.push('---\n\n')
-      } else if (lv === 5) {
-        // L5 直接挂在根节点或 L1-L3 下，没有 L4 父节点
-        lines.push('#'.repeat(Math.min(h, 6)) + ' ' + node.name + '\n\n')
-        lines.push('<span data-ph="' + node.name + '" class="ph-spin"></span>\n\n')
-        if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
+        // 只在叶子结构节点（子节点全为 L5 或无子节点）后加分隔线
+        const hasStructuralChild = (node.children || []).some(c => (c.level || 1) !== 5)
+        if (!hasStructuralChild) lines.push('---\n\n')
       }
     }
   }
