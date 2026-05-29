@@ -187,7 +187,7 @@ def _build_kb_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dic
     node = nodes_dict.get(node_id)
     if not node:
         return None
-    return {
+    entry = {
         "id": node_id,
         "name": node["name"],
         "level": node.get("level", 0),
@@ -198,6 +198,11 @@ def _build_kb_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dic
             if (child := _build_kb_subtree(child_id, nodes_dict, children_map)) is not None
         ],
     }
+    if node.get("level") == 5:
+        entry["renderType"] = node.get("renderType", "")
+        entry["colX"]       = node.get("colX", "")
+        entry["colY"]       = node.get("colY", "")
+    return entry
 
 
 def _collect_ids(node: dict, result: set | None = None) -> set:

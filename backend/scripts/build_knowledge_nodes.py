@@ -39,15 +39,20 @@ OUTPUT_FILE = os.path.join(_KB_DIR, "knowledge_nodes.json")
 
 def extract_node(record: dict, desc_field: str | None) -> dict:
     node = {
-        "uuid":             record.get("uuid", ""),
-        "id":               record.get("id", ""),
-        "level":            record.get("level", ""),
-        "name":             record.get("name", ""),
-        "description":      record.get(desc_field, "") if desc_field else "",
-        "condition":        record.get("condition", ""),
+        "uuid":              record.get("uuid", ""),
+        "id":                record.get("id", ""),
+        "level":             record.get("level", ""),
+        "name":              record.get("name", ""),
+        "description":       record.get(desc_field, "") if desc_field else "",
+        "condition":         record.get("condition", ""),
         "condition_queries": record.get("condition_queries", []),
         "summarySuggestion": record.get("summarySuggestion", ""),
     }
+    # L5 指标节点附带渲染提示，供报告生成和前端使用
+    if record.get("level") == 5:
+        node["renderType"] = record.get("renderType", "")
+        node["colX"]       = record.get("colX", "")
+        node["colY"]       = record.get("colY", "")
     return node
 
 
