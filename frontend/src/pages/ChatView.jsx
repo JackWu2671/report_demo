@@ -218,15 +218,6 @@ export default function ChatView() {
     return out
   }
 
-  function printReport() {
-    if (reportTab !== 'view') {
-      setReportTab('view')
-      setTimeout(() => window.print(), 150)
-    } else {
-      window.print()
-    }
-  }
-
   async function generateReport() {
     // 读 ref 而非 state：当 start_report 与 outline 事件在同一 SSE 批次内触发时，
     // React state 尚未刷新，但 ref 已同步更新
@@ -603,19 +594,6 @@ case 'saved':
           <>
             <div className="outline-panel__header">
               <span className="outline-panel__title">报告预览</span>
-              {report && !generatingReport && (
-                <button
-                  className="chat-panel__download"
-                  title="下载 PDF"
-                  onClick={printReport}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M6 2h9l5 5v15a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2zm9 0v5h5M8 13h8m-8 4h5"/>
-                    <path d="M14 2v5h5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                    <text x="7" y="19" fontSize="7" fontWeight="bold" fill="currentColor">PDF</text>
-                  </svg>
-                </button>
-              )}
               {report && (
                 <div className="outline-tabs">
                   {[
