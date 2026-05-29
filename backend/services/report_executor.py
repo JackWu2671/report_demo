@@ -312,8 +312,12 @@ def _generate_summary(
             lines.append(f"{indent}■ {name}")
             rows = node_data.get(name)
             if rows:
-                for row_line in SqlExecutor.rows_to_markdown(rows).splitlines():
+                MAX_ROWS = 20
+                display = rows[:MAX_ROWS]
+                for row_line in SqlExecutor.rows_to_markdown(display).splitlines():
                     lines.append(f"{indent}{row_line}")
+                if len(rows) > MAX_ROWS:
+                    lines.append(f"{indent}  （数据共 {len(rows)} 行，已截断展示前 {MAX_ROWS} 行）")
             else:
                 lines.append(f"{indent}  （暂无数据）")
         else:
