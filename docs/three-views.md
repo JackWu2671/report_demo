@@ -56,7 +56,22 @@
 }
 ```
 
-`outlineJsonRef` 是与 `outlineJson` 同步的 `useRef`，解决 React setState 异步问题——同一个 SSE 批次内如果 `outline` 和 `start_report` 事件同时到达，`generateReport()` 需要用 ref 而不是 state 读取最新值。
+`outlineJsonRef` 是与 `outlineJson` 同步的 `useRef`，用来解决 React setState 异步问题。
+
+**背景**：React 的 `setState` 不会立刻改变变量，新值要等到下一次 render 才可读。后端有时会在同一批 SSE 事件里连续推送 `outline`（新大纲）和 `start_report`（触发生成报告），两个事件在同一次 JavaScript 执行里依次处理，React 来不及 re-render：
+
+```js
+// 事件1：收到新大纲
+outlineJsonRef.current = evt.outline_tree   // 立刻生效
+setOutlineJson(evt.outline_tree)            // 安排更新，但还没 re-render
+
+// 事件2：立刻触发生成报告（React 还没 re-render，outlineJson 仍是旧值）
+generateReport()
+  → const tree = outlineJsonRef.current   // ✅ 拿到新树
+  → const tree = outlineJson              // ❌ 仍是 null（旧值），报告不会生成
+```
+
+因此凡是需要在同一事件批次内"刚更新完就立刻读"的场景，都通过 ref 而不是 state 读取。
 
 报告生成时，`buildSkeleton(tree)` 从这里读取树结构生成骨架；`_process_structural` 遍历这个树调度 SQL 查询。
 
