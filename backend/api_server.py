@@ -168,7 +168,7 @@ def get_session_messages(session_id: str):
     agent = _sessions.get(session_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Session 不存在")
-    system_prompt = getattr(agent, "system_prompt", None)
+    system_prompt = getattr(agent, "_system_prompt", None) or getattr(agent, "system_prompt", None)
     if system_prompt:
         messages = agent.memory.build_messages(system_prompt)
     else:
