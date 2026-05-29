@@ -262,6 +262,11 @@ async def _stream_report(session_id: str, outline_tree: dict, cached_names: set,
                         session.get("md_with_ids", ""),
                         session.get("markdown", ""),
                     )
+                    names = "、".join(f"「{s['node_name']}」" for s in skipped)
+                    agent.memory.add_message({
+                        "role": "assistant",
+                        "content": f"[系统通知] 报告生成过程中，以下章节因数据条件不满足，已自动从大纲删除：{names}。大纲已同步更新。",
+                    })
 
                 yield _sse({
                     "type":         "outline",
