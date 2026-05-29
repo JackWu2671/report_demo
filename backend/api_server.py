@@ -13,6 +13,7 @@ import glob
 import json
 import logging
 import os
+import subprocess
 import sys
 import uuid
 
@@ -188,7 +189,6 @@ async def chat(req: ChatRequest):
 # —— 报告生成 SSE 流式接口 ————————————————————————————————————————————
 
 import asyncio
-import re as _re
 import threading
 
 class ReportRequest(BaseModel):
@@ -198,39 +198,9 @@ class ReportRequest(BaseModel):
     cached_summary_ids: list[str] = []
 
 
-def _remove_nodes(tree: dict, ids: set) -> dict:
-    """递归删除指定 id 的节点，返回新树（不修改原树）。"""
-    new_children = [
-        _remove_nodes(c, ids)
-        for c in tree.get("children", [])
-        if c.get("id") not in ids
-    ]
-    return {**tree, "children": new_children}
-
-
-def _render_outline(node: dict, depth: int, with_ids: bool) -> list[str]:
-    name    = node.get("name", "")
-    node_id = node.get("id", "")
-    h       = "#" * min(depth, 6)
-    suffix  = f" [{node_id}]" if with_ids and node_id else ""
-    lines   = [f"{h} {name}{suffix}", ""]
-    if node.get("description"):
-        lines += [node["description"], ""]
-    for child in node.get("children", []):
-        lines.extend(_render_outline(child, depth + 1, with_ids))
-    return lines
-
-
-def _build_outline_md(tree: dict, with_ids: bool) -> str:
-    lines = []
-    for child in tree.get("children", []):
-        lines.extend(_render_outline(child, 1, with_ids))
-    return "\n".join(lines).strip()
-
-
 async def _stream_report(session_id: str, outline_tree: dict, cached_names: set, cached_summary_ids: set):
     from services.report_executor import run_report
-    from agent_with_skills.agent import _read_session, _write_session
+    from agent_with_skills.agent import _read_session
 
     loop  = asyncio.get_event_loop()
     queue: asyncio.Queue = asyncio.Queue()
@@ -262,35 +232,45 @@ async def _stream_report(session_id: str, outline_tree: dict, cached_names: set,
             break
         yield _sse(event)
 
-    # 若有节点被条件跳过，从大纲中删除并同步所有状态
+    # 若有节点被条件跳过，调 modify_outline.py 删除，保持脚本格式一致
     if skipped and session_id:
         try:
-            skipped_ids = {s["node_id"] for s in skipped}
-            session     = _read_session(session_id)
-            updated_tree = _remove_nodes(session.get("outline_tree") or outline_tree, skipped_ids)
-            md_with_ids  = _build_outline_md(updated_tree, with_ids=True)
-            markdown     = _build_outline_md(updated_tree, with_ids=False)
+            ops = json.dumps([{"op": "delete_node", "node_id": s["node_id"]} for s in skipped])
+            script = os.path.join(_DIR, "skills", "analyze-network", "scripts", "modify_outline.py")
+            env = {
+                **os.environ,
+                "REPORT_SESSION_ID":  session_id,
+                "REPORT_SESSION_DIR": os.environ.get("REPORT_SESSION_DIR", "/tmp/report_sessions"),
+                "REPORT_BACKEND_DIR": _DIR,
+            }
 
-            # 更新 session 文件
-            _write_session(session_id, {
-                **session,
-                "outline_tree": updated_tree,
-                "md_with_ids":  md_with_ids,
-                "markdown":     markdown,
-            })
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                ["python3", script, ops],
+                env=env, capture_output=True, text=True, timeout=30,
+            )
 
-            # 同步 agent 内存（防止下次 bash 调用前被旧 memory 覆盖）
-            agent = _sessions.get(session_id)
-            if agent:
-                # 与 _detect_events 保持相同的调用顺序
-                agent.memory.set_outline(updated_tree, md_with_ids, markdown)
+            if proc.returncode == 0:
+                session      = _read_session(session_id)
+                updated_tree = session.get("outline_tree", {})
 
-            yield _sse({
-                "type":         "outline",
-                "markdown":     markdown,
-                "md_with_ids":  md_with_ids,
-                "outline_tree": updated_tree,
-            })
+                # 同步 agent 内存（与 _detect_events 调用顺序一致）
+                agent = _sessions.get(session_id)
+                if agent:
+                    agent.memory.set_outline(
+                        updated_tree,
+                        session.get("md_with_ids", ""),
+                        session.get("markdown", ""),
+                    )
+
+                yield _sse({
+                    "type":         "outline",
+                    "markdown":     session.get("markdown", ""),
+                    "md_with_ids":  session.get("md_with_ids", ""),
+                    "outline_tree": updated_tree,
+                })
+            else:
+                logger.warning("[Report] modify_outline.py 删除跳过节点失败: %s", proc.stderr[:300])
         except Exception as e:
             logger.error("[Report] 更新大纲失败: %s", e)
 
