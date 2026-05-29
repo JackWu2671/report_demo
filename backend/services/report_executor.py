@@ -133,6 +133,7 @@ def _process_structural(
         cond_data = {n: collected.get(n, []) for n in condition_queries}
         if not _eval_condition_llm(node, cond_data):
             logger.info("[report] 跳过节点 %r（LLM 判断 condition 不满足）", node.get("name", ""))
+            on_event({"type": "report_skip", "node_id": node.get("id", ""), "node_name": node.get("name", "")})
             return
 
     # Step 3: 查普通直属 L5 指标
