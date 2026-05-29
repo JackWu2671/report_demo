@@ -76,16 +76,18 @@ async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[d
                 continue
             ids_before = _collect_ids(tree)
             parent_id = op.get("parent_id") or ""
+            after_id  = op.get("after_id")  or ""
             if not parent_id:
                 tree.setdefault("children", []).append(subtree)
                 logger.info("[Step 9] add_node: 新增顶层章节 %s（与现有一级章节平行）", node_id)
             else:
-                added = _add_node(tree, parent_id, subtree)
+                added = _add_node(tree, parent_id, subtree, after_id=after_id)
                 if not added:
                     tree.setdefault("children", []).append(subtree)
                     logger.warning("[Step 9] add_node: 未找到父节点 %s，已作为顶层章节新增", parent_id)
                 else:
-                    logger.info("[Step 9] add_node: 新增节点 %s → 父节点 %s | 原因: %s", node_id, parent_id, reason)
+                    pos_info = f"after_id={after_id}" if after_id else "末尾"
+                    logger.info("[Step 9] add_node: 新增节点 %s → 父节点 %s [%s] | 原因: %s", node_id, parent_id, pos_info, reason)
             new_ids = _collect_ids(subtree)
             duplicates = [i for i in new_ids if i in ids_before]
             if duplicates:
@@ -208,13 +210,23 @@ def _collect_ids(node: dict, result: set | None = None) -> set:
     return result
 
 
-def _add_node(tree: dict, parent_id: str, new_node: dict) -> bool:
-    """将 new_node 追加到 parent_id 节点的 children 末尾，返回是否找到父节点。"""
+def _add_node(tree: dict, parent_id: str, new_node: dict, after_id: str = "") -> bool:
+    """
+    将 new_node 插入到 parent_id 节点的 children 中。
+    after_id 非空时，插入到该兄弟节点之后；否则追加到末尾。
+    返回是否找到父节点。
+    """
     if tree["id"] == parent_id:
-        tree.setdefault("children", []).append(new_node)
+        children = tree.setdefault("children", [])
+        if after_id:
+            idx = next((i for i, c in enumerate(children) if c["id"] == after_id), None)
+            if idx is not None:
+                children.insert(idx + 1, new_node)
+                return True
+        children.append(new_node)
         return True
     for child in tree.get("children", []):
-        if _add_node(child, parent_id, new_node):
+        if _add_node(child, parent_id, new_node, after_id=after_id):
             return True
     return False
 

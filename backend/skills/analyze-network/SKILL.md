@@ -109,14 +109,24 @@ python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delet
 
 支持的 op 类型：
 
-| op | 必填字段 | 说明 |
-|----|---------|------|
-| `add_node` | `node_id`, `parent_id` | 从知识图谱新增节点；node_id 须来自 search_graph_tree 结果 |
-| `delete_node` | `node_id` | 删除节点及其全部子树 |
-| `modify_node_name` | `node_id`, `value` | 修改节点名称（L5 query 节点只允许此操作） |
-| `modify_node_description` | `node_id`, `value` | 修改节点描述（**仅限 L1–L4**；L5 query 节点无 description，操作会被拒绝） |
-| `modify_node_condition` | `node_id`, `value` | 设置条件；格式「当……时，本节才展示」；value 传空字符串删除条件 |
-| `keep_only_node` | `node_id` | 保留该节点，同级其他节点自动删除 |
+| op | 必填字段 | 可选字段 | 说明 |
+|----|---------|---------|------|
+| `add_node` | `node_id`, `parent_id` | `after_id` | 从知识图谱新增节点；node_id 须来自 search_graph_tree 结果 |
+| `delete_node` | `node_id` | — | 删除节点及其全部子树 |
+| `modify_node_name` | `node_id`, `value` | — | 修改节点名称（L5 query 节点只允许此操作） |
+| `modify_node_description` | `node_id`, `value` | — | 修改节点描述（**仅限 L1–L4**；L5 query 节点无 description，操作会被拒绝） |
+| `modify_node_condition` | `node_id`, `value` | — | 设置条件；格式「当……时，本节才展示」；value 传空字符串删除条件 |
+| `keep_only_node` | `node_id` | — | 保留该节点，同级其他节点自动删除 |
+
+**`add_node` 位置规则（重要）**：
+
+- `parent_id` = 新节点的**父节点** ID，**绝对不能**填兄弟节点的 ID
+- `after_id`（可选）= 新节点插入到该兄弟节点**之后**；省略时追加到父节点末尾
+- **新增同级节点**示例：在 L4_012 之后插入 L4_013
+  ```json
+  {"op":"add_node","node_id":"L4_013","parent_id":"<L4_012的父节点ID>","after_id":"L4_012"}
+  ```
+  ❌ 错误：`"parent_id":"L4_012"` → L4_013 会变成 L4_012 的子节点
 
 **调用策略**：
 - 多个独立操作合并为**一次调用**
