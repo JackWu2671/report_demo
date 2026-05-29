@@ -46,6 +46,30 @@ def run_report(
         _walk(outline_tree.get("children", []), client, executor, on_event, cached_names, cached_summary_ids, collected)
 
 
+def _run_batch(
+    nodes: List[Dict],
+    cached_names: set,
+    executor: SqlExecutor,
+    on_event: Callable[[dict], None],
+    collected: Dict[str, List],
+) -> None:
+    """并行执行一批 L5 指标查询，结果写入 collected。"""
+    uncached = [n for n in nodes if n.get("name") not in cached_names]
+    if not uncached:
+        return
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+        futures = {pool.submit(_run_metric, n, executor, on_event): n for n in uncached}
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                if result and result.get("rows"):
+                    collected[result["name"]] = result["rows"]
+            except Exception as e:
+                n = futures[future]
+                logger.error("[report] 查询异常 %r: %s", n.get("name", ""), e)
+                on_event({"type": "report_metric", "name": n.get("name", ""), "chunk": "_（查询异常）_\n\n"})
+
+
 def _walk(
     nodes: List[Dict],
     client: DeApiClient,
@@ -55,65 +79,72 @@ def _walk(
     cached_summary_ids: set,
     collected: Dict[str, List],
 ) -> None:
-    standalone_l5 = []
+    """递归遍历节点列表。L5 是查询叶子，其他任意层级均视为结构节点。"""
+    metric_nodes = []
     for node in nodes:
-        level = node.get("level", 0)
-        if level == 4:
-            _process_l4(node, client, executor, on_event, cached_names, cached_summary_ids, collected)
-        elif 1 <= level <= 3:
-            condition         = node.get("condition", "")
-            condition_queries = node.get("condition_queries") or []
+        if node.get("level") == 5:
+            metric_nodes.append(node)
+        else:
+            _process_structural(node, client, executor, on_event, cached_names, cached_summary_ids, collected)
 
-            # condition 指标先查（同 L4 逻辑）
-            if condition_queries:
-                cond_l5 = _find_l5_by_names(node, set(condition_queries))
-                uncached = [n for n in cond_l5 if n.get("name") not in cached_names]
-                if uncached:
-                    with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
-                        futures = {pool.submit(_run_metric, n, executor, on_event): n for n in uncached}
-                        for future in as_completed(futures):
-                            try:
-                                result = future.result()
-                                if result and result.get("rows"):
-                                    collected[result["name"]] = result["rows"]
-                            except Exception as e:
-                                n = futures[future]
-                                logger.error("[report] condition 查询异常 %r: %s", n.get("name", ""), e)
-
-            # condition 判断
-            if condition:
-                cond_data = {n: collected.get(n, []) for n in condition_queries}
-                if not _eval_condition_llm(node, cond_data):
-                    logger.info("[report] 跳过节点 %r（LLM 判断 condition 不满足）", node.get("name", ""))
-                    continue
-
-            # 递归处理所有后代
-            _walk(node.get("children", []), client, executor, on_event, cached_names, cached_summary_ids, collected)
-            # 后代全部完成后，若本节点有 summarySuggestion 且未缓存则生成总结
+    # 处理当前层级的孤立 L5 节点（无结构父节点直接挂在这一层）
+    if metric_nodes:
+        _run_batch(metric_nodes, cached_names, executor, on_event, collected)
+        for node in metric_nodes:
             if node.get("summarySuggestion") and node.get("id") not in cached_summary_ids:
-                _generate_summary(node, _collect_node_data(node, collected), on_event)
-        elif level == 5:
-            standalone_l5.append(node)
+                _generate_summary(node, {node["name"]: collected.get(node["name"], [])}, on_event)
 
-    # 没有 L4 父节点的孤立 L5 节点，直接并行执行（无 condition 检查）
-    if standalone_l5:
-        uncached = [n for n in standalone_l5 if n.get("name") not in cached_names]
-        with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
-            futures = {pool.submit(_run_metric, l5, executor, on_event): l5 for l5 in uncached}
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    if result and result.get("rows"):
-                        collected[result["name"]] = result["rows"]
-                except Exception as e:
-                    l5 = futures[future]
-                    logger.error("[report] 查询异常 %r: %s", l5.get("name", ""), e)
-                    on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（查询异常）_\n\n"})
 
-        # 孤立 L5 节点自身的总结
-        for l5 in standalone_l5:
-            if l5.get("summarySuggestion") and l5.get("name") in collected and l5.get("id") not in cached_summary_ids:
-                _generate_summary(l5, {l5["name"]: collected[l5["name"]]}, on_event)
+def _process_structural(
+    node: Dict,
+    client: DeApiClient,
+    executor: SqlExecutor,
+    on_event: Callable[[dict], None],
+    cached_names: set,
+    cached_summary_ids: set,
+    collected: Dict[str, List],
+) -> None:
+    """
+    处理任意非 L5 结构节点（L1~L4 或用户自定义层级）。
+
+    流程：
+      1. 查 condition_queries 指标（直属 L5 优先，找不到则从子树深处找）
+      2. LLM 判断 condition → 不满足则跳过整个子树
+      3. 查普通直属 L5 指标
+      4. 递归处理结构子节点
+      5. 生成本节点总结
+    """
+    condition         = node.get("condition", "")
+    condition_queries = set(node.get("condition_queries") or [])
+
+    l5_children          = [c for c in node.get("children", []) if c.get("level") == 5]
+    structural_children  = [c for c in node.get("children", []) if c.get("level") != 5]
+
+    # condition 指标：直属 L5 先找，剩余从结构子树里找
+    cond_direct = [n for n in l5_children if n.get("name") in condition_queries]
+    cond_deep   = _find_l5_by_names({"children": structural_children},
+                                     condition_queries - {n.get("name") for n in cond_direct})
+
+    # Step 1: 查 condition 指标
+    _run_batch(cond_direct + cond_deep, cached_names, executor, on_event, collected)
+
+    # Step 2: condition 判断
+    if condition:
+        cond_data = {n: collected.get(n, []) for n in condition_queries}
+        if not _eval_condition_llm(node, cond_data):
+            logger.info("[report] 跳过节点 %r（LLM 判断 condition 不满足）", node.get("name", ""))
+            return
+
+    # Step 3: 查普通直属 L5 指标
+    regular_l5 = [n for n in l5_children if n.get("name") not in condition_queries]
+    _run_batch(regular_l5, cached_names, executor, on_event, collected)
+
+    # Step 4: 递归处理结构子节点
+    _walk(structural_children, client, executor, on_event, cached_names, cached_summary_ids, collected)
+
+    # Step 5: 总结
+    if node.get("summarySuggestion") and node.get("id") not in cached_summary_ids:
+        _generate_summary(node, _collect_node_data(node, collected), on_event)
 
 
 def _eval_condition_llm(node: Dict, cond_data: Dict[str, List]) -> bool:
@@ -148,7 +179,7 @@ def _eval_condition_llm(node: Dict, cond_data: Dict[str, List]) -> bool:
         f"只回答 true 或 false，不要解释。"
     )
 
-    logger.info("[report] LLM 判断 L4 %r condition（条件指标数: %d）", node_name, len(cond_data))
+    logger.info("[report] LLM 判断节点 %r condition（条件指标数: %d）", node_name, len(cond_data))
     try:
         llm      = LLMService.from_env()
         response = asyncio.run(llm.complete([{"role": "user", "content": prompt}]))
@@ -159,57 +190,6 @@ def _eval_condition_llm(node: Dict, cond_data: Dict[str, List]) -> bool:
         logger.error("[report] LLM condition 判断失败 %r: %s，默认展示", node_name, e)
         return True
 
-
-def _process_l4(
-    node: Dict,
-    client: DeApiClient,
-    executor: SqlExecutor,
-    on_event: Callable[[dict], None],
-    cached_names: set,
-    cached_summary_ids: set,
-    collected: Dict[str, List],
-) -> None:
-    name              = node.get("name", "")
-    condition         = node.get("condition", "")
-    condition_queries = node.get("condition_queries", [])
-    l5_nodes          = [c for c in node.get("children", []) if c.get("level") == 5]
-
-    # condition 指标和普通指标分开：condition 指标先查（正常显示），用结果判断条件
-    cond_l5    = [n for n in l5_nodes if n.get("name") in condition_queries]
-    regular_l5 = [n for n in l5_nodes if n.get("name") not in condition_queries]
-
-    def _run_batch(nodes: List[Dict]) -> None:
-        uncached = [n for n in nodes if n.get("name") not in cached_names]
-        if not uncached:
-            return
-        with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
-            futures = {pool.submit(_run_metric, l5, executor, on_event): l5 for l5 in uncached}
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    if result and result.get("rows"):
-                        collected[result["name"]] = result["rows"]
-                except Exception as e:
-                    l5 = futures[future]
-                    logger.error("[report] 查询异常 %r: %s", l5.get("name", ""), e)
-                    on_event({"type": "report_metric", "name": l5.get("name", ""), "chunk": "_（查询异常）_\n\n"})
-
-    # ── Step 1: 查 condition 指标（正常推送到报告） ───────────────
-    _run_batch(cond_l5)
-
-    # ── Step 2: LLM 判断 condition ───────────────────────────────
-    if condition:
-        cond_data = {n: collected.get(n, []) for n in condition_queries}
-        if not _eval_condition_llm(node, cond_data):
-            logger.info("[report] 跳过节点 %r（LLM 判断 condition 不满足）", name)
-            return
-
-    # ── Step 3: 查普通指标 ────────────────────────────────────────
-    _run_batch(regular_l5)
-
-    # ── L4 自身总结 ───────────────────────────────────────────────
-    if node.get("summarySuggestion") and node.get("id") not in cached_summary_ids:
-        _generate_summary(node, _collect_node_data(node, collected), on_event)
 
 
 def _find_l5_by_names(node: Dict, names: set) -> List[Dict]:
