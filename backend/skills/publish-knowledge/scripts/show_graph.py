@@ -5,7 +5,7 @@
 用法:
   python3 show_graph.py
 
-以 md_with_ids 格式输出完整节点树，供 LLM 与模板大纲对比分析。
+输出完整节点树，供 LLM 与模板大纲对比分析。
 """
 import sys
 import os
@@ -17,7 +17,6 @@ sys.path.insert(0, _BACKEND_DIR)
 sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
 from subtree import build_subtree
-from outline_utils import to_markdown_with_ids
 
 _NODE_PATH = os.path.join(_BACKEND_DIR, "expert_knowledge", "node.json")
 _RELATION_PATH = os.path.join(_BACKEND_DIR, "expert_knowledge", "relation.json")

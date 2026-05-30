@@ -21,7 +21,7 @@ if _BACKEND_DIR not in sys.path:
 
 from retriever import embed_query
 from template_selector import search_templates
-from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
+from outline_utils import to_clean_json, to_markdown, to_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def load_template_outline(template_id: str) -> dict:
     按模板 id 直接加载完整大纲（O(1) 文件查找）。
 
     Returns:
-        status="success"   — outline_tree / markdown / md_with_ids populated
+        status="success"   — outline_tree / markdown / outline_yaml populated
         status="not_found" — 无对应 id 的模板
     """
     logger.info("[Tool:load_template_outline] template_id=%r", template_id)
@@ -101,7 +101,7 @@ def load_template_outline(template_id: str) -> dict:
         "status": "success",
         "outline_tree": wrapped,
         "markdown": to_markdown(wrapped),
-        "md_with_ids": to_markdown_with_ids(wrapped),
+        "outline_yaml": to_yaml(wrapped),
         "scene_name": scene_name,
         "template_id": template_id,
     }
@@ -109,4 +109,4 @@ def load_template_outline(template_id: str) -> dict:
 
 def _not_found(reason: str) -> dict:
     return {"status": "not_found", "outline_tree": {}, "markdown": "",
-            "md_with_ids": "", "scene_name": "", "reason": reason}
+            "outline_yaml": "", "scene_name": "", "reason": reason}

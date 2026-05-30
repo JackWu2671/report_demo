@@ -29,8 +29,8 @@ def main():
     result = load_template_outline(template_id)
 
     if result["status"] == "success":
-        set_outline(result["outline_tree"], result["md_with_ids"], result["markdown"])
-        print(result["md_with_ids"])
+        set_outline(result["outline_tree"], result["outline_yaml"], result["markdown"])
+        print(result["outline_yaml"])
     else:
         print(json.dumps({"status": "error", "message": result.get("reason", "未知错误")}, ensure_ascii=False))
         sys.exit(1)

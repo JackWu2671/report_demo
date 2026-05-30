@@ -45,6 +45,6 @@ class AgentWithSkillsMemory(AgentMemory):
             )
 
         if self.has_outline:
-            content += f"\n\n## 当前大纲（可通过节点ID引用）\n\n{self.md_with_ids}"
+            content += f"\n\n## 当前大纲（可通过节点ID引用）\n\n{self.outline_yaml}"
 
         return [{"role": "system", "content": content}, *self._history]

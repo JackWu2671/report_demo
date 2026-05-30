@@ -18,7 +18,7 @@ if _BACKEND_DIR not in sys.path:
 
 from subtree import build_subtree
 from loader import load_resources
-from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
+from outline_utils import to_clean_json, to_markdown, to_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ async def build_outline_from_anchor(anchor_id: str) -> dict:
         anchor_id : node ID selected by the agent from search_graph_tree result
 
     Returns:
-        {status: "success"|"not_found", outline_tree, markdown, md_with_ids, message}
+        {status: "success"|"not_found", outline_tree, markdown, outline_yaml, message}
     """
     logger.info("[Tool:build_outline_from_anchor] anchor_id=%r", anchor_id)
 
@@ -41,7 +41,7 @@ async def build_outline_from_anchor(anchor_id: str) -> dict:
         tree = build_subtree(anchor_id, nodes_dict, children_map)
     except ValueError as e:
         return {"status": "not_found", "outline_tree": {}, "markdown": "",
-                "md_with_ids": "", "message": str(e)}
+                "outline_yaml": "", "message": str(e)}
 
     clean_tree = to_clean_json(tree)
     # 用虚拟根节点包裹，使 add_node parent_id="" 能正确地与一级章节平行
@@ -51,6 +51,6 @@ async def build_outline_from_anchor(anchor_id: str) -> dict:
         "status": "success",
         "outline_tree": wrapped,
         "markdown": to_markdown(wrapped),
-        "md_with_ids": to_markdown_with_ids(wrapped),
+        "outline_yaml": to_yaml(wrapped),
         "message": "",
     }

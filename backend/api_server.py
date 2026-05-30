@@ -259,8 +259,8 @@ async def _stream_report(session_id: str, outline_tree: dict, cached_names: set,
                 if agent:
                     agent.memory.set_outline(
                         updated_tree,
-                        session.get("md_with_ids", ""),
                         session.get("markdown", ""),
+                        session.get("outline_yaml", ""),
                     )
                     names = "、".join(f"「{s['node_name']}」" for s in skipped)
                     agent.memory.add_message({
@@ -271,7 +271,7 @@ async def _stream_report(session_id: str, outline_tree: dict, cached_names: set,
                 yield _sse({
                     "type":         "outline",
                     "markdown":     session.get("markdown", ""),
-                    "md_with_ids":  session.get("md_with_ids", ""),
+                    "outline_yaml": session.get("outline_yaml", ""),
                     "outline_tree": updated_tree,
                 })
             else:

@@ -17,7 +17,7 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 from patcher import apply_patch
-from outline_utils import to_clean_json, to_markdown, to_markdown_with_ids
+from outline_utils import to_clean_json, to_markdown, to_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +31,11 @@ async def modify_outline(ops: list[dict], outline_tree: dict) -> dict:
         outline_tree : current outline tree dict
 
     Returns:
-        {status: "success"|"error", outline_tree, markdown, md_with_ids, ops, message}
+        {status: "success"|"error", outline_tree, markdown, outline_yaml, ops, message}
     """
     if not outline_tree:
         return {"status": "error", "outline_tree": {}, "markdown": "",
-                "md_with_ids": "", "ops": [],
+                "outline_yaml": "", "ops": [],
                 "message": "当前没有可修改的大纲，请先生成大纲。"}
 
     logger.info("[Tool:modify_outline] %d 个操作: %s", len(ops), [op.get("op") for op in ops])
@@ -45,7 +45,7 @@ async def modify_outline(ops: list[dict], outline_tree: dict) -> dict:
         "status": "success",
         "outline_tree": clean_tree,
         "markdown": to_markdown(clean_tree),
-        "md_with_ids": to_markdown_with_ids(clean_tree),
+        "outline_yaml": to_yaml(clean_tree),
         "ops": ops,
         "skipped": skipped,
         "message": "",

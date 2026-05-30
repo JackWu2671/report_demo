@@ -55,8 +55,8 @@ async def main():
     result = await modify_outline(ops, outline_tree)
 
     if result["status"] == "success":
-        set_outline(result["outline_tree"], result["md_with_ids"], result["markdown"])
-        print(result["md_with_ids"])
+        set_outline(result["outline_tree"], result["outline_yaml"], result["markdown"])
+        print(result["outline_yaml"])
         for s in result.get("skipped", []):
             reason = s.get("_skip_reason", "未知原因") if isinstance(s, dict) else str(s)
             op = s.get("op", "?") if isinstance(s, dict) else "?"

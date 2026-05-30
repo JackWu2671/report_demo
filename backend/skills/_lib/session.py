@@ -32,10 +32,10 @@ def write(data: dict) -> None:
     _path().write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def set_outline(outline_tree: dict, md_with_ids: str, markdown: str) -> None:
+def set_outline(outline_tree: dict, outline_yaml: str, markdown: str) -> None:
     data = read()
     data["outline_tree"] = outline_tree
-    data["md_with_ids"] = md_with_ids
+    data["outline_yaml"] = outline_yaml
     data["markdown"] = markdown
     write(data)
 
@@ -50,8 +50,8 @@ def get_outline_tree() -> dict:
     return read().get("outline_tree", {})
 
 
-def get_md_with_ids() -> str:
-    return read().get("md_with_ids", "")
+def get_outline_yaml() -> str:
+    return read().get("outline_yaml", "")
 
 
 def get_extraction() -> dict:

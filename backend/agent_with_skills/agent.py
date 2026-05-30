@@ -175,7 +175,7 @@ class AgentWithSkills:
         before = _read_session(self.session_id)
         _write_session(self.session_id, {
             "outline_tree": self.memory.outline_tree or {},
-            "md_with_ids":  self.memory.md_with_ids or "",
+            "outline_yaml": self.memory.outline_yaml or "",
             "markdown":     self.memory.markdown or "",
             "extraction":   self.memory.extraction or {},
         })
@@ -230,11 +230,11 @@ class AgentWithSkills:
         after_outline = after.get("outline_tree") or {}
         before_outline = before.get("outline_tree") or {}
         if after_outline and after_outline != before_outline:
-            self.memory.set_outline(after_outline, after.get("md_with_ids", ""), after.get("markdown", ""))
+            self.memory.set_outline(after_outline, after.get("markdown", ""), after.get("outline_yaml", ""))
             events.append({
-                "type":        "outline",
-                "markdown":    after.get("markdown", ""),
-                "md_with_ids": after.get("md_with_ids", ""),
+                "type":         "outline",
+                "markdown":     after.get("markdown", ""),
+                "outline_yaml": after.get("outline_yaml", ""),
                 "outline_tree": after_outline,
             })
             events.append({"type": "confirm", "options": ["生成报告"]})
