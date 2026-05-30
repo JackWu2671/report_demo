@@ -48,11 +48,27 @@ def extract_node(record: dict, desc_field: str | None) -> dict:
         "condition_queries": record.get("condition_queries", []),
         "summarySuggestion": record.get("summarySuggestion", ""),
     }
-    # L5 指标节点附带渲染提示，供报告生成和前端使用
+    # L5 指标节点附带渲染提示和 SQL 执行信息
     if record.get("level") == 5:
         node["renderType"] = record.get("renderType", "")
         node["colX"]       = record.get("colX", "")
         node["colY"]       = record.get("colY", "")
+        answer_str = record.get("answer")
+        if answer_str:
+            try:
+                answer = json.loads(answer_str)
+                node["apiName"]  = answer.get("apiName", "")
+                node["exec_sql"] = answer.get("exec_sql", "")
+                extracted = answer.get("extracted_table", "[]")
+                node["extracted_table"] = json.loads(extracted) if isinstance(extracted, str) else (extracted or [])
+            except (json.JSONDecodeError, TypeError):
+                node["apiName"] = ""
+                node["exec_sql"] = ""
+                node["extracted_table"] = []
+        else:
+            node["apiName"] = ""
+            node["exec_sql"] = ""
+            node["extracted_table"] = []
     return node
 
 

@@ -2,7 +2,8 @@
 sql_executor.py — L5 指标名 → 执行 SQL → 返回结构化结果
 
 职责:
-  - 加载 expert_knowledge/评估指标.json，按 name 建索引
+  - 加载 expert_knowledge/node.json（过滤 level==5），按 name 建索引
+  - 若存在 评估指标_mock.json，按 id 叠加 mock_data 字段
   - execute_metric(name)   → {rows, render_type, col_x, col_y}
   - get_scalar(name)       → 第一行第一列的数值（用于 condition 判断）
   - rows_to_markdown(rows) → Markdown 表格字符串
@@ -24,9 +25,9 @@ from services.de_sql_execution_client import DeApiClient
 
 logger = logging.getLogger(__name__)
 
-_KB_DIR        = os.path.join(_BACKEND_DIR, "expert_knowledge")
-_METRICS_FILE  = os.path.join(_KB_DIR, "评估指标_mock.json")   # 优先用含 mock_data 的版本
-_METRICS_FALLBACK = os.path.join(_KB_DIR, "评估指标.json")
+_KB_DIR            = os.path.join(_BACKEND_DIR, "expert_knowledge")
+_NODE_FILE         = os.path.join(_KB_DIR, "node.json")
+_METRICS_MOCK_FILE = os.path.join(_KB_DIR, "评估指标_mock.json")   # mock_data 来源，不变
 
 
 class SqlExecutor:
@@ -73,7 +74,9 @@ class SqlExecutor:
         force_mock = os.environ.get("FORCE_MOCK", "").lower() in ("1", "true", "yes")
 
         if not force_mock:
-            sql, table = self._parse_sql(record)
+            sql    = record.get("exec_sql", "")
+            tables = record.get("extracted_table") or []
+            table  = tables[0] if tables else ""
             if sql:
                 rows = client.execute_sql_query(sql, table)
                 if rows:
@@ -186,25 +189,24 @@ class SqlExecutor:
     # ── 内部 ──────────────────────────────────────────────────
 
     def _load(self) -> None:
-        path = _METRICS_FILE if os.path.exists(_METRICS_FILE) else _METRICS_FALLBACK
-        if not os.path.exists(path):
-            logger.warning("[SqlExecutor] 找不到指标文件")
+        if not os.path.exists(_NODE_FILE):
+            logger.warning("[SqlExecutor] 找不到 node.json")
             return
-        with open(path, encoding="utf-8") as f:
-            records = json.load(f)
-        self._index = {r["name"]: r for r in records if r.get("name")}
-        mock_count = sum(1 for r in records if "mock_data" in r)
-        logger.info("[SqlExecutor] 加载 %d 条指标（%d 条含 mock_data）from %s",
-                    len(self._index), mock_count, os.path.basename(path))
+        with open(_NODE_FILE, encoding="utf-8") as f:
+            all_nodes = json.load(f)
+        l5 = [n for n in all_nodes if n.get("level") == 5 and n.get("name")]
+        self._index = {n["name"]: n for n in l5}
 
-    @staticmethod
-    def _parse_sql(record: Dict) -> tuple[str, str]:
-        """从 answer 字段解析 exec_sql 和 table_name。"""
-        try:
-            answer = json.loads(record.get("answer", "{}"))
-            sql    = answer.get("exec_sql", "")
-            tables = json.loads(answer.get("extracted_table", "[]"))
-            table  = tables[0] if tables else ""
-            return sql, table
-        except (json.JSONDecodeError, TypeError, IndexError):
-            return "", ""
+        # 将 评估指标_mock.json 中的 mock_data 按 id 叠加进索引
+        mock_count = 0
+        if os.path.exists(_METRICS_MOCK_FILE):
+            with open(_METRICS_MOCK_FILE, encoding="utf-8") as f:
+                mock_records = json.load(f)
+            id_to_mock = {r["id"]: r["mock_data"] for r in mock_records if r.get("id") and "mock_data" in r}
+            for node in self._index.values():
+                if node.get("id") in id_to_mock:
+                    node["mock_data"] = id_to_mock[node["id"]]
+                    mock_count += 1
+
+        logger.info("[SqlExecutor] 加载 %d 条 L5 指标（%d 条含 mock_data）",
+                    len(self._index), mock_count)
