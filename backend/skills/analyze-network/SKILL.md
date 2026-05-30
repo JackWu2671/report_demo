@@ -131,6 +131,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delet
 | `modify_node_name` | `node_id`, `value` | — | 修改节点名称；对 L5 节点会自动同步 exec_sql 等所有关联字段，**调用前必须先用 `get_node_detail.py` 查清楚当前节点** |
 | `modify_node_description` | `node_id`, `value` | — | 修改节点描述（**仅限 L1–L4**；L5 query 节点无 description，操作会被拒绝） |
 | `modify_node_condition` | `node_id`, `value` | — | 设置条件；格式「当……时，本节才展示」；value 传空字符串删除条件 |
+| `modify_node_exec_sql` | `node_id`, `value` | — | 直接修改 L5 节点的 `exec_sql`（仅限 L5）；用于在 KB 指标 SQL 基础上做定制调整，**调用前须先用 `get_node_detail.py` 查看当前 SQL** |
 | `keep_only_node` | `node_id` | — | 保留该节点，同级其他节点自动删除 |
 
 **`add_node` 位置规则（重要）**：

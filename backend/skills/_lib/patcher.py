@@ -2,12 +2,13 @@
 patcher.py — 将结构化操作列表应用到大纲树。
 
 支持的 patch 操作:
-  add_node              — 从知识图谱新增节点，挂到指定父节点下
-  delete_node           — 删除指定节点及其所有子节点
-  modify_node_name      — 修改节点的 name（L5 query 节点仅允许此操作）
+  add_node                — 从知识图谱新增节点，挂到指定父节点下
+  delete_node             — 删除指定节点及其所有子节点
+  modify_node_name        — 修改节点的 name；对 L5 节点会自动从 KB 同步 exec_sql 等所有关联字段
   modify_node_description — 修改节点的 description（L5 query 节点禁止，会被 skip）
-  modify_node_condition — 设置或修改节点展示条件
-  keep_only_node        — 保留指定节点，删除同级兄弟节点
+  modify_node_condition   — 设置或修改节点展示条件
+  modify_node_exec_sql    — 直接修改 L5 节点的 exec_sql（仅限 L5，用于定制查询逻辑）
+  keep_only_node          — 保留指定节点，删除同级兄弟节点
 """
 
 import copy
@@ -158,6 +159,21 @@ async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[d
                 msg = f"节点 {node_id} 不存在"
                 logger.warning("[Step 9] modify_node_condition: 未找到节点 %s", node_id)
                 skipped.append({**op, "_skip_reason": msg})
+
+        elif op_name == "modify_node_exec_sql":
+            target_level = _find_node_level(tree, node_id)
+            if target_level != 5:
+                msg = f"节点 {node_id} 不是 L5 query 节点，exec_sql 只能在 L5 节点上修改"
+                logger.warning("[Step 9] modify_node_exec_sql: %s", msg)
+                skipped.append({**op, "_skip_reason": msg})
+            else:
+                found = _modify_field(tree, node_id, "exec_sql", op.get("value", ""))
+                if found:
+                    logger.info("[Step 9] modify_node_exec_sql: 节点 %s | 原因: %s", node_id, reason)
+                else:
+                    msg = f"节点 {node_id} 不存在"
+                    logger.warning("[Step 9] modify_node_exec_sql: 未找到节点 %s", node_id)
+                    skipped.append({**op, "_skip_reason": msg})
 
         else:
             logger.warning("[Step 9] 未知操作: %s", op_name)
