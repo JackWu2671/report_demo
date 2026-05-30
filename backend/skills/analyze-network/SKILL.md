@@ -44,6 +44,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/<script>.py [参数]
 | `modify_outline.py '<ops_json>'` | 对当前大纲执行结构化修改操作 |
 | `load_template.py <template_id>` | 按 ID 加载指定模板大纲写入会话 |
 | `get_node_detail.py <node_id> [node_id2 ...]` | 查询节点完整信息（summarySuggestion、exec_sql、renderType 等） |
+| `get_report_data.py <node_id>` | 查询已生成报告中某节点的指标数据（每项前 10 行）和总结文本 |
 
 ## 第一阶段：生成大纲
 
@@ -172,9 +173,18 @@ python3 $SKILLS_DIR/analyze-network/scripts/trigger_report.py
 
 ## Agent 的视野边界
 
-Agent 只能看到**大纲**，看不到报告正文（SQL 查询结果、图表数据等）。
+Agent 默认能看到**大纲**（system prompt 中的 YAML）。报告生成后，指标数据和总结文本也可按需查阅：
 
-- **修改报告 = 修改大纲**，不存在直接编辑报告文本的途径
+```bash
+python3 $SKILLS_DIR/analyze-network/scripts/get_report_data.py <node_id>
+```
+
+输出指定节点子树中所有 L5 指标的查询结果（每项最多 10 行）以及各层节点的总结文本。
+报告尚未生成时输出提示。可用于：
+- 了解某章节的实际数据，判断是否需要调整大纲
+- 回答用户关于"某个指标结果是多少"的具体问题
+
+**修改报告 = 修改大纲**，不存在直接编辑报告文本的途径：
 - 用户说「把某一节的指标换掉」「删掉某个章节」→ 一律通过 `modify_outline.py` 修改大纲，再触发生成
 - 前端增量更新是自动的：未变动的指标数据和子树总结会被复用，无需重新查询；只有大纲中新增或修改的部分才重新执行
 - Agent 无需关心哪些内容需要重新生成，只需正确修改大纲并触发即可

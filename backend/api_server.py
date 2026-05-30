@@ -191,7 +191,7 @@ async def _stream_report(session_id: str, outline_tree: dict, cached_names: set,
 
     def worker():
         try:
-            run_report(outline_tree, on_event, cached_names, cached_summary_ids)
+            run_report(outline_tree, on_event, cached_names, cached_summary_ids, session_id=session_id)
         except Exception as e:
             logger.error("[Report] 生成异常: %s", e, exc_info=True)
             loop.call_soon_threadsafe(

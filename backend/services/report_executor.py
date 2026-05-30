@@ -19,8 +19,11 @@ report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件�
 """
 
 import asyncio
+import json
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from services.de_sql_execution_client import DeApiClient
@@ -36,14 +39,39 @@ def run_report(
     on_event: Callable[[dict], None],
     cached_names: set = None,
     cached_summary_ids: set = None,
+    session_id: str = "",
 ) -> None:
     cached_names = cached_names or set()
     cached_summary_ids = cached_summary_ids or set()
     executor = SqlExecutor()
     # collected 贯穿全局，所有 metric 的 rows 都写入这里
     collected: Dict[str, List] = {}
+    summaries: Dict[str, str] = {}
+
+    def _capturing_on_event(event: dict) -> None:
+        if event.get("type") == "report_summary":
+            summaries[event.get("node_id", "")] = event.get("chunk", "").rstrip("\n")
+        on_event(event)
+
     with DeApiClient() as client:
-        _walk(outline_tree.get("children", []), client, executor, on_event, cached_names, cached_summary_ids, collected)
+        _walk(outline_tree.get("children", []), client, executor, _capturing_on_event, cached_names, cached_summary_ids, collected)
+
+    if session_id:
+        _persist_report_data(session_id, collected, summaries)
+
+
+def _persist_report_data(session_id: str, collected: Dict[str, List], summaries: Dict[str, str]) -> None:
+    """将指标查询结果（最多 10 行）和节点总结持久化到 session 文件，供 agent 按需查询。"""
+    _session_dir = Path(os.environ.get("REPORT_SESSION_DIR", "/tmp/report_sessions"))
+    p = _session_dir / f"{session_id}.json"
+    try:
+        data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+        data["report_data"] = {name: rows[:10] for name, rows in collected.items()}
+        data["report_summaries"] = summaries
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("[report] 报告数据已写入会话 (metrics=%d, summaries=%d)", len(collected), len(summaries))
+    except Exception as e:
+        logger.warning("[report] 写入会话文件失败: %s", e)
 
 
 def _run_batch(
