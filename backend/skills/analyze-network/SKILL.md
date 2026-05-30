@@ -55,6 +55,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/get_node_detail.py L5_001
 | `search_templates.py "查询词" [--topk N]` | 向量检索模板库，返回候选模板 JSON 数组 |
 | `build_outline.py <anchor_id>` | 以锚节点为根展开子树，生成初始大纲写入会话 |
 | `modify_outline.py '<ops_json>'` | 对当前大纲执行结构化修改操作 |
+| `set_node_sql.py <node_id>` | 修改 L5 节点 exec_sql（SQL 经 stdin 传入，专治含反引号/引号的 SQL） |
 | `load_template.py <template_id>` | 按 ID 加载指定模板大纲写入会话 |
 | `get_node_detail.py <node_id> [node_id2 ...]` | 查询节点完整信息（summarySuggestion、exec_sql、renderType 等） |
 | `get_report_data.py <node_id>` | 查询已生成报告中某节点的指标数据（每项前 10 行）和总结文本 |
