@@ -12,7 +12,7 @@
 | 数据 | State 变量 | SSE 字段 | 消费者 |
 |------|-----------|---------|--------|
 | 用户可读 Markdown | `outlineMd` | `evt.markdown` | 用户阅读 |
-| 带 ID 的 Markdown | `outlineLlm` | `evt.md_with_ids` | 大模型修改大纲 |
+| YAML（精简视图） | `outlineLlm` | `evt.outline_yaml` | 大模型上下文 |
 | JSON 树 | `outlineJson` + `outlineJsonRef` | `evt.outline_tree` | 前端报告生成逻辑 |
 
 ### 为什么三份都不能省
@@ -22,26 +22,33 @@
 不行。同一份大纲，两种格式的 token 量差异巨大：
 
 ```
-// md_with_ids：~400 tokens
-[id=L3_001 L3] 50GPON价值站点分析
-  [id=L4_018 L4] 50GPON升级站点-套餐和超标 | 条件：${number("AEC覆盖用户数")>0}
-    [id=L5_001 L5] AEC覆盖用户数
+# outline_yaml（精简 YAML）：~300 tokens
+- id: L3_001
+  name: 50GPON价值站点分析
+  children:
+    - id: L4_018
+      name: 50GPON升级站点-套餐和超标
+      condition: ${number("AEC覆盖用户数")>0}
+      condition_queries: [AEC覆盖用户数]
+      children:
+        - id: L5_001
+          name: AEC覆盖用户数
 
-// JSON：~2000+ tokens（含 description、condition_queries、summarySuggestion 等字段）
+# JSON（完整树）：~2000+ tokens（含 summarySuggestion、renderType、exec_sql 等字段）
 { "id": "L3_001", "name": "50GPON价值站点分析", "level": 3,
   "description": "...", "condition": "", "condition_queries": [],
-  "summarySuggestion": "", "children": [ ... ] }
+  "summarySuggestion": "", "renderType": "", "exec_sql": "...", "children": [ ... ] }
 ```
 
-`md_with_ids` 是专为 LLM 设计的紧凑格式：层级用缩进表达、关键信息（ID、名称、条件）密集排在一行，LLM 扫描节点 ID 和判断结构关系的准确率更高。JSON 里的 `condition_queries`、`summarySuggestion` 等字段是给程序用的，注入给 LLM 只会引入噪声。
+`outline_yaml` 是专为 LLM 设计的精简视图：只保留 LLM 需要随时引用的字段（id/name/description/condition/condition_queries），`level`、SQL 字段（exec_sql/apiName 等）、summarySuggestion 等字段默认省略——LLM 需要时可调用 `get_node_detail.py <node_id>` 按需拉取，而不是污染每次请求的上下文。
 
-**能不能只存 md_with_ids，不要 JSON？**
+**能不能只存 outline_yaml，不要 JSON？**
 
 不行。`outlineJson` 是程序逻辑必须的结构化数据：`buildSkeleton()` 遍历树生成报告骨架、`findNodeById()` 查节点、`replayCaches()` 校验 summary 缓存是否仍然有效——这些都依赖字段访问和递归遍历，文本格式无法满足。
 
-**能不能只存 JSON 和 md_with_ids，不要用户可读版？**
+**能不能只存 JSON 和 outline_yaml，不要用户可读版？**
 
-不行。用户可读版由 `MarkdownOutline.jsx` 渲染，展示层级颜色标签、描述文字、条件提示；md_with_ids 的原始文本格式（`[id=L4_018 L4] 节点名`）不适合直接给用户看。
+不行。用户可读版由 `MarkdownOutline.jsx` 渲染，展示层级颜色标签、描述文字、条件提示；outline_yaml 的原始文本格式不适合直接给用户看。
 
 三份数据职责完全不重叠，每份都有唯一消费者，都不能省。
 
@@ -61,14 +68,29 @@
 
 由 `MarkdownOutline.jsx` 渲染，展示带颜色层级标签（L1–L5）、描述文字和条件提示。
 
-#### 带 ID 的 Markdown — `outlineLlm`
+#### YAML 精简视图 — `outlineLlm`
 
-每个节点附带 ID，注入到 Agent 的 system prompt（`build_messages` 中 `## 当前大纲` 部分），让大模型在多轮对话中能通过 ID 调用 `modify_outline.py` 修改特定节点：
+注入到 Agent 的 system prompt（`build_messages` 中 `## 当前大纲` 部分），让大模型在多轮对话中能通过 ID 调用 `modify_outline.py` 修改特定节点。格式省略 level、SQL 字段和空字段，只保留 LLM 需要随时引用的内容：
 
+```yaml
+- id: L3_001
+  name: 50GPON价值站点分析
+  description: 针对50GPON站点的套餐价值和升级潜力进行评估
+  children:
+    - id: L4_018
+      name: 50GPON升级站点-套餐和超标
+      condition: ${number("AEC覆盖用户数")>0}
+      condition_queries:
+        - AEC覆盖用户数
+      children:
+        - id: L5_001
+          name: AEC覆盖用户数
 ```
-[id=L3_001 L3] 50GPON价值站点分析
-  [id=L4_018 L4] 50GPON升级站点-套餐和超标 | 条件：${number("AEC覆盖用户数")>0}
-    [id=L5_001 L5] AEC覆盖用户数
+
+LLM 如需查看某节点的完整信息（summarySuggestion、exec_sql、renderType 等），可调用：
+
+```bash
+python3 $SKILLS_DIR/analyze-network/scripts/get_node_detail.py L4_018
 ```
 
 #### JSON 树 — `outlineJson` / `outlineJsonRef`
@@ -105,7 +127,22 @@ generateReport()
 
 ---
 
-## 二、报告两份数据
+## 二、大纲的四种后端表示
+
+在后端，大纲通过 `outline_utils.py` 在四种表示之间转换：
+
+| 函数 | 输入 | 输出 | 用途 |
+|------|------|------|------|
+| `to_markdown(tree)` | outline_tree | 纯 Markdown | 前端用户视图 |
+| `to_yaml(tree)` | outline_tree | YAML 精简文本 | LLM 上下文（system prompt） |
+| `to_clean_json(tree)` | outline_tree | 干净 JSON dict | 前端 JSON 树、存储 |
+| `from_yaml(text)` | YAML 文本 | outline_tree | LLM 写 YAML → 解析回树 |
+
+唯一权威数据源是 `outline_tree`（dict）。`to_yaml()` 省略 level 和 SQL 字段；`from_yaml()` 通过 ID 前缀（`L1_xxx` → level 1）自动推断 level。
+
+---
+
+## 三、报告两份数据
 
 报告在前端对应两个 Tab，数据来源于后端 `/api/report` SSE 流。
 
@@ -120,13 +157,13 @@ generateReport()
 
 ---
 
-## 三、数据流总览
+## 四、数据流总览
 
 ```
 后端 SSE 'outline' 事件
-    ├─ evt.markdown     ──→  outlineMd   ──→  MarkdownOutline（用户阅读）
-    ├─ evt.md_with_ids  ──→  outlineLlm  ──→  Agent system prompt（LLM 修改大纲）
-    └─ evt.outline_tree ──→  outlineJson ──→  buildSkeleton() / findNodeById() 等逻辑
+    ├─ evt.markdown      ──→  outlineMd   ──→  MarkdownOutline（用户阅读）
+    ├─ evt.outline_yaml  ──→  outlineLlm  ──→  Agent system prompt（LLM 修改大纲）
+    └─ evt.outline_tree  ──→  outlineJson ──→  buildSkeleton() / findNodeById() 等逻辑
                                 │
                                 ▼
                           buildSkeleton()  （局部变量 sk）

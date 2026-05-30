@@ -204,7 +204,7 @@ with ThreadPoolExecutor(max_workers=5) as pool:
 
 ```
 ① 有 exec_sql → 调用 de_sql_execution_client 查真实 API
-② 查询失败或无结果 → 降级到 mock_data（评估指标_mock.json 里预存的数据）
+② 查询失败或无结果 → 降级到 mock_data（评估指标_mock.json 按 id 叠加到 node.json 的字段）
 ③ 也没有 mock_data → 该指标无结果
 ```
 
