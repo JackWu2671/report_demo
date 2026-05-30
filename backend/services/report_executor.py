@@ -52,13 +52,25 @@ def _run_batch(
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
     collected: Dict[str, List],
+    *,
+    silent_names: set | None = None,
 ) -> None:
-    """并行执行一批 L5 指标查询，结果写入 collected。"""
-    uncached = [n for n in nodes if n.get("name") not in cached_names]
-    if not uncached:
+    """并行执行一批 L5 指标查询，结果写入 collected。
+
+    silent_names: 这些指标即使在 cached_names 里也会被查询，但不推 SSE 事件。
+    用于总结需要重新生成时，静默补全 collected 里的缓存指标数据。
+    """
+    silent_names = silent_names or set()
+    to_query = [n for n in nodes if n.get("name") not in cached_names or n.get("name") in silent_names]
+    if not to_query:
         return
+
+    def _emit(event: dict) -> None:
+        if event.get("name") not in silent_names:
+            on_event(event)
+
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
-        futures = {pool.submit(_run_metric, n, executor, on_event): n for n in uncached}
+        futures = {pool.submit(_run_metric, n, executor, _emit): n for n in to_query}
         for future in as_completed(futures):
             try:
                 result = future.result()
@@ -67,7 +79,7 @@ def _run_batch(
             except Exception as e:
                 n = futures[future]
                 logger.error("[report] 查询异常 %r: %s", n.get("name", ""), e)
-                on_event({"type": "report_metric", "name": n.get("name", ""), "chunk": "_（查询异常）_\n\n"})
+                _emit({"type": "report_metric", "name": n.get("name", ""), "chunk": "_（查询异常）_\n\n"})
 
 
 def _walk(
@@ -89,7 +101,13 @@ def _walk(
 
     # 处理当前层级的孤立 L5 节点（无结构父节点直接挂在这一层）
     if metric_nodes:
-        _run_batch(metric_nodes, cached_names, executor, on_event, collected)
+        # 若某 L5 节点总结需重新生成，该节点即使被缓存也需静默查询
+        summary_needed = {
+            n.get("name") for n in metric_nodes
+            if n.get("summarySuggestion") and n.get("id") not in cached_summary_ids
+        }
+        silent = summary_needed & cached_names
+        _run_batch(metric_nodes, cached_names, executor, on_event, collected, silent_names=silent)
         for node in metric_nodes:
             if node.get("summarySuggestion") and node.get("id") not in cached_summary_ids:
                 _generate_summary(node, {node["name"]: collected.get(node["name"], [])}, on_event)
@@ -137,15 +155,24 @@ def _process_structural(
             on_event({"type": "report_skip", "node_id": node.get("id", ""), "node_name": node.get("name", "")})
             return
 
+    needs_fresh_summary = bool(node.get("summarySuggestion")) and node.get("id") not in cached_summary_ids
+
     # Step 3: 查普通直属 L5 指标
+    # 若本节点总结需重新生成，已缓存的指标也要静默查询以填充 collected
     regular_l5 = [n for n in l5_children if n.get("name") not in condition_queries]
-    _run_batch(regular_l5, cached_names, executor, on_event, collected)
+    if needs_fresh_summary:
+        silent = {n.get("name") for n in regular_l5 if n.get("name") in cached_names}
+        _run_batch(regular_l5, cached_names, executor, on_event, collected, silent_names=silent)
+    else:
+        _run_batch(regular_l5, cached_names, executor, on_event, collected)
 
     # Step 4: 递归处理结构子节点
     _walk(structural_children, client, executor, on_event, cached_names, cached_summary_ids, collected)
 
     # Step 5: 总结
-    if node.get("summarySuggestion") and node.get("id") not in cached_summary_ids:
+    if needs_fresh_summary:
+        # structural_children 的深层 L5 若也被缓存跳过，先静默补查
+        _backfill_cached_for_summary(node, cached_names, executor, collected)
         _generate_summary(node, _collect_node_data(node, collected), on_event)
 
 
@@ -219,6 +246,43 @@ def _collect_node_data(node: Dict, collected: Dict[str, List]) -> Dict[str, List
         else:
             data.update(_collect_node_data(child, collected))
     return data
+
+
+def _backfill_cached_for_summary(
+    node: Dict,
+    cached_names: set,
+    executor: SqlExecutor,
+    collected: Dict[str, List],
+) -> None:
+    """
+    对 node 子树中所有"已被前端缓存但 collected 里仍缺失"的 L5 指标，静默补查。
+    用于 structural_children 经 _walk 处理后仍有缺口的情况。
+    """
+    missing: List[Dict] = []
+
+    def _find(n: Dict) -> None:
+        for child in n.get("children", []):
+            if child.get("level") == 5:
+                name = child.get("name", "")
+                if name in cached_names and name not in collected:
+                    missing.append(child)
+            else:
+                _find(child)
+
+    _find(node)
+    if not missing:
+        return
+
+    logger.info("[report] 总结补查 %d 条缓存指标（静默）", len(missing))
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+        futures = {pool.submit(_run_metric, n, executor, lambda _: None): n for n in missing}
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                if result and result.get("rows"):
+                    collected[result["name"]] = result["rows"]
+            except Exception as e:
+                logger.warning("[report] 补查异常: %s", e)
 
 
 _CHART_TYPES = {"BAR", "LINE", "PIE"}
