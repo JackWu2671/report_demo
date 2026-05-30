@@ -314,7 +314,7 @@ export default function ChatView() {
               outlineJsonRef.current = newTree
               setOutlineJson(newTree)
               setOutlineMd(evt.markdown || '')
-              setOutlineLlm(evt.md_with_ids || '')
+              setOutlineLlm(evt.outline_yaml || '')
               const newSk = buildSkeleton(newTree)
               setReport(replayCaches(newSk, newTree))
             } else if (evt.type === 'report_done') {
@@ -365,7 +365,7 @@ export default function ChatView() {
         const md = evt.markdown ?? evt.content ?? ''
         setOutline(md)
         setOutlineMd(md)
-        if (evt.md_with_ids) setOutlineLlm(evt.md_with_ids)
+        if (evt.outline_yaml) setOutlineLlm(evt.outline_yaml)
         if (evt.outline_tree) {
           outlineJsonRef.current = evt.outline_tree
           setOutlineJson(evt.outline_tree)
