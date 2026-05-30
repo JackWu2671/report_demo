@@ -30,6 +30,7 @@ metadata:
 | 脚本 | 说明 |
 |------|------|
 | `search_graph_tree.py "查询词"` | 检索知识图谱节点（与 analyze-network 共用脚本） |
+| `get_node_detail.py <node_id> [...]` | 查询节点完整信息，与 analyze-network 共用脚本 |
 | `set_outline.py`（从 stdin 读取） | 解析 YAML 大纲写入会话，推送给前端 |
 | `set_metadata.py --scene-name "..." --summary "..." --keywords "kw1,kw2" --usage-conditions "..."` | 写入场景元数据 |
 | `save_template.py` | 将当前大纲和元数据保存为模板 |

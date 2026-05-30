@@ -43,6 +43,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/<script>.py [参数]
 | `build_outline.py <anchor_id>` | 以锚节点为根展开子树，生成初始大纲写入会话 |
 | `modify_outline.py '<ops_json>'` | 对当前大纲执行结构化修改操作 |
 | `load_template.py <template_id>` | 按 ID 加载指定模板大纲写入会话 |
+| `get_node_detail.py <node_id> [node_id2 ...]` | 查询节点完整信息（summarySuggestion、exec_sql、renderType 等） |
 
 ## 第一阶段：生成大纲
 
