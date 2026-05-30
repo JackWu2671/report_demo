@@ -2,9 +2,10 @@
 """
 对当前大纲应用 patch 操作，写入会话状态。
 
-用法（两种等价）：
+用法（三种等价）：
   python3 modify_outline.py '<ops_json>'          # 参数模式
-  python3 modify_outline.py << 'EOF'              # stdin 模式（推荐用于含反引号/换行的 value）
+  python3 modify_outline.py /path/to/ops.json     # 文件模式（推荐用于含反引号/换行的 value）
+  python3 modify_outline.py << 'EOF'              # stdin 模式
   [{"op": "...", ...}]
   EOF
 
@@ -14,7 +15,7 @@ ops_json 是 JSON 数组，支持的操作：
   modify_node_name         node_id, value
   modify_node_description  node_id, value
   modify_node_condition    node_id, value
-  modify_node_exec_sql     node_id, value  （仅限 L5；value 含反引号时必须用 stdin 模式）
+  modify_node_exec_sql     node_id, value  （仅限 L5；value 含反引号时推荐用文件模式）
   keep_only_node           node_id
 
 成功时输出修改后的 YAML 大纲。
@@ -45,6 +46,10 @@ async def main():
         raw = " ".join(sys.argv[1:]).strip()
         if raw.startswith("'") and raw.endswith("'"):
             raw = raw[1:-1]
+        # 文件模式：参数是已存在的文件路径，从文件读取 JSON（避免 heredoc 和 shell 转义问题）
+        if os.path.isfile(raw):
+            with open(raw, encoding="utf-8") as f:
+                raw = f.read().strip()
     else:
         raw = sys.stdin.read().strip()
         if not raw:
