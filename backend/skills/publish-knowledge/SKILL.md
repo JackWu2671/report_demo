@@ -27,7 +27,7 @@ metadata:
 | 脚本 | 命令格式 | 说明 |
 |------|---------|------|
 | `list_templates.py` | `python3 ... [--with-outline]` | 列出所有已保存模板，`--with-outline` 附带完整大纲 |
-| `show_graph.py` | `python3 ...` | 输出当前知识图谱完整结构（md_with_ids 格式） |
+| `show_graph.py` | `python3 ...` | 输出当前知识图谱完整节点树 |
 | `graph_manage.py` | `python3 ... --template-id <id> --add-nodes "[...]" --enrich-nodes "[...]"` | 将分析结果写入知识图谱 |
 
 ## 工作流程

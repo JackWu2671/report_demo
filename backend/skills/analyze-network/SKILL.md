@@ -90,7 +90,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/search_graph_tree.py "用户需求�
 python3 $SKILLS_DIR/analyze-network/scripts/build_outline.py L4_001
 ```
 
-输出带 id 的 Markdown 大纲，大纲同时写入会话状态并推送给前端。
+输出 YAML 格式大纲，大纲同时写入会话状态并推送给前端。
 
 生成后，**立即通过一次 `modify_outline.py` 调用完成结构修剪**，不要等待用户指示：
 - 删除与用户需求无关的节点，或用 `keep_only_node` 保留关键分支
@@ -132,7 +132,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delet
 - 多个独立操作合并为**一次调用**
 - 若后续 op 依赖前一个 op 的结果，则**分多次调用**
 
-成功时输出修改后的带 id 大纲。跳过的操作以 `# SKIPPED:` 开头输出——出现时**必须继续补救，不得告知用户已完成**。
+成功时输出修改后的 YAML 大纲。跳过的操作以 `# SKIPPED:` 开头输出——出现时**必须继续补救，不得告知用户已完成**。
 
 ### 加载模板大纲
 
@@ -140,7 +140,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delet
 python3 $SKILLS_DIR/analyze-network/scripts/load_template.py <template_id>
 ```
 
-成功时输出带 id 的 Markdown 大纲，大纲写入会话状态并推送给前端。
+成功时输出 YAML 格式大纲，大纲写入会话状态并推送给前端。
 
 ## 第二阶段：生成报告
 

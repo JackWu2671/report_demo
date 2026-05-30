@@ -30,7 +30,7 @@ metadata:
 | 脚本 | 说明 |
 |------|------|
 | `search_graph_tree.py "查询词"` | 检索知识图谱节点（与 analyze-network 共用脚本） |
-| `set_outline.py '<md_with_ids>'` | 解析 md_with_ids 大纲写入会话，推送给前端 |
+| `set_outline.py`（从 stdin 读取） | 解析 YAML 大纲写入会话，推送给前端 |
 | `set_metadata.py --scene-name "..." --summary "..." --keywords "kw1,kw2" --usage-conditions "..."` | 写入场景元数据 |
 | `save_template.py` | 将当前大纲和元数据保存为模板 |
 
@@ -52,21 +52,39 @@ python3 $SKILLS_DIR/analyze-network/scripts/search_graph_tree.py "专家描述�
 
 ### 步骤 2：构造大纲
 
-根据专家输入和知识库节点，自行设计大纲结构，调用：
-
-> **格式规则（必须遵守）**：外层用**双引号**，节点之间用 `\n` 分隔（字面量反斜线n），每级缩进 2 个空格，内层不得有双引号。
+根据专家输入和知识库节点，自行设计大纲结构，以 YAML 格式通过 stdin 传入：
 
 ```bash
-python3 $SKILLS_DIR/consolidate-expert/scripts/set_outline.py "[L1 new_001] 标题：描述\n  [L2 new_002] 章节：描述\n    [L3 new_003] 节：描述\n      [L4 new_004] 小节：描述\n        [Q L5_001] query节点名称"
+python3 $SKILLS_DIR/consolidate-expert/scripts/set_outline.py << 'EOF'
+- id: new_001
+  name: 标题
+  description: 50～100字描述
+  children:
+    - id: new_002
+      name: 章节
+      description: 描述
+      children:
+        - id: new_003
+          name: 节
+          description: 描述
+          children:
+            - id: new_004
+              name: 小节
+              description: 描述
+              children:
+                - id: L5_001
+                  name: query节点名称
+EOF
 ```
 
-`md_with_ids` 格式约束（违反任意一条视为无效输出）：
-1. L1 必须存在且唯一，作为大纲根节点（报告总标题）
-2. query 节点必须是叶子节点，禁止在 L5 下方挂任何子节点
-3. 禁止新建 query 节点（即禁止 `[Q new_xxx]`），L5 只能引用 search_graph_tree 返回的知识库节点 id
-4. 禁止 `[L4 new_xxx]` 作叶子节点，每个新建 L4 下方必须至少挂一个知识库已有的 query 节点
-5. 所有新建节点（new_xxx）名称后必须紧跟全角冒号和描述（50～100 字）
+YAML 大纲约束（违反任意一条视为无效输出）：
+1. 顶层必须恰好一个节点（即一个 L1），作为大纲根节点（报告总标题）
+2. L5 query 节点必须是叶子节点，禁止在其下挂任何子节点
+3. 禁止新建 query 节点（即禁止 `id: new_xxx` 且无子节点的叶子节点），L5 只能引用 search_graph_tree 返回的知识库节点 id
+4. 禁止 L4 新建节点（`id: new_xxx`）作叶子节点，每个新建 L4 下方必须至少挂一个知识库已有的 query 节点
+5. 所有新建节点（`id: new_xxx`）必须填写 `description`（50～100 字）
 6. L2/L3/L4 由你按专家意图自由设计，不得用知识库节点名称替代专家描述的分析板块名称
+7. `condition`/`condition_queries` 按需填写，其他字段（level、exec_sql 等）不要写入 YAML
 
 调用后大纲立即展示给专家。
 
