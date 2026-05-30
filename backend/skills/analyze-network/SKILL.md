@@ -132,16 +132,19 @@ python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delet
 
 ```bash
 python3 -c "
-import json, os, subprocess, sys
+import json, os, subprocess, sys, tempfile
 ops = [{'op': 'modify_node_exec_sql', 'node_id': 'L5_071', 'value': 'select \`档位\` from ...'}]
-tmp = '/tmp/_outline_ops.json'
+tmp = tempfile.mktemp(suffix='.json')
 with open(tmp, 'w', encoding='utf-8') as f: json.dump(ops, f, ensure_ascii=False)
-r = subprocess.run(['python3', os.path.join(os.environ['SKILLS_DIR'], 'analyze-network/scripts/modify_outline.py'), tmp], capture_output=True, text=True)
-sys.stdout.write(r.stdout); sys.stderr.write(r.stderr); sys.exit(r.returncode)
+r = subprocess.run(['python3', os.path.join(os.environ['SKILLS_DIR'], 'analyze-network/scripts/modify_outline.py'), tmp])
+os.unlink(tmp)
+sys.exit(r.returncode)
 "
 ```
 
-> Python 字符串内反引号是普通字符，不触发 shell 命令替换；单引号无需转义。
+> - Python 字符串内反引号是普通字符，**不需要** `\`` 转义，直接写 `` ` ``；写成 `\`` 会在 SQL 里留下多余反斜杠导致 SQL 报错
+> - 用 `tempfile.mktemp()` 代替 `/tmp/` 硬编码，兼容 Windows
+> - 不用 `capture_output=True`，子进程 stdout/stderr 直接透传，避免转发遗漏
 
 支持的 op 类型：
 
