@@ -78,31 +78,9 @@ def get_kb():
         with open(p, encoding="utf-8") as f:
             return json.load(f) or []
 
-    # node.json 是本地构建产物（gitignore），优先使用；否则退回空列表
+    # node.json 是本地构建产物（gitignore），L5 节点已内含 exec_sql 等字段
     nodes     = _load("node.json") or _load("knowledge_nodes.json")
     relations = _load("relation.json") or _load("knowledge_relations.json")
-
-    # 从评估指标.json（或 sample_query_sql.json）提取 id → exec_sql 映射
-    sql_source = _load("评估指标.json") or _load("sample_query_sql.json")
-    sql_map = {}
-    for item in sql_source:
-        if item.get("answer"):
-            try:
-                sql_map[item["id"]] = json.loads(item["answer"]).get("exec_sql", "")
-            except Exception:
-                pass
-
-    # 将 exec_sql 注入对应 L5 节点；若 nodes 里无 L5，则从 sql_source 补充
-    existing_ids = {n["id"] for n in nodes}
-    for node in nodes:
-        if node.get("level") == 5 and node["id"] in sql_map:
-            node["exec_sql"] = sql_map[node["id"]]
-
-    for item in sql_source:
-        if item["id"] not in existing_ids:
-            node = {k: v for k, v in item.items() if k != "answer"}
-            node["exec_sql"] = sql_map.get(item["id"], "")
-            nodes.append(node)
 
     return {"nodes": nodes, "relations": relations}
 
