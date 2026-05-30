@@ -188,10 +188,13 @@ def _build_kb_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dic
     if not node:
         return None
     entry = {
-        "id": node_id,
-        "name": node["name"],
-        "level": node.get("level", 0),
-        "description": node.get("description", ""),
+        "id":                node_id,
+        "name":              node["name"],
+        "level":             node.get("level", 0),
+        "description":       node.get("description", ""),
+        "condition":         node.get("condition", ""),
+        "condition_queries": node.get("condition_queries") or [],
+        "summarySuggestion": node.get("summarySuggestion", ""),
         "children": [
             child
             for child_id in children_map.get(node_id, [])
@@ -199,9 +202,12 @@ def _build_kb_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dic
         ],
     }
     if node.get("level") == 5:
-        entry["renderType"] = node.get("renderType", "")
-        entry["colX"]       = node.get("colX", "")
-        entry["colY"]       = node.get("colY", "")
+        entry["renderType"]       = node.get("renderType", "")
+        entry["colX"]             = node.get("colX", "")
+        entry["colY"]             = node.get("colY", "")
+        entry["apiName"]          = node.get("apiName", "")
+        entry["exec_sql"]         = node.get("exec_sql", "")
+        entry["extracted_table"]  = node.get("extracted_table") or []
     return entry
 
 
