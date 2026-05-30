@@ -117,22 +117,31 @@ python3 $SKILLS_DIR/analyze-network/scripts/build_outline.py L4_001
 
 **两种调用方式：**
 
-**参数模式**（普通操作，value 不含反引号）：
+**参数模式**（普通操作，value 不含反引号且不含单引号）：
 > 外层用**双引号**，内层所有 `"` 转义为 `\"`。不可用单引号——Windows cmd.exe 不把单引号当字符串边界。
 
 ```bash
 python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_003\"}, {\"op\": \"modify_node_name\", \"node_id\": \"L4_007\", \"value\": \"新名称\"}]"
 ```
 
-**stdin 模式**（value 含反引号、换行等 shell 特殊字符时必须用此方式，如 `modify_node_exec_sql`）：
+**文件模式**（value 含反引号或单引号时必须用此方式，如 `modify_node_exec_sql`）：
+
+> 不可用 heredoc（`<< 'EOF'`）——Windows cmd.exe 不支持。  
+> 不可用双引号包裹含反引号的 value——bash 会把 `` `...` `` 当命令替换执行。  
+> 正确做法：用 Python 写入临时文件，再把文件路径传给脚本。
 
 ```bash
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py << 'EOF'
-[{"op": "modify_node_exec_sql", "node_id": "L5_071", "value": "select `档位` from ..."}]
-EOF
+python3 -c "
+import json, os, subprocess, sys
+ops = [{'op': 'modify_node_exec_sql', 'node_id': 'L5_071', 'value': 'select \`档位\` from ...'}]
+tmp = '/tmp/_outline_ops.json'
+with open(tmp, 'w', encoding='utf-8') as f: json.dump(ops, f, ensure_ascii=False)
+r = subprocess.run(['python3', os.path.join(os.environ['SKILLS_DIR'], 'analyze-network/scripts/modify_outline.py'), tmp], capture_output=True, text=True)
+sys.stdout.write(r.stdout); sys.stderr.write(r.stderr); sys.exit(r.returncode)
+"
 ```
 
-> `<< 'EOF'`（单引号 heredoc）不会对内容做任何 shell 展开，反引号、`$` 等字符原样传入。
+> Python 字符串内反引号是普通字符，不触发 shell 命令替换；单引号无需转义。
 
 支持的 op 类型：
 
