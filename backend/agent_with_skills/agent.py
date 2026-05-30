@@ -84,6 +84,7 @@ class AgentWithSkills:
             self.memory.add_message(msg.model_dump(exclude_none=True))
 
             if choice.finish_reason == "tool_calls" and msg.tool_calls:
+                report_triggered = False
                 for tc in msg.tool_calls:
                     name = tc.function.name
                     call_id = tc.id
@@ -100,6 +101,8 @@ class AgentWithSkills:
 
                     # bash 执行后推送检测到的状态变化事件
                     for event in result_dict.get("_events", []):
+                        if event.get("type") == "start_report":
+                            report_triggered = True
                         yield event
 
                     yield {"type": "step", "name": name, "status": "done",
@@ -109,6 +112,17 @@ class AgentWithSkills:
                     self.memory.add_message(
                         {"role": "tool", "tool_call_id": tc.id, "content": llm_str}
                     )
+
+                # 触发报告生成后立即结束本回合：报告在独立的 /api/report 流中渲染，
+                # 无需再跑一轮 LLM。否则那轮 LLM 会与报告自身的 LLM 调用抢占后端，
+                # 导致聊天流迟迟不关闭、前端输入框一直转圈无法输入。
+                if report_triggered:
+                    reply = "好的，开始生成报告。"
+                    self.memory.add_message({"role": "assistant", "content": reply})
+                    yield {"type": "text", "chunk": reply}
+                    yield {"type": "done", "seconds": round(time.time() - t0, 1)}
+                    return
+
                 continue
 
             if msg.content:
