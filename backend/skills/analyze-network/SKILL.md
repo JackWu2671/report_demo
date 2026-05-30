@@ -33,6 +33,19 @@ python3 $SKILLS_DIR/analyze-network/scripts/<script>.py [参数]
 - `name` 就是查询语句本身（如"10GPON套餐用户占比"），是指标的唯一标识，系统据此执行 SQL
 - `description` **永远为空**，没有任何含义，禁止写入
 - 如需修改 L5 节点，**只能改 `name`**，且新 name 须对应知识库中真实存在的指标
+- **改名 = 换指标**：`modify_node_name` 会自动将节点的 `exec_sql`、`renderType`、`colX`、`colY` 等字段全部替换为新指标的值，相当于整体换掉这条查询
+
+**修改 L5 节点前必须先查详情**：
+
+用户表达修改 L5 节点的意图时，**必须先调用 `get_node_detail.py`** 查看当前节点的 `exec_sql`，确认当前节点在查什么数据，再结合用户需求判断是否需要换指标以及换成哪个。
+
+```bash
+python3 $SKILLS_DIR/analyze-network/scripts/get_node_detail.py L5_001
+```
+
+查到详情后：
+1. 若当前指标已符合用户需求 → 无需修改，直接告知用户
+2. 若需要换成其他指标 → 用 `search_graph_tree.py` 找到目标指标的节点 id，再调 `modify_node_name`
 
 ## 脚本工具参考
 
@@ -115,7 +128,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delet
 |----|---------|---------|------|
 | `add_node` | `node_id`, `parent_id` | `after_id` | 从知识图谱新增节点；node_id 须来自 search_graph_tree 结果 |
 | `delete_node` | `node_id` | — | 删除节点及其全部子树 |
-| `modify_node_name` | `node_id`, `value` | — | 修改节点名称（L5 query 节点只允许此操作） |
+| `modify_node_name` | `node_id`, `value` | — | 修改节点名称；对 L5 节点会自动同步 exec_sql 等所有关联字段，**调用前必须先用 `get_node_detail.py` 查清楚当前节点** |
 | `modify_node_description` | `node_id`, `value` | — | 修改节点描述（**仅限 L1–L4**；L5 query 节点无 description，操作会被拒绝） |
 | `modify_node_condition` | `node_id`, `value` | — | 设置条件；格式「当……时，本节才展示」；value 传空字符串删除条件 |
 | `keep_only_node` | `node_id` | — | 保留该节点，同级其他节点自动删除 |
