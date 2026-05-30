@@ -104,9 +104,32 @@ async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[d
                 skipped.append({**op, "_skip_reason": msg})
 
         elif op_name == "modify_node_name":
-            found = _modify_field(tree, node_id, "name", op.get("value", ""))
+            new_name = op.get("value", "")
+            found = _modify_field(tree, node_id, "name", new_name)
             if found:
-                logger.info("[Step 9] modify_node_name: 节点 %s | 原因: %s", node_id, reason)
+                # L5 节点改名后，从 KB 同步所有关联字段（exec_sql / renderType 等）
+                if _find_node_level(tree, node_id) == 5:
+                    kb = await _get_kb()
+                    kb_node = next(
+                        (n for n in kb["nodes_dict"].values() if n.get("name") == new_name),
+                        None,
+                    )
+                    if kb_node:
+                        _update_node_fields(tree, node_id, {
+                            "id":              kb_node.get("id", node_id),
+                            "exec_sql":        kb_node.get("exec_sql", ""),
+                            "renderType":      kb_node.get("renderType", ""),
+                            "colX":            kb_node.get("colX", ""),
+                            "colY":            kb_node.get("colY", ""),
+                            "apiName":         kb_node.get("apiName", ""),
+                            "extracted_table": kb_node.get("extracted_table") or [],
+                        })
+                        logger.info("[Step 9] modify_node_name: L5 节点 %s → %r，已从 KB 同步字段 (new_id=%s)",
+                                    node_id, new_name, kb_node.get("id"))
+                    else:
+                        logger.warning("[Step 9] modify_node_name: 新名称 %r 在 KB 中不存在，exec_sql 等字段未同步",
+                                       new_name)
+                logger.info("[Step 9] modify_node_name: 节点 %s → %r | 原因: %s", node_id, new_name, reason)
             else:
                 msg = f"节点 {node_id} 不存在"
                 logger.warning("[Step 9] modify_node_name: 未找到节点 %s", node_id)
@@ -250,6 +273,17 @@ def _delete_node(tree: dict, node_id: str) -> bool:
             children.pop(i)
             return True
         if _delete_node(child, node_id):
+            return True
+    return False
+
+
+def _update_node_fields(tree: dict, node_id: str, updates: dict) -> bool:
+    """找到 node_id 节点并批量更新多个字段，返回是否找到目标节点。"""
+    if tree["id"] == node_id:
+        tree.update(updates)
+        return True
+    for child in tree.get("children", []):
+        if _update_node_fields(child, node_id, updates):
             return True
     return False
 

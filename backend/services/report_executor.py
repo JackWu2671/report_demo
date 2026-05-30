@@ -323,21 +323,46 @@ def _run_metric(
 ) -> Optional[Dict]:
     """
     在独立线程中执行单条指标查询并推送结果。每次创建自己的 DeApiClient。
+    直接使用节点自身的 exec_sql 执行查询，mock_data 按节点 id 回落。
     返回 {"name": ..., "rows": [...]} 供 collected 收集，失败返回 None。
     """
     metric_name = l5.get("name", "")
+    node_id     = l5.get("id", "")
+    exec_sql    = l5.get("exec_sql") or ""
+    tables      = l5.get("extracted_table") or []
+    render_type = (l5.get("renderType") or "").upper()
+    col_x       = l5.get("colX") or ""
+    col_y       = l5.get("colY") or ""
+
     logger.info("[report] 查询: %r", metric_name)
 
-    with DeApiClient() as client:
-        result = executor.execute_metric(metric_name, client)
+    rows = None
+    force_mock = os.environ.get("FORCE_MOCK", "").lower() in ("1", "true", "yes")
 
-    if not result or not result.get("rows"):
+    if not force_mock:
+        if exec_sql:
+            with DeApiClient() as client:
+                table = tables[0] if tables else ""
+                rows = client.execute_sql_query(exec_sql, table)
+            if rows:
+                logger.info("[report] 真实查询成功: %r，%d 行", metric_name, len(rows))
+            else:
+                logger.warning("[report] 真实查询返回空: %r，尝试 mock_data", metric_name)
+        else:
+            logger.warning("[report] 节点 %r 无 exec_sql，尝试 mock_data", metric_name)
+    else:
+        logger.info("[report] FORCE_MOCK=true，跳过真实 SQL: %r", metric_name)
+
+    if not rows:
+        rows = executor.get_mock(node_id)
+        if rows:
+            logger.info("[report] 使用 mock_data: %r", metric_name)
+
+    if not rows:
         on_event({"type": "report_metric", "name": metric_name, "chunk": "_（暂无数据）_\n\n"})
         return None
 
-    rows = result["rows"]
     dict_rows = [r for r in rows if isinstance(r, dict)]
-    render_type = (result.get("render_type") or "").upper()
 
     if render_type in _CHART_TYPES and dict_rows:
         on_event({
@@ -345,8 +370,8 @@ def _run_metric(
             "name":        metric_name,
             "chunk":       SqlExecutor.rows_to_markdown(dict_rows) + "\n\n",
             "render_type": render_type,
-            "col_x":       result.get("col_x") or "",
-            "col_y":       result.get("col_y") or "",
+            "col_x":       col_x,
+            "col_y":       col_y,
             "rows":        dict_rows,
         })
     elif render_type == "TABLE" and dict_rows:

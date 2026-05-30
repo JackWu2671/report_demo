@@ -41,7 +41,8 @@ class SqlExecutor:
     """
 
     def __init__(self):
-        self._index: Dict[str, Dict] = {}   # name → 指标记录
+        self._index: Dict[str, Dict] = {}      # name → 指标记录（for eval_condition backward compat）
+        self._mock_index: Dict[str, Any] = {}  # id → mock_data
         self._load()
 
     # ── 公共接口 ──────────────────────────────────────────────
@@ -188,6 +189,10 @@ class SqlExecutor:
 
     # ── 内部 ──────────────────────────────────────────────────
 
+    def get_mock(self, node_id: str) -> Optional[List]:
+        """按节点 id 返回 mock_data，不存在返回 None。"""
+        return self._mock_index.get(node_id)
+
     def _load(self) -> None:
         if not os.path.exists(_NODE_FILE):
             logger.warning("[SqlExecutor] 找不到 node.json")
@@ -197,16 +202,19 @@ class SqlExecutor:
         l5 = [n for n in all_nodes if n.get("level") == 5 and n.get("name")]
         self._index = {n["name"]: n for n in l5}
 
-        # 将 评估指标_mock.json 中的 mock_data 按 id 叠加进索引
         mock_count = 0
         if os.path.exists(_METRICS_MOCK_FILE):
             with open(_METRICS_MOCK_FILE, encoding="utf-8") as f:
                 mock_records = json.load(f)
-            id_to_mock = {r["id"]: r["mock_data"] for r in mock_records if r.get("id") and "mock_data" in r}
-            for node in self._index.values():
-                if node.get("id") in id_to_mock:
-                    node["mock_data"] = id_to_mock[node["id"]]
+            for r in mock_records:
+                if r.get("id") and "mock_data" in r:
+                    self._mock_index[r["id"]] = r["mock_data"]
                     mock_count += 1
+            # 同时叠加进 name 索引以维持 eval_condition 向后兼容
+            id_to_node = {n["id"]: n for n in l5 if n.get("id")}
+            for nid, mock in self._mock_index.items():
+                if nid in id_to_node:
+                    id_to_node[nid]["mock_data"] = mock
 
         logger.info("[SqlExecutor] 加载 %d 条 L5 指标（%d 条含 mock_data）",
                     len(self._index), mock_count)
