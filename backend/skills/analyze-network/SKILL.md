@@ -125,27 +125,20 @@ python3 $SKILLS_DIR/analyze-network/scripts/build_outline.py L4_001
 python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_003\"}, {\"op\": \"modify_node_name\", \"node_id\": \"L4_007\", \"value\": \"新名称\"}]"
 ```
 
-**文件模式**（value 含反引号或单引号时必须用此方式，如 `modify_node_exec_sql`）：
+**修改 exec_sql（SQL 含反引号或引号时）**：
 
-> 不可用 heredoc（`<< 'EOF'`）——Windows cmd.exe 不支持。  
-> 不可用双引号包裹含反引号的 value——bash 会把 `` `...` `` 当命令替换执行。  
-> 正确做法：用 Python 写入临时文件，再把文件路径传给脚本。
+> 禁止用 `modify_node_exec_sql` op 直接传含反引号的 SQL——bash 会把反引号当命令替换执行，导致静默失败。  
+> 必须改用 `set_node_sql.py`，SQL 经 stdin 传入，完全绕开 shell 解析。
 
 ```bash
-python3 -c "
-import json, os, subprocess, sys, tempfile
-ops = [{'op': 'modify_node_exec_sql', 'node_id': 'L5_071', 'value': 'select \`档位\` from ...'}]
-tmp = tempfile.mktemp(suffix='.json')
-with open(tmp, 'w', encoding='utf-8') as f: json.dump(ops, f, ensure_ascii=False)
-r = subprocess.run(['python3', os.path.join(os.environ['SKILLS_DIR'], 'analyze-network/scripts/modify_outline.py'), tmp])
-os.unlink(tmp)
-sys.exit(r.returncode)
-"
+python3 $SKILLS_DIR/analyze-network/scripts/set_node_sql.py L5_071 <<'SQL'
+SELECT COUNT(DISTINCT CONCAT(neIPAddress,'-',neType)) AS `OLT总数`
+FROM ads_aggr_unb_eval_an_all_netelement_info
+SQL
 ```
 
-> - Python 字符串内反引号是普通字符，**不需要** `\`` 转义，直接写 `` ` ``；写成 `\`` 会在 SQL 里留下多余反斜杠导致 SQL 报错
-> - 用 `tempfile.mktemp()` 代替 `/tmp/` 硬编码，兼容 Windows
-> - 不用 `capture_output=True`，子进程 stdout/stderr 直接透传，避免转发遗漏
+> - `<<'SQL'` heredoc 单引号防止 bash 展开变量和反引号，SQL 原文送入 stdin  
+> - 含任意反引号、单引号、双引号的 SQL 均可安全传递
 
 支持的 op 类型：
 
