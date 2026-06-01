@@ -336,28 +336,36 @@ def _run_metric(
 
     logger.info("[report] 查询: %r", metric_name)
 
-    rows = None
     force_mock = os.environ.get("FORCE_MOCK", "").lower() in ("1", "true", "yes")
 
-    if not force_mock:
-        if exec_sql:
-            with DeApiClient() as client:
-                table = tables[0] if tables else ""
-                rows = client.execute_sql_query(exec_sql, table)
-            if rows:
-                logger.info("[report] 真实查询成功: %r，%d 行", metric_name, len(rows))
-            else:
-                logger.warning("[report] 真实查询返回空: %r，尝试 mock_data", metric_name)
+    def _query_real():
+        """实时执行 SQL；无 SQL 或查空返回 None。"""
+        if not exec_sql:
+            logger.warning("[report] 节点 %r 无 exec_sql", metric_name)
+            return None
+        with DeApiClient() as client:
+            table = tables[0] if tables else ""
+            r = client.execute_sql_query(exec_sql, table)
+        if r:
+            logger.info("[report] 真实查询成功: %r，%d 行", metric_name, len(r))
         else:
-            logger.warning("[report] 节点 %r 无 exec_sql，尝试 mock_data", metric_name)
-    else:
-        logger.info("[report] FORCE_MOCK=true，跳过真实 SQL: %r", metric_name)
+            logger.warning("[report] 真实查询返回空: %r", metric_name)
+        return r
 
-    if not rows:
-        # 传入当前 exec_sql：SQL 与 mock 生成时不一致则不复用旧 mock
-        rows = executor.get_mock(node_id, exec_sql)
-        if rows:
+    def _query_mock():
+        """取离线 mock；SQL 与生成时不一致则视为无 mock，返回 None。"""
+        r = executor.get_mock(node_id, exec_sql)
+        if r:
             logger.info("[report] 使用 mock_data: %r", metric_name)
+        return r
+
+    # FORCE_MOCK=true：离线优先，没有再实时；否则在线优先，空了再回落离线。
+    # 两种模式下 mock 都要求 SQL 与当前节点一致才复用。
+    if force_mock:
+        logger.info("[report] FORCE_MOCK=true，离线数据优先: %r", metric_name)
+        rows = _query_mock() or _query_real()
+    else:
+        rows = _query_real() or _query_mock()
 
     if not rows:
         on_event({"type": "report_metric", "name": metric_name, "chunk": "_（暂无数据）_\n\n"})
