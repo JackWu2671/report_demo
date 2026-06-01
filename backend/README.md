@@ -1,6 +1,6 @@
 # Backend 详解
 
-> 本文档面向第一次接触这个项目的开发者，从架构到每一行代码的设计意图都有说明。
+> 面向第一次接触本项目的开发者，说明当前**脚本驱动单 Agent** 架构的设计意图。
 
 ---
 
@@ -8,15 +8,15 @@
 
 - [整体架构](#整体架构)
 - [入口：api_server.py](#入口api_serverpy)
-- [Agent 是什么，主循环怎么工作](#agent-是什么主循环怎么工作)
-- [三个 Agent 的异同](#三个-agent-的异同)
-- [工具系统：tools/ 和 handlers](#工具系统tools-和-handlers)
+- [Agent 主循环](#agent-主循环)
+- [三个工具：read_skill / bash / edit_node](#三个工具read_skill--bash--edit_node)
+- [Session 文件桥：内存 ↔ 脚本](#session-文件桥内存--脚本)
+- [Skill 系统：渐进式加载](#skill-系统渐进式加载)
 - [Memory：状态怎么管理](#memory状态怎么管理)
-- [utils/：内部基础设施](#utils内部基础设施)
-- [知识图谱检索全流程](#知识图谱检索全流程)
 - [大纲修改：patcher.py](#大纲修改patcherpy)
-- [AgentWithSkills 的 Skill 系统](#agentwithskills-的-skill-系统)
+- [报告生成与 mock 取数](#报告生成与-mock-取数)
 - [SSE 事件完整列表](#sse-事件完整列表)
+- [目录结构](#目录结构)
 - [环境变量](#环境变量)
 - [本地调试](#本地调试)
 
@@ -24,483 +24,287 @@
 
 ## 整体架构
 
+系统只有**一个 Agent**：`AgentWithSkills`。它本身**不含任何业务逻辑**，LLM 也看不到任何业务工具 schema。所有业务能力以 Python 脚本形式存放在 `skills/<name>/scripts/`，LLM 通过 SKILL.md（自然语言 SOP）了解脚本的 CLI 接口，再用 `bash` 调用。
+
 ```
 前端（React）
-   │  POST /api/session  →  创建会话，绑定 Agent 实例
-   │  POST /api/chat     →  发消息，接收 SSE 事件流
+   │  POST /api/session  →  创建会话，绑定一个 AgentWithSkills 实例
+   │  POST /api/chat     →  发消息，接收 SSE 事件流（聊天回合）
+   │  POST /api/report   →  渲染报告，接收 SSE 事件流（独立流）
    ▼
 api_server.py（FastAPI）
-   │  session_id → Agent 实例（内存字典）
+   │  session_id → AgentWithSkills 实例（内存字典）
    ▼
 agent.chat_stream(message)   ← async generator，一件事 yield 一个事件
    │
-   ├─ 调 LLM（携带工具列表 + 对话历史）
-   ├─ 执行工具（tools/ 实现 + utils/ 基础设施）
-   └─ 更新 memory（大纲、元数据、对话历史）
+   ├─ 调 LLM（只带 read_skill / bash / edit_node 三个工具）
+   ├─ read_skill → 读 SKILL.md SOP
+   ├─ bash       → 跑 skills/*/scripts/*.py（业务逻辑都在这里）
+   └─ edit_node  → 直接改大纲节点属性（参数走 JSON，不过 shell）
 ```
+
+**为什么这么设计？** 业务逻辑放进脚本，LLM 只需理解 SKILL.md 文档化的 CLI，不必为每个能力维护 JSON tool schema；新增能力 = 加一个脚本 + 在 SKILL.md 写一行，不动 agent 代码。
 
 ---
 
 ## 入口：api_server.py
 
-FastAPI 应用，提供三个接口：
+FastAPI 应用，主要接口：
 
 | 接口 | 方法 | 功能 |
 |------|------|------|
-| `/api/session` | POST | 创建会话，`agent_id` 1/2/3 分别对应 Agent1/Agent2/AgentWithSkills |
-| `/api/chat` | POST | 发消息，响应是 `text/event-stream`（SSE） |
-| `/api/kb` | GET | 返回知识图谱节点 JSON（供前端知识库页面展示） |
-| `/api/templates` | GET | 返回已保存的模板列表（供前端模板页面展示） |
+| `/api/session` | POST | 创建会话，返回 `session_id`（`agent_id` 字段保留兼容，实际只有 AgentWithSkills） |
+| `/api/chat` | POST | 发消息，响应是 `text/event-stream`（聊天回合 SSE） |
+| `/api/report` | POST | 渲染报告，响应是 SSE（与 `/api/chat` 相互独立的流） |
+| `/api/session/{id}/messages` | GET | 拉取会话历史消息 |
+| `/api/kb` | GET | 返回知识图谱节点 JSON（前端知识库页） |
+| `/api/templates` | GET | 返回已保存模板列表（前端模板页） |
 
 **Session 生命周期**
 
 ```python
-_sessions: dict[str, Agent1 | Agent2 | AgentWithSkills] = {}
+_sessions: dict[str, AgentWithSkills] = {}
 ```
 
-Session 存在内存字典里，服务重启即清空。每个 session 绑定一个 Agent 实例，持有完整的对话历史和大纲状态。
+存在内存字典，服务重启即清空。每个 session 绑定一个 Agent 实例，持有对话历史和大纲状态。
 
 **SSE 推流**
 
 ```python
-async def _stream_agent(session_id, message):
-    async for event in agent.chat_stream(message):
-        yield f"data: {json.dumps(event)}\n\n"   # SSE 格式
-    yield "data: [DONE]\n\n"
+async for event in agent.chat_stream(message):
+    yield f"data: {json.dumps(event)}\n\n"
+yield "data: [DONE]\n\n"
 ```
 
-`chat_stream` 是 async generator，每发生一件事（工具开始/结束、大纲更新、文字回复）就 yield 一个 dict，这里原样序列化推给前端。
+`chat_stream` 是 async generator，每发生一件事（工具开始/结束、大纲更新、文字回复）就 yield 一个 dict，原样序列化推给前端。
+
+> `/api/chat`（聊天回合）和 `/api/report`（报告渲染）是**两条独立的 SSE 流**。触发报告后，agent 立刻结束聊天回合（推送固定回复并 `done`），报告在 `/api/report` 流里单独渲染——避免两个流抢占后端导致聊天流不关闭、前端输入框一直转圈。
 
 ---
 
-## Agent 是什么，主循环怎么工作
+## Agent 主循环
 
-### Function Calling
-
-大模型原生只能输出文字。OpenAI 协议扩展了一个 `tools` 参数，让我们可以给大模型一份"工具说明书"。大模型在合适时机不输出文字，而是输出：
-
-```json
-{
-  "finish_reason": "tool_calls",
-  "tool_calls": [{
-    "id": "call_abc",
-    "function": {
-      "name": "search_graph_tree",
-      "arguments": "{\"question\": \"fgOTN 高价值行业覆盖\"}"
-    }
-  }]
-}
-```
-
-代码解析这个结构，执行对应工具，把结果放回对话历史，再调一次大模型，如此循环。大模型最终输出普通文字时，循环结束。这叫 **ReAct**（Reason + Act）。
-
-### 主循环代码（agent2/agent.py）
+LLM 通过 OpenAI 协议的 `tools` 参数感知三个工具。它在合适时机输出 `tool_calls`，代码执行后把结果放回历史，再调一次 LLM，循环往复（ReAct）。
 
 ```python
 async def chat_stream(self, user_message: str):
     self.memory.add_message({"role": "user", "content": user_message})
-    t0 = time.time()
-
-    for _round in range(_MAX_TOOL_ROUNDS):     # 最多循环 N 轮，防止死循环
-        response = await self._call_llm()
-        choice = response.choices[0]
-        msg = choice.message
+    for _ in range(_MAX_ROUNDS):
+        response = await self._call_llm()          # 带 read_skill/bash/edit_node
+        msg = response.choices[0].message
         self.memory.add_message(msg.model_dump(exclude_none=True))
 
-        if choice.finish_reason == "tool_calls" and msg.tool_calls:
+        if msg.tool_calls:
+            report_triggered = False
             for tc in msg.tool_calls:
-                name = tc.function.name
-                args = json.loads(tc.function.arguments)
+                yield {"type": "step", "status": "running", ...}    # ① 开始
+                result_dict, llm_str = await self._execute_tool(name, args)
+                for event in result_dict.get("_events", []):        # ② 状态变化事件
+                    if event["type"] == "start_report":
+                        report_triggered = True
+                    yield event
+                yield {"type": "step", "status": "done", ...}       # ③ 结束
+                self.memory.add_message({"role": "tool", ...})      # ④ 结果入历史
 
-                yield {"type": "step", "name": name, "status": "running",
-                       "call_id": tc.id, "args": args}         # ① 通知前端"开始执行"
+            if report_triggered:                    # 触发报告 → 立刻结束本回合
+                yield {"type": "text", "chunk": "好的，开始生成报告。"}
+                yield {"type": "done", ...}
+                return
+            continue                                # ⑤ 再调一次 LLM
 
-                result_dict, llm_str = await self._execute_tool(tc)
-
-                if result_dict.get("outline_tree"):
-                    yield {"type": "outline", ...}              # ② 大纲立刻推给前端
-
-                yield {"type": "step", "name": name, "status": "done",
-                       "call_id": tc.id, "result": ..., "detail": llm_str}  # ③ 通知"执行完毕"
-
-                self.memory.add_message({
-                    "role": "tool", "tool_call_id": tc.id, "content": llm_str
-                })                                              # ④ 结果放入历史
-            continue                                            # ⑤ 再调一次 LLM
-
-        # finish_reason == "stop"
         if msg.content:
             yield {"type": "text", "chunk": msg.content}
-        yield {"type": "done", "seconds": round(time.time() - t0, 1)}
+        yield {"type": "done", ...}
         return
 ```
 
-**为什么 outline 在工具执行完后立刻 yield，而不等大模型回复？**
+---
 
-大纲是工具计算出来的数据，已经确定，不需要大模型再"输出"一遍。立刻推送，前端瞬间渲染。如果等大模型回复，用户要多等一次 LLM 调用的延迟。
+## 三个工具：read_skill / bash / edit_node
+
+定义在 `tools/shared_tools.py`（`READ_SKILL_TOOL` / `BASH_TOOL` / `EDIT_NODE_TOOL`），在 `agent.py` 的 `_execute_tool` 中分发。
+
+| 工具 | 作用 | 关键点 |
+|------|------|--------|
+| `read_skill(name, path?)` | 加载 SKILL.md SOP（Level 1）或其支持文件（Level 2） | 同一 skill 一个会话只加载一次 |
+| `bash(command)` | 执行命令，通常是 `skills/*/scripts/*.py` | 调用前后做 [session 文件同步](#session-文件桥内存--脚本)；`$SKILLS_DIR` 等变量由 harness 预先展开后再交给 shell |
+| `edit_node(node_id, field, value)` | 直接修改大纲节点属性 | **参数走 JSON、不过 shell**，含反引号/`<`/`>`/`%` 的 SQL 也安全 |
+
+**`edit_node` 为什么单独做成工具？** 改 `exec_sql`、`name` 这类字段，值常含反引号、`<`、`>`，走 bash 会被 cmd.exe 当重定向/命令替换破坏（静默失败）。工具参数是 LLM 产出的 JSON，经 `json.loads` 直接入 Python，**完全不过 shell**。其路由逻辑：
+
+- `name` / `description` / `condition` / `exec_sql` → 走 `modify_outline` 管线（保留 L5 改名自动从 KB 同步等逻辑）
+- 其余字段（`renderType` / `colX` / `colY` / `summarySuggestion` / `condition_queries`）→ patcher 的 `set_node_field` op 直接赋值
+
+修改成功后直接更新内存并推送 `outline` 事件（in-process，无需 session 文件中转）。
 
 ---
 
-## 三个 Agent 的异同
+## Session 文件桥：内存 ↔ 脚本
 
-| | Agent1 | Agent2 | AgentWithSkills |
-|--|--------|--------|-----------------|
-| **场景** | 专家沉淀知识 | 用户生成报告 | 同时支持两种场景 |
-| **工具** | 5 个（专家流程） | 5 个（报告流程） | 全部 10 个 |
-| **Memory** | Agent1Memory（含 extraction 字段） | AgentMemory（基类） | Agent1Memory（超集） |
-| **特殊机制** | 无 | 无 | Skill 渐进式加载 |
-| **入口** | `agent_id=1` | `agent_id=2` | `agent_id=3` |
-
-**Agent1 的工具链**
+bash 脚本运行在独立子进程，与 agent 内存不共享。两者通过会话文件
+`/tmp/report_sessions/{session_id}.json`（可由 `REPORT_SESSION_DIR` 覆盖）桥接：
 
 ```
-search_graph_tree → set_outline_from_markdown → set_scene_metadata → [modify_outline] → save_outline_template
+bash 调用前：把内存状态（outline_tree / outline_yaml / markdown / extraction）写入 session 文件
+   ↓
+脚本运行：读 session 文件 → 干活 → 把新状态写回 session 文件
+   ↓
+bash 调用后：读回 session 文件，_detect_events() 对比前后差异 →
+             生成 outline / confirm / extraction / start_report 事件推给前端
 ```
 
-专家输入业务描述 → 检索图谱获取相关节点 → LLM 根据节点信息自行设计大纲结构，写成 md_with_ids 格式（set_outline_from_markdown 渲染）→ 填元数据 → 保存
-
-**Agent2 的工具链**
-
-```
-search_outline_templates → load_template_outline          （有现成模板时）
-search_graph_tree → build_outline_from_anchor → [modify_outline]  （从知识库实时构建时）
-```
-
-用户提需求 → 先找模板，找到直接用，找不到从知识库展开
-
-**AgentWithSkills**
-
-合并以上两者，通过 Skill SOP（自然语言工作流文档）告诉大模型什么情况用哪套流程，具体见 [Skill 系统](#agentwithskills-的-skill-系统)。
+`_detect_events` 只在状态**真的变了**时才推事件（如 `outline_tree` 前后不等才推 `outline`）。这套机制让脚本无需感知 SSE / 前端，只管读写 session 文件即可。
 
 ---
 
-## 工具系统：tools/ 和 handlers
+## Skill 系统：渐进式加载
 
-### 三层结构
-
-```
-tools/shared_tools.py       ← Schema 定义（JSON Schema，大模型看到的工具说明书）
-agent*/tools/definitions.py ← 每个 agent 按需选取的工具子集
-agent*/tools/handlers.py    ← 工具调度层（薄适配层，调实现、写 memory）
-tools/*.py                  ← 工具具体实现（纯业务逻辑，无 LLM 调用）
-```
-
-**为什么要分这三层？**
-
-- **Schema 和实现分离**：`shared_tools.py` 只管"大模型能看到什么"，`tools/*.py` 只管"代码怎么执行"，改其中一个不影响另一个
-- **handler 是薄适配层**：负责把 agent 的 memory 对象传给工具实现，工具实现本身不感知 agent 或 memory
-- **不同 agent 复用同一实现**：`modify_outline.py` 被 Agent1 和 Agent2 共用，但各自的 handler 里更新的是自己 memory 类型
-
-### shared_tools.py 中的工具全集
+| 级别 | 内容 | Token 代价 |
+|------|------|-----------|
+| Level 0 | skill 名称 + 一句话描述（启动时注入 system prompt） | 极少 |
+| Level 1 | 完整 SOP（`read_skill(name)` 返回 SKILL.md 全文） | 中等，按需 |
+| Level 2 | SOP 内引用的支持文件（`read_skill(name, path)`） | 按需 |
 
 ```
-业务工具（agent1 / agent2 各选 5 个）：
-  SEARCH_GRAPH_TREE_TOOL          — 知识图谱向量检索
-  MODIFY_OUTLINE_TOOL             — 大纲结构化修改
-  SEARCH_OUTLINE_TEMPLATES_TOOL   — 模板向量检索
-  LOAD_TEMPLATE_OUTLINE_TOOL      — 按 id 加载模板
-  BUILD_OUTLINE_FROM_ANCHOR_TOOL  — 以锚节点展开子树
-  SET_OUTLINE_FROM_MARKDOWN_TOOL  — 从 md_with_ids 渲染大纲（agent1 专用）
-  SET_SCENE_METADATA_TOOL         — 填写模板元数据（agent1 专用）
-  SAVE_OUTLINE_TEMPLATE_TOOL      — 保存模板文件（agent1 专用）
-
-Skill 元工具（AgentWithSkills 专用）：
-  SKILLS_LIST_TOOL                — 列出可用 skill
-  READ_SKILL_TOOL                 — 读取 skill SOP 正文
+skills/
+├── _lib/                # 脚本共享库（loader/retriever/subtree/patcher/outline_utils…）
+├── analyze-network/     # 看网分析：检索→大纲→报告
+│   ├── SKILL.md
+│   └── scripts/         # search_graph_tree / build_outline / modify_outline / trigger_report …
+├── consolidate-expert/  # 专家知识沉淀
+└── publish-knowledge/   # 知识发布
 ```
 
-### handler 的标准签名
-
-```python
-async def handle_xxx(args: dict, memory: AgentMemory) -> tuple[dict, str]:
-    result = await xxx_tool(args["param"])           # 调工具实现
-    if result["status"] == "success":
-        memory.set_outline(...)                      # 写 memory
-    llm_str = f"[xxx] status={result['status']}\n..." # 给 LLM 看的精简摘要
-    return result, llm_str
-```
-
-**为什么返回两份数据？**
-
-- `result`（完整）：agent 主循环用，判断要不要推 `outline` 事件
-- `llm_str`（精简）：放进对话历史给 LLM 看。用精简版而不是完整 markdown，是因为大纲可能很长，每轮都放进历史会快速消耗 token
+`skill_registry.py` 启动时扫描 `skills/`，读取各 SKILL.md 的 YAML front matter 构成 Level 0 列表；`read_skill` 按需读取正文（Level 1）。System prompt（`system_prompt.txt`）要求 LLM 第一个动作必须是 `read_skill`，再严格按 SOP 执行。
 
 ---
 
 ## Memory：状态怎么管理
 
-### 基类 AgentMemory（memory/store.py）
+### 基类 AgentMemory（`memory/store.py`）
 
 ```python
 class AgentMemory:
     outline_tree: dict    # 大纲 JSON（代码逻辑用）
-    markdown: str         # 大纲 Markdown（前端渲染用）
-    md_with_ids: str      # 大纲带节点 ID（LLM 上下文用）
+    markdown: str         # 大纲 Markdown（前端用户视图）
+    outline_yaml: str     # 大纲 YAML 精简视图（注入 LLM 上下文）
     kb_tree_text: str     # search_graph_tree 返回的树文本（暂存）
     _history: list[dict]  # 对话历史（不含大纲）
 ```
 
-### Agent1Memory（agent1/memory.py）
-
-在基类基础上增加：
-
-```python
-extraction: dict  # {scene_name, keywords, summary, usage_conditions}
-                  # 由 set_scene_metadata 写入，save_outline_template 读取
-```
+`AgentWithSkillsMemory` 在此基础上增加 `extraction`（场景元数据：scene_name / keywords / summary / usage_conditions）。
 
 ### 大纲为什么不存进对话历史？
 
-大纲会随着修改不断变化。如果存进历史，旧版本大纲会一直留着，LLM 会被旧版本干扰（"当前大纲有 3 节"vs"你说的大纲有 5 节"）。另外大纲可能很长，每轮都带着历史版本浪费 token。
-
-### 大纲怎么注入 LLM 上下文？
-
-每次调 LLM 前，`build_messages()` 把最新大纲动态拼入 system prompt：
+大纲会随修改不断变化，存进历史会让旧版本一直残留、干扰 LLM，且每轮重复携带浪费 token。改为每次调 LLM 前由 `build_messages()` 把**最新** `outline_yaml` 动态拼入 system prompt：
 
 ```python
-def build_messages(self, system_prompt: str) -> list[dict]:
+def build_messages(self, system_prompt):
     content = system_prompt
     if self.has_outline:
-        content += f"\n\n## 当前大纲（可通过节点ID引用）\n\n{self.md_with_ids}"
+        content += f"\n\n## 当前大纲（可通过节点ID引用）\n\n{self.outline_yaml}"
     return [{"role": "system", "content": content}, *self._history]
 ```
 
-**为什么拼入 system prompt，而不是追加一条新的 system 消息？**
-
-Qwen 等模型要求 system 消息只能出现在对话的最开头，追加到末尾会报 400 错误。拼进第一条 system 消息内容里是通用做法。
+> 拼进第一条 system 消息，而非追加新 system 消息——Qwen 等模型要求 system 只能在对话最开头。
 
 ### 大纲的三种格式
 
-大纲在系统中同时存在三种格式，由 `utils/outline_utils.py` 从同一棵 `outline_tree` 派生：
+由 `skills/_lib/outline_utils.py` 从同一棵 `outline_tree` 派生：
 
-| 字段 | 示例 | 谁用 |
-|------|------|------|
-| `outline_tree` | `{"id": "L1_001", "name": "fgOTN部署", "children": [...]}` | 代码逻辑（patcher 的输入输出） |
-| `markdown` | `# fgOTN部署\n## 传送网分析` | 前端渲染给用户 |
-| `md_with_ids` | `[L1 L1_001] fgOTN部署\n  [L2 L2_001] 传送网分析` | 注入 LLM，让大模型能精确引用节点 ID |
+| 格式 | 谁用 | 含 SQL 等字段 |
+|------|------|--------------|
+| `outline_tree`（JSON dict） | 代码逻辑（patcher 输入输出、前端报告生成） | ✅ 完整 |
+| `markdown` | 前端渲染给用户 | ❌ |
+| `outline_yaml` | 注入 LLM 上下文 | ❌ 省略 level/SQL 等，LLM 需要时用 `get_node_detail.py` 按需拉取 |
 
-LLM 不能直接看普通 Markdown 修改大纲的原因：`modify_outline` 操作需要节点 ID（如 `delete_node L3_002`），普通 Markdown 没有 ID，LLM 只能靠名称猜，容易定位错。
-
----
-
-## utils/：内部基础设施
-
-这些模块不暴露给 LLM，只被 `tools/` 调用，属于内部实现细节。
-
-| 文件 | 职责 |
-|------|------|
-| `loader.py` | 单次加载 FAISS 索引 + 知识图谱数据，进程内缓存 |
-| `retriever.py` | embed_query → FAISS 检索 → 构建祖先路径 → 组装树 dict |
-| `subtree.py` | 给定锚节点 ID，递归展开知识图谱子树 |
-| `patcher.py` | 将 ops 列表（add/delete/rename…）应用到大纲树 |
-| `template_selector.py` | 模板向量检索（FAISS） |
-| `outline_utils.py` | 大纲三种格式互转：`to_clean_json`、`to_markdown`、`to_markdown_with_ids` |
-
----
-
-## 知识图谱检索全流程
-
-`search_graph_tree` 是整个系统最核心的数据处理步骤，完整流程：
-
-```
-用户问题（自然语言）
-  │
-  ▼ embed_query()
-向量（float32 ndarray, shape=(1,1024)）
-  │
-  ▼ search_nodes()
-FAISS 余弦相似度检索 → top-K 命中节点（带 score）
-  │
-  ▼ build_candidate_paths()
-为每个命中节点补全祖先路径
-  "传送网覆盖分析" → "政企业务 > fgOTN升级 > 传送网覆盖分析"
-  │
-  ▼ 构建相关知识树（见下节详解）
-  │
-  ▼ 组装树 dict
-[
-  {
-    "id": "L2_001", "name": "fgOTN升级", "level": 2,
-    "hit": false, "score": null,
-    "children": [
-      {"id": "L3_001", "name": "传送网覆盖分析", "level": 3,
-       "hit": true, "score": 0.91, "children": [...]}
-    ]
-  }
-]
-```
-
-### 相关知识树的构建逻辑
-
-这是 `search_graph_tree` 中最容易被误解的部分，分三步：
-
-#### 第一步：从 path 字符串还原祖先链，合并成骨架
-
-每个 FAISS 候选节点都携带一条 path，例如：
-
-```
-高价值TOB企业分布分析  → "政企OTN升级 > fgOTN部署 > 企业分布分析 > 高价值TOB企业分布分析"
-站点覆盖企业分析      → "政企OTN升级 > fgOTN部署 > 传送网络覆盖企业分析 > 站点覆盖企业分析"
-潜在安全需求企业分布分析 → "政企OTN升级 > 量子加密板部署 > 潜在安全需求企业分布分析"
-```
-
-把每条 path 按 `>` 拆开，相邻两个名字即父子关系，合并进 `name_meta` 字典。每个名字的第一次出现时记录 `id / level / description`，后续出现只追加 `children_names`。所有 path 首元素收入 `roots` 列表。
-
-合并结果（骨架，仅来自命中路径）：
-
-```
-政企OTN升级                         ← root
-  └─ fgOTN部署
-       ├─ 企业分布分析
-       │    └─ 高价值TOB企业分布分析  ← ★ 命中
-       └─ 传送网络覆盖企业分析
-            └─ 站点覆盖企业分析      ← ★ 命中
-  └─ 量子加密板部署
-       └─ 潜在安全需求企业分布分析    ← ★ 命中
-```
-
-> **副作用**：只要两个命中节点共享同一祖先，该祖先下的所有命中路径都会出现在树里——即使其中某些分支与查询无关（如量子加密板部署）。这是当前实现的已知局限。
-
-#### 第二步：对每个命中节点调用 `_expand_all`，展开全部后代
-
-`_expand_all(hit_id, hit_name)` 从 `children_map`（relation.json）递归向下，把所有后代节点补进 `name_meta`。
-
-作用：命中节点的子节点可能因相似度低而被 FAISS 过滤掉，但 LLM 仍然需要看到完整子树才能做判断，所以强制展开。
-
-```
-高价值TOB企业分布分析  ★
-  ├─ 企业行业分布，按二级行业统计  （展开补入，score=null）
-  ├─ 企业城市分布               （展开补入，score=null）
-  └─ 企业行政区分布              （展开补入，score=null）
-```
-
-#### 第三步：从 roots 出发 DFS 渲染
-
-从 `roots` 列表出发，递归 `_to_dict`，输出带 `hit / score / children` 的嵌套 dict。命中节点标 `hit=True`，其祖先节点标 `hit=False`（仅作路径骨架）。
-
-**一句话总结**
-
-> 树 = 所有命中节点的祖先路径合并（骨架）+ 每个命中节点的全量子孙展开
-
-**为什么要展开子节点？**
-
-FAISS 只命中相似度超过阈值的节点，但 LLM 需要看到更完整的图谱结构才能做出正确判断。例如命中 L3"传送网覆盖分析"后，L4/L5 的具体分析维度也一并展开，让 LLM 能看到这条路径下的全貌。
-
-**`search_graph_tree` 与 `build_outline_from_anchor` 是两件不同的事**
-
-`search_graph_tree` 是**检索工具**，作用是把知识图谱中与问题相关的结构以树形文本呈现给 LLM，它的职责到此为止。拿到这份信息之后，LLM 怎么用完全取决于 agent：
-
-- **Agent1**：LLM 读取返回的节点信息，自行设计大纲结构，写成 `md_with_ids` 格式，再调 `set_outline_from_markdown` 渲染。检索结果是素材，大纲结构由 LLM 创作。
-- **Agent2**：LLM 从返回的节点中选出一个最匹配的节点 ID 作为锚点，再调 `build_outline_from_anchor` 展开。检索结果是候选列表，LLM 做选择。
-
-`build_outline_from_anchor` 是**大纲生成工具**，它接收的 `anchor_id` 正是 LLM 刚才在上一步推理中选出来的——工具本身不调 LLM，但它的输入参数本就是 LLM 决策的产物。工具执行的是纯机械的子树递归展开，不再需要 LLM 参与。
+更详细的"为什么三份都不能省"见 `../docs/state-design.md`。
 
 ---
 
 ## 大纲修改：patcher.py
 
-`modify_outline` 工具接收一个 `ops` 列表，由 `patcher.apply_patch()` 执行：
+`modify_outline`（脚本）与 `edit_node`（工具）最终都调 `skills/_lib/patcher.apply_patch()` 执行一个 ops 列表：
 
 | op | 参数 | 含义 |
 |----|------|------|
-| `add_node` | `node_id, parent_id` | 从知识图谱取节点（递归展开子树）插入到指定父节点下 |
+| `add_node` | `node_id, parent_id[, after_id]` | 从知识图谱取节点（递归展开子树）插入指定父节点下 |
 | `delete_node` | `node_id` | 删除节点及其全部子树 |
-| `modify_node_name` | `node_id, value` | 修改节点名称 |
-| `modify_node_description` | `node_id, value` | 修改节点描述 |
-| `modify_node_condition` | `node_id, value` | 设置节点的展示条件（`value` 为空字符串表示删除条件） |
-| `keep_only_node` | `node_id` | 保留该节点，同级其他节点全部删除 |
+| `modify_node_name` | `node_id, value` | 改名；L5 节点会自动从 KB 同步 exec_sql/renderType 等关联字段 |
+| `modify_node_description` | `node_id, value` | 改描述（仅 L1–L4） |
+| `modify_node_condition` | `node_id, value` | 设展示条件（空串删除） |
+| `modify_node_exec_sql` | `node_id, value` | 改 L5 的 exec_sql |
+| `set_node_field` | `node_id, field, value` | 通用字段直接赋值（renderType/colX/colY 等），供 `edit_node` 使用 |
+| `keep_only_node` | `node_id` | 保留该节点，同级其他全部删除 |
 
-**ops 为什么由 Agent LLM 直接构造？**
-
-Agent LLM 在 system prompt 里已经看到了当前大纲的 `md_with_ids`（含所有节点 ID），直接输出 ops 最自然，不需要 patcher 内部再调一次 LLM 重新推理。
-
-**`keep_only_node` 的批量处理**
-
-这个操作会删除同级兄弟，多个 `keep_only_node` 可能互相影响执行顺序。`apply_patch` 会先收集所有 `keep_only_node` 的目标 ID，批量处理，其余操作按顺序执行。
+> 结构调整（增删/保留）走 `modify_outline.py`；改节点属性值优先走 `edit_node` 工具，详见 `skills/analyze-network/SKILL.md`。
 
 ---
 
-## AgentWithSkills 的 Skill 系统
+## 报告生成与 mock 取数
 
-`agent_with_skills/` 合并了 Agent1 + Agent2 的工具，通过 Skill SOP 动态决定用哪套流程。
-
-### 三级渐进式加载
-
-| 级别 | 内容 | Token 代价 |
-|------|------|-----------|
-| Level 0 | skill 名称 + 一句话描述（启动时注入 system prompt） | 极少 |
-| Level 1 | 完整 SOP（步骤、工具调用顺序、注意事项）| 中等，按需加载 |
-| Level 2 | SOP 内引用的支持文件 | 按需加载 |
-
-大模型判断需要某个 skill 时，调用 `read_skill(name="generate-report")`，返回 SKILL.md 全文。之后大模型按 SOP 步骤调用业务工具。
-
-### skills/ 目录结构
+报告由 `services/report_executor.py` 遍历大纲树、并行执行各 L5 指标的 SQL，通过 SSE 逐条推送（详见 `../docs/report-generation.md`）。取数有两个来源，由 `FORCE_MOCK` 决定优先级，且互相兜底：
 
 ```
-skills/
-├── generate-report/
-│   └── SKILL.md      # generate-report 的完整工作流 SOP
-└── consolidate-expert/
-    └── SKILL.md      # consolidate-expert 的完整工作流 SOP
+FORCE_MOCK=false（默认，在线优先）：实时 SQL → 查空回落 mock
+FORCE_MOCK=true （离线优先，无 DB 演示）：mock → 没有/失效回落实时 SQL
 ```
 
-每个 SKILL.md 包含：
-- YAML front matter（name、description、category）
-- 自然语言工作流步骤（工具调用顺序、判断分支、注意事项）
+**mock 必须与当前 SQL 一致才复用**：`sql_executor.get_mock(node_id, current_sql)` 会比对「生成 mock 时所用的 SQL」（存于 `评估指标_mock.json` 每条记录的 `answer` 字段）与当前节点 exec_sql，归一化后不同则视为失效。这样改了 SQL 不会再套用旧指标的 mock。前端 metric 缓存也按同样思路（`exec_sql` 等组成的签名）失效，两层配合保证改 SQL 后整条链路重新取数。
 
-`skill_registry.py` 在启动时扫描 `skills/` 目录，读取所有 SKILL.md 的 front matter 构成 Level 0 列表；`skill_loader.py` 负责按需读取 SKILL.md 正文（Level 1）。
-
-### 工具分发
-
-```python
-async def _execute_tool(self, tool_call):
-    name = tool_call.function.name
-    if name == "skills_list":
-        return self._handle_skills_list()
-    if name == "read_skill":
-        return self._handle_read_skill(args)
-    # 业务工具转发给合并后的 HANDLERS
-    handler = _BUSINESS_HANDLERS.get(name)
-    return await handler(args, self.memory)
-```
-
-`_BUSINESS_HANDLERS` 是 agent2 HANDLERS 和 agent1 HANDLERS 的合并，agent1 的同名 handler 覆盖 agent2（`modify_outline` 两者逻辑一致，取其一即可）。
+离线 mock 由 `scripts/prefetch_mock_data.py` 预取生成。
 
 ---
 
 ## SSE 事件完整列表
 
-所有 agent 的 `chat_stream` yield 的事件类型：
+**聊天回合（`/api/chat`，来自 `agent.chat_stream`）：**
 
 ```python
-# 工具开始执行
-{"type": "step", "name": str, "status": "running", "call_id": str, "args": dict}
+{"type": "step", "name": str, "status": "running", "call_id": str, "args": dict}   # 工具开始
+{"type": "step", "name": str, "status": "done", "call_id": str,
+ "result": str, "detail": str}                                                     # 工具结束（摘要+完整）
+{"type": "outline", "markdown": str, "outline_yaml": str, "outline_tree": dict}    # 大纲更新（立刻推）
+{"type": "confirm", "options": ["生成报告"]}                                        # 大纲变更后的确认选项
+{"type": "extraction", "scene_name": str, "keywords": list, "summary": str}        # 场景元数据
+{"type": "start_report"}                                                           # 触发报告渲染
+{"type": "text", "chunk": str}                                                     # LLM 文字回复
+{"type": "done", "seconds": float}                                                 # 本轮结束
+{"type": "error", "message": str}                                                  # 出错
+```
 
-# 工具执行完毕
-{"type": "step", "name": str, "status": "done",
- "call_id": str, "result": str,   # 单行摘要（前端步骤面板展示）
- "detail": str}                    # 完整工具结果（可展开查看）
+**报告渲染（`/api/report`，来自 `report_executor`）：**
 
-# 大纲更新（工具执行完立刻推，不等 LLM）
-{"type": "outline", "markdown": str, "md_with_ids": str, "outline_tree": dict}
+```python
+{"type": "report_metric",  "name": str, "chunk": str, "render_type"?, "rows"?, ...}  # 单条指标数据
+{"type": "report_summary", "node_id": str, "chunk": str}                             # 节点总结（LLM 生成）
+{"type": "report_skip",    "node_name": str}                                         # 条件不满足，跳过该节
+{"type": "outline", ...}                                                             # 条件跳过后同步更新大纲
+{"type": "report_done"}                                                              # 报告完成
+```
 
-# 场景元数据（agent1 / AgentWithSkills 的 set_scene_metadata 成功后）
-{"type": "metadata",   "scene_name": str, "summary": str,
- "keywords": list, "usage_conditions": str}          # agent1
-{"type": "extraction", "scene_name": str, "summary": str,
- "keywords": list}                                   # AgentWithSkills
+---
 
-# 模板保存成功
-{"type": "saved", "scene_name": str, "path": str}
+## 目录结构
 
-# LLM 文字回复
-{"type": "text", "chunk": str}
-
-# 本轮结束
-{"type": "done", "seconds": float}
-
-# 出错
-{"type": "error", "message": str}
+```
+backend/
+├── api_server.py              # FastAPI 入口（/api/chat、/api/report、/api/session…）
+├── agent_with_skills/         # 唯一 Agent
+│   ├── agent.py               # 主循环、工具分发、session 同步、_detect_events
+│   ├── memory.py              # AgentWithSkillsMemory（+extraction）
+│   ├── skill_registry.py      # 启动扫描 skills/，构建 Level 0 列表
+│   ├── skill_loader.py        # 按需读取 SKILL.md 正文
+│   ├── system_prompt.txt      # 系统提示词
+│   └── agent_test.py          # 命令行交互测试
+├── tools/shared_tools.py      # read_skill / bash / edit_node 的 schema
+├── skills/                    # 业务能力（SOP + 脚本 + _lib 共享库）
+├── services/                  # llm_service / report_executor / sql_executor / de_sql_execution_client
+├── memory/store.py            # AgentMemory 基类
+├── llm/                       # LLM 配置
+├── expert_knowledge/          # 知识库数据（node.json、评估指标_mock.json 等）
+├── scripts/                   # 离线构建脚本（build_index、prefetch_mock_data、merge_… ）
+└── tests/                     # test_sql_query / test_outline_utils / tool_test
 ```
 
 ---
@@ -511,13 +315,17 @@ async def _execute_tool(self, tool_call):
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `LLM_BASE_URL` | LLM API 地址（OpenAI 兼容） | `http://localhost:8080/v1` |
+| `LLM_BASE_URL` | LLM API 地址（OpenAI 兼容） | `http://localhost:8000/v1` |
+| `LLM_MODEL_NAME` | 模型名称 | `Qwen3-32B` |
 | `LLM_API_KEY` | LLM API Key | `sk-xxx` |
-| `LLM_MODEL` | 模型名称 | `Qwen3-32B` |
-| `LLM_TEMPERATURE` | 采样温度 | `0.7` |
+| `LLM_TEMPERATURE` | 采样温度 | `0.1` |
+| `LLM_TOP_P` / `LLM_TIMEOUT` / `LLM_ENABLE_THINKING` | 采样/超时/思考开关 | `1.0` / `120` / `false` |
 | `EMBEDDING_BASE_URL` | Embedding 服务地址 | `http://localhost:8001/v1` |
 | `EMBEDDING_DIM` | 向量维度 | `1024` |
-| `FAISS_SCORE_THRESHOLD` | FAISS 检索相似度阈值 | `0.3` |
+| `FORCE_MOCK` | 离线优先（`true` 时优先用 mock 数据） | `false` |
+| `REPORT_SESSION_DIR` | 会话文件目录 | `/tmp/report_sessions` |
+
+> SQL 查询 API 的连接信息在 `config.yaml`（见 `config.example.yaml`）。
 
 ---
 
@@ -527,26 +335,17 @@ async def _execute_tool(self, tool_call):
 
 ```bash
 cd backend
-uvicorn api_server:app --reload --port 8000
+uvicorn api_server:app --reload --port 8888
 ```
 
-### 命令行交互测试（推荐，无需启动前端）
+### 命令行交互测试（无需启动前端）
 
 ```bash
 cd backend
-python agent2/agent_test.py               # 测试 Agent2
-python agent1/agent_test.py               # 测试 Agent1
-python agent_with_skills/agent_test.py    # 测试 AgentWithSkills
+python agent_with_skills/agent_test.py
 ```
 
-内置命令：
-
-| 命令 | 功能 |
-|------|------|
-| `/state` | 打印当前大纲 JSON |
-| `/md` | 打印当前 Markdown 大纲（用户视图） |
-| `/ids` | 打印当前带 ID 大纲（LLM 视图） |
-| `/reset` | 重置会话（清空历史和大纲） |
+内置命令：`/help`、`/skills`（列出可用 skill）、`/state`（大纲 JSON）、`/md`（Markdown 大纲）、`/reset`（清空历史与 skill 加载状态）。
 
 ### 离线构建向量索引
 
@@ -555,7 +354,14 @@ cd backend
 python scripts/build_index.py
 ```
 
-在 `expert_knowledge/` 中的 `node.json` 变更后需要重新构建。
+`expert_knowledge/node.json` 变更后需重建（首次启动若索引不存在也会自动构建）。
+
+### 预取离线 mock 数据
+
+```bash
+cd backend
+python scripts/prefetch_mock_data.py    # 批量执行评估指标 SQL，结果写入 评估指标_mock.json
+```
 
 ### 单轮工具调用调试
 
@@ -564,4 +370,4 @@ cd backend
 python tests/tool_test.py "帮我分析一下fgOTN的部署情况"
 ```
 
-直接打印大模型原始 function calling 输出（JSON 结构），不走完整的 Agent 循环，用于排查工具定义或 prompt 问题。
+直接打印大模型原始 function calling 输出，不走完整 Agent 循环，用于排查工具定义或 prompt 问题。
