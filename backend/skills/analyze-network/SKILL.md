@@ -128,11 +128,22 @@ edit_node(node_id="L4_007", field="name",     value="新名称")
 edit_node(node_id="L3_002", field="description", value="新描述")
 ```
 
-支持的 field：`exec_sql` / `name` / `description` / `condition` / `summarySuggestion` / `renderType` / `colX` / `colY` / `condition_queries`
+支持的 field 及其适用层级：
 
+| field | 适用层级 | 说明 |
+|-------|---------|------|
+| `name` | 全部 | 节点名称 |
+| `description` | **仅 L1–L4** | 节点描述；L5 query 节点无 description，禁止修改 |
+| `condition` | 全部 | 展示条件 |
+| `exec_sql` / `renderType` / `colX` / `colY` / `summarySuggestion` / `condition_queries` | **仅 L5 查询节点** | 这些字段只存在于 L5 指标节点，非 L5 节点没有 |
+
+> ⚠️ **修改 L5 节点前必须先 `get_node_detail.py` 查询节点详情**，确认当前 exec_sql/renderType 等的真实值，再决定怎么改：
+> ```bash
+> python3 $SKILLS_DIR/analyze-network/scripts/get_node_detail.py L5_071
+> ```
+>
 > 修改成功后自动推送 `outline` 事件，前端三个 Tab 同步更新。  
-> L5 节点改 `name` 会自动从知识库同步 exec_sql / renderType 等关联字段（相当于换指标）。  
-> L5 节点的 `description` 禁止修改，操作会被拒绝。
+> L5 节点改 `name` 会自动从知识库同步 exec_sql / renderType 等关联字段（相当于换指标）。
 
 ---
 
