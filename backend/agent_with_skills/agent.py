@@ -1,9 +1,10 @@
 """
 agent.py — 脚本驱动的单一 agent，无业务 tool schema。
 
-LLM 只有两个工具：
+LLM 有三个工具：
   read_skill — 加载 SKILL.md SOP（Level 1）或支持文件（Level 2）
   bash       — 执行 bash 命令（通常是 skills/<name>/scripts/*.py）
+  edit_node  — 直接修改大纲节点属性（参数走 JSON、不过 shell，含特殊字符的 SQL 安全）
 
 所有业务逻辑以 Python 脚本形式存放在 skills/<name>/scripts/，
 LLM 通过 SKILL.md 了解脚本 CLI 接口，无需感知任何 JSON tool schema。
@@ -37,14 +38,20 @@ if _BACKEND_DIR not in sys.path:
 from services.llm_service import LLMService
 from agent_with_skills.memory import AgentWithSkillsMemory
 from agent_with_skills.skill_registry import SkillRegistry
-from tools.shared_tools import READ_SKILL_TOOL, BASH_TOOL
+from tools.shared_tools import READ_SKILL_TOOL, BASH_TOOL, EDIT_NODE_TOOL
+
+_LIB_DIR = str(_SKILLS_DIR / "_lib")
+if _LIB_DIR not in sys.path:
+    sys.path.insert(0, _LIB_DIR)
+
+from modify_outline import modify_outline  # noqa: E402  (imported after sys.path setup)
 
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (Path(_AGENT_DIR) / "system_prompt.txt").read_text(encoding="utf-8")
 _MAX_ROUNDS = 12
 
-TOOLS = [READ_SKILL_TOOL, BASH_TOOL]
+TOOLS = [READ_SKILL_TOOL, BASH_TOOL, EDIT_NODE_TOOL]
 
 _SKILL_SYSTEM_TEMPLATE = """\
 <skill_system>
@@ -167,6 +174,8 @@ class AgentWithSkills:
             return self._handle_read_skill(args)
         if name == "bash":
             return await self._handle_bash(args.get("command", ""))
+        if name == "edit_node":
+            return await self._handle_edit_node(args)
         return {}, f"未知工具: {name}"
 
     def _handle_read_skill(self, args: dict) -> tuple[dict, str]:
@@ -182,6 +191,55 @@ class AgentWithSkills:
         level = "2" if ref_path else "1"
         label = f"{skill_name}/{ref_path}" if ref_path else skill_name
         return {}, f"[read_skill Level {level}] {label}:\n\n{content}"
+
+    async def _handle_edit_node(self, args: dict) -> tuple[dict, str]:
+        """直接修改大纲节点属性，参数走 JSON、不过 shell。"""
+        node_id = args.get("node_id", "").strip()
+        field = str(args.get("field", "")).strip()
+        value = args.get("value")
+
+        outline_tree = self.memory.outline_tree
+        if not outline_tree:
+            return {"_events": []}, "[edit_node] 当前没有大纲，请先生成大纲"
+
+        # 有专属 patcher op 的字段，走 modify_outline 管线（name 会触发 L5 KB 同步等逻辑）
+        _field_op = {
+            "name":        "modify_node_name",
+            "description": "modify_node_description",
+            "condition":   "modify_node_condition",
+            "exec_sql":    "modify_node_exec_sql",
+        }
+        if field in _field_op:
+            ops = [{"op": _field_op[field], "node_id": node_id, "value": value}]
+        else:
+            # summarySuggestion / renderType / colX / colY / condition_queries 等
+            ops = [{"op": "set_node_field", "node_id": node_id, "field": field, "value": value}]
+
+        result = await modify_outline(ops, outline_tree)
+
+        if result["status"] != "success":
+            return {"_events": []}, f"[edit_node] {result['message']}"
+
+        self.memory.set_outline(
+            result["outline_tree"],
+            result["markdown"],
+            result["outline_yaml"],
+        )
+        events = [
+            {
+                "type":         "outline",
+                "markdown":     result["markdown"],
+                "outline_yaml": result["outline_yaml"],
+                "outline_tree": result["outline_tree"],
+            },
+            {"type": "confirm", "options": ["生成报告"]},
+        ]
+
+        lines = [f"[edit_node] 已更新 {node_id}.{field}"]
+        for s in result.get("skipped", []):
+            reason = s.get("_skip_reason", "未知") if isinstance(s, dict) else str(s)
+            lines.append(f"SKIPPED: {s.get('op','?')} node_id={s.get('node_id','')} → {reason}")
+        return {"_events": events}, "\n".join(lines)
 
     async def _handle_bash(self, command: str) -> tuple[dict, str]:
         """执行 bash 命令，同步 session 状态，返回事件列表。"""

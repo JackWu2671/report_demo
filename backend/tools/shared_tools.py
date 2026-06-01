@@ -38,3 +38,37 @@ BASH_TOOL: dict = {
         },
     },
 }
+
+EDIT_NODE_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "edit_node",
+        "description": (
+            "直接修改当前大纲中某个节点的属性值。"
+            "参数经 JSON 传递、完全不过 shell，含反引号、<、>、% 的 SQL 或名称均可安全传入。"
+            "修改 exec_sql / name / description / condition 等字段时优先用此工具，不要用 bash + modify_outline.py。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "string",
+                    "description": "节点 ID，如 L5_071",
+                },
+                "field": {
+                    "type": "string",
+                    "enum": [
+                        "exec_sql", "name", "description", "condition",
+                        "summarySuggestion", "renderType", "colX", "colY",
+                        "condition_queries",
+                    ],
+                    "description": "要修改的字段名",
+                },
+                "value": {
+                    "description": "新值。exec_sql/name/description/condition 传字符串；condition_queries 传数组。",
+                },
+            },
+            "required": ["node_id", "field", "value"],
+        },
+    },
+}

@@ -55,7 +55,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/get_node_detail.py L5_001
 | `search_templates.py "查询词" [--topk N]` | 向量检索模板库，返回候选模板 JSON 数组 |
 | `build_outline.py <anchor_id>` | 以锚节点为根展开子树，生成初始大纲写入会话 |
 | `modify_outline.py '<ops_json>'` | 对当前大纲执行结构化修改操作 |
-| `edit_node.py <node_id> <field> --old X --new Y [...]` | 对节点字段做查找替换（field=exec_sql/name/description/condition）；只把改动 token 上命令行，**改含反引号/`<`/`>`/`%` 的 SQL 或名称首选此脚本** |
+| *(原生工具)* `edit_node` | **修改节点属性值**（exec_sql/name/description/condition 等）—— 直接用对话工具调用，不是脚本。参数走 JSON、不过 shell，含反引号/`<`/`>` 均安全 |
 | `load_template.py <template_id>` | 按 ID 加载指定模板大纲写入会话 |
 | `get_node_detail.py <node_id> [node_id2 ...]` | 查询节点完整信息（summarySuggestion、exec_sql、renderType 等） |
 | `get_report_data.py <node_id>` | 查询已生成报告中某节点的指标数据（每项前 10 行）和总结文本 |
@@ -125,26 +125,20 @@ python3 $SKILLS_DIR/analyze-network/scripts/build_outline.py L4_001
 python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_003\"}, {\"op\": \"modify_node_name\", \"node_id\": \"L4_007\", \"value\": \"新名称\"}]"
 ```
 
-**替换模式**（修改 exec_sql / name 等含 `` ` `` `<` `>` `%` 引号的文本时，**必须用此方式**）：
+**修改节点属性值（exec_sql / name / description / condition 等）→ 用原生 `edit_node` 工具**：
 
-> **绝对禁止**把含上述字符的完整文本当命令行参数传给 `modify_outline.py`：
-> - 反引号 `` ` `` → bash 当命令替换执行 → SQL 被破坏、静默失败
-> - `<` `>`（如 `>=70%`）→ cmd.exe 当重定向 → 报「系统找不到指定的文件」
-> - heredoc `<<` → cmd.exe 不支持 → 报「此时不应有 <<」
+> **禁止**把含反引号 `` ` ``、`<`、`>` 的完整 SQL 或名称当 bash 参数传给 `modify_outline.py`：
+> cmd.exe 会把 `>=70%` 的 `>` 当重定向、把反引号当命令替换，导致静默失败。
 >
-> 正确做法：用 `edit_node.py` 只传**改动的小片段**，完整文本始终留在会话里、不过 shell。
+> 正确做法：调用 `edit_node` 工具（原生 JSON 工具调用，不走 shell）。
 
-先 `get_node_detail.py` 看清当前值，再针对要改的片段做替换。例：把 OLT 槽位利用率阈值 70% 改成 80%：
-
-```bash
-python3 $SKILLS_DIR/analyze-network/scripts/edit_node.py L5_071 exec_sql --old 0.7 --new 0.8
-python3 $SKILLS_DIR/analyze-network/scripts/edit_node.py L5_071 name --old 70% --new 80%
+```
+edit_node(node_id="L5_071", field="exec_sql", value="SELECT ... `档位` ...")
+edit_node(node_id="L5_071", field="name",     value="OLT槽位利用率分布（>=80%）")
 ```
 
-> - `field` ∈ `exec_sql` / `name` / `description` / `condition`
-> - 可一次传多组：`--old A --new B --old C --new D`
-> - **--old 必须是当前值里真实存在的片段**；选 delta token 时避开 `< > 反引号`（如改阈值就传 `0.7`/`80%`，不要传 `>=70%`）
-> - 未命中 → 脚本报错并回显当前值，不写入任何改动（不会静默成功）；命中多处 → 全部替换并提示处数
+支持的 field：`exec_sql` / `name` / `description` / `condition` / `summarySuggestion` / `renderType` / `colX` / `colY` / `condition_queries`  
+修改成功后自动推送 `outline` 事件，前端三个 Tab 同步更新。
 
 支持的 op 类型：
 
@@ -155,7 +149,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/edit_node.py L5_071 name --old 70% -
 | `modify_node_name` | `node_id`, `value` | — | 修改节点名称；对 L5 节点会自动同步 exec_sql 等所有关联字段，**调用前必须先用 `get_node_detail.py` 查清楚当前节点** |
 | `modify_node_description` | `node_id`, `value` | — | 修改节点描述（**仅限 L1–L4**；L5 query 节点无 description，操作会被拒绝） |
 | `modify_node_condition` | `node_id`, `value` | — | 设置条件；格式「当……时，本节才展示」；value 传空字符串删除条件 |
-| `modify_node_exec_sql` | `node_id`, `value` | — | 直接修改 L5 节点的 `exec_sql`（仅限 L5）。**value 含 `` ` `` `<` `>` `%` 引号时禁止走本 op，改用 `edit_node.py`**；仅当整段为纯安全字符时才用此 op |
+| `modify_node_exec_sql` | `node_id`, `value` | — | 直接修改 L5 节点的 `exec_sql`（仅限 L5）。**含反引号/`<`/`>` 时禁止走 bash，改用 `edit_node` 工具** |
 | `keep_only_node` | `node_id` | — | 保留该节点，同级其他节点自动删除 |
 
 **`add_node` 位置规则（重要）**：

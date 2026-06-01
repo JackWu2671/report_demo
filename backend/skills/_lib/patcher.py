@@ -175,6 +175,19 @@ async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[d
                     logger.warning("[Step 9] modify_node_exec_sql: 未找到节点 %s", node_id)
                     skipped.append({**op, "_skip_reason": msg})
 
+        elif op_name == "set_node_field":
+            field = op.get("field", "")
+            val = op.get("value")
+            if not field:
+                skipped.append({**op, "_skip_reason": "缺少 field 参数"})
+            else:
+                found = _modify_field(tree, node_id, field, val)
+                if found:
+                    logger.info("[Step 9] set_node_field: 节点 %s.%s | 原因: %s", node_id, field, reason)
+                else:
+                    msg = f"节点 {node_id} 不存在"
+                    skipped.append({**op, "_skip_reason": msg})
+
         else:
             logger.warning("[Step 9] 未知操作: %s", op_name)
             skipped.append({**op, "_skip_reason": f"未知操作类型 {op_name}"})
