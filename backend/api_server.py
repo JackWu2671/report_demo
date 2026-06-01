@@ -39,6 +39,7 @@ if _DIR not in sys.path:
 
 from agent_with_skills.agent import AgentWithSkills
 from skills._lib.loader import load_resources
+from services import conversation_store
 
 
 @asynccontextmanager
@@ -113,6 +114,59 @@ def create_session(req: SessionRequest):
     return {"session_id": session_id}
 
 
+# —— 历史会话 ————————————————————————————————————————————————————
+
+@app.get("/api/conversations")
+def list_conversations():
+    return {"conversations": conversation_store.list_conversations()}
+
+
+@app.post("/api/conversations/{session_id}/open")
+def open_conversation(session_id: str):
+    """把历史会话恢复到内存并返回供前端渲染的消息与大纲。"""
+    data = conversation_store.load_conversation(session_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="历史会话不存在")
+
+    # 重建 agent 内存状态（已在内存则直接复用）
+    agent = _sessions.get(session_id)
+    if agent is None:
+        agent = AgentWithSkills(session_id=session_id)
+        agent.memory._history = data.get("history", [])
+        agent.memory.set_outline(
+            data.get("outline_tree", {}) or {},
+            data.get("markdown", "") or "",
+            data.get("outline_yaml", "") or "",
+        )
+        if hasattr(agent.memory, "set_extraction") and data.get("extraction"):
+            agent.memory.set_extraction(data["extraction"])
+        _sessions[session_id] = agent
+        # 同步大纲到 /tmp session 文件，使后续脚本与报告生成可用
+        from agent_with_skills.agent import _write_session
+        _write_session(session_id, {
+            "outline_tree": agent.memory.outline_tree or {},
+            "outline_yaml": agent.memory.outline_yaml or "",
+            "markdown":     agent.memory.markdown or "",
+            "extraction":   getattr(agent.memory, "extraction", {}) or {},
+        })
+
+    return {
+        "session_id":   session_id,
+        "messages":     conversation_store.chat_messages(data.get("history", [])),
+        "outline_tree": data.get("outline_tree", {}) or {},
+        "outline_yaml": data.get("outline_yaml", "") or "",
+        "markdown":     data.get("markdown", "") or "",
+        "extraction":   data.get("extraction", {}) or {},
+    }
+
+
+@app.delete("/api/conversations/{session_id}")
+def delete_conversation(session_id: str):
+    conversation_store.delete_conversation(session_id)
+    _sessions.pop(session_id, None)
+    return {"ok": True}
+
+
 # —— Chat SSE 流式接口 ————————————————————————————————————————————
 
 class ChatRequest(BaseModel):
@@ -137,6 +191,9 @@ async def _stream_agent(session_id: str, message: str):
     except Exception as e:
         logger.error("[Chat] 异常 session=%s: %s", session_id, e, exc_info=True)
         yield _sse({"type": "error", "message": str(e)})
+
+    # 一轮结束后把对话历史与大纲快照持久化到 logs/，供历史会话列表使用
+    conversation_store.save_conversation(agent)
 
     yield "data: [DONE]\n\n"
 

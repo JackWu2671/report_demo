@@ -65,6 +65,8 @@ export default function ChatView() {
   const [generatingReport, setGeneratingReport] = useState(false)
   const [chartData, setChartData] = useState({}) // name → {render_type, col_x, col_y, rows}
   const [tableData, setTableData] = useState({}) // name → rows[]
+  const [conversations, setConversations] = useState([]) // 历史会话列表
+  const [activeSession, setActiveSession] = useState(null) // 当前会话 id（仅用于列表高亮）
   const metricCacheRef = useRef({})   // name → { sig, value }，跨次生成缓存；sig 变化则失效
   const summaryCacheRef = useRef({})  // node_id → { key, chunk }，subtree 不变时复用
   const outlineJsonRef = useRef(null) // 同步镜像 outlineJson state，供事件回调同帧读取
@@ -72,8 +74,8 @@ export default function ChatView() {
   const messagesEndRef = useRef(null)
   const assistantMsgIdxRef = useRef(-1)
 
-  useEffect(() => {
-    sessionIdRef.current = null
+  // 清空当前会话相关的本地状态（不含 session id）
+  function resetLocalState() {
     setMessages([])
     setOutline('')
     setOutlineMd('')
@@ -90,15 +92,69 @@ export default function ChatView() {
     summaryCacheRef.current = {}
     setChartData({})
     setTableData({})
+  }
 
+  function refreshConversations() {
+    fetch('/api/conversations')
+      .then(r => r.json())
+      .then(d => setConversations(d.conversations || []))
+      .catch(e => console.error('[ChatView] 拉取历史会话失败', e))
+  }
+
+  // 新建对话：重置本地状态 + 创建新 session
+  function startNewConversation() {
+    if (streaming) return
+    sessionIdRef.current = null
+    setActiveSession(null)
+    resetLocalState()
     fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     })
       .then(r => r.json())
-      .then(d => { sessionIdRef.current = d.session_id })
+      .then(d => { sessionIdRef.current = d.session_id; setActiveSession(d.session_id) })
       .catch(e => console.error('[ChatView] 创建 session 失败', e))
+  }
+
+  // 打开历史会话：恢复消息与大纲
+  async function openConversation(id) {
+    if (streaming || id === activeSession) return
+    try {
+      const res = await fetch(`/api/conversations/${id}/open`, { method: 'POST' })
+      if (!res.ok) throw new Error(await res.text())
+      const d = await res.json()
+      resetLocalState()
+      sessionIdRef.current = d.session_id
+      setActiveSession(d.session_id)
+      setMessages(d.messages || [])
+      if (d.outline_tree && Object.keys(d.outline_tree).length) {
+        outlineJsonRef.current = d.outline_tree
+        setOutlineJson(d.outline_tree)
+        setOutlineMd(d.markdown || '')
+        setOutlineLlm(d.outline_yaml || '')
+      }
+      if (d.extraction && d.extraction.scene_name) setSceneMeta(d.extraction)
+    } catch (e) {
+      console.error('[ChatView] 打开历史会话失败', e)
+    }
+  }
+
+  async function deleteConversation(id, e) {
+    e.stopPropagation()
+    if (!window.confirm('删除这条历史对话？')) return
+    try {
+      await fetch(`/api/conversations/${id}`, { method: 'DELETE' })
+      if (id === activeSession) startNewConversation()
+      refreshConversations()
+    } catch (err) {
+      console.error('[ChatView] 删除历史会话失败', err)
+    }
+  }
+
+  useEffect(() => {
+    startNewConversation()
+    refreshConversations()
   }, [])
 
   useEffect(() => {
@@ -169,6 +225,7 @@ export default function ChatView() {
     }
 
     setStreaming(false)
+    refreshConversations()  // 一轮结束后刷新历史列表（标题/排序可能变化）
   }
 
   async function send() {
@@ -438,7 +495,35 @@ case 'saved':
 
   return (
     <div className="chat-view">
-      {/* 左：对话区 */}
+      {/* 最左：历史会话 */}
+      <div className="conv-list">
+        <button className="conv-new-btn" onClick={startNewConversation} disabled={streaming}>
+          ＋ 新建对话
+        </button>
+        <div className="conv-items">
+          {conversations.length === 0 && (
+            <div className="conv-empty">暂无历史对话</div>
+          )}
+          {conversations.map(c => (
+            <div
+              key={c.session_id}
+              className={`conv-item${c.session_id === activeSession ? ' conv-item--active' : ''}`}
+              onClick={() => openConversation(c.session_id)}
+              title={c.title}
+            >
+              <div className="conv-item__title">{c.title || '新对话'}</div>
+              <div className="conv-item__meta">{(c.updated_at || '').replace('T', ' ')}</div>
+              <button
+                className="conv-item__del"
+                onClick={(e) => deleteConversation(c.session_id, e)}
+                title="删除"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 中：对话区 */}
       <div className="chat-panel">
         <div className="chat-panel__header">
           <div>
