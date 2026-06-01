@@ -128,7 +128,7 @@ agent_with_skills/
 └── system_prompt.txt # 系统提示词基础模板
 ```
 
-LLM 只感知两个工具：`read_skill`（读取 SOP）和 `bash`（执行脚本）。
+LLM 感知三个工具：`read_skill`（读取 SOP）、`bash`（执行脚本）和 `edit_node`（修改大纲节点属性）。`edit_node` 的参数经 JSON 传递、不过 shell，用于安全修改含反引号/`<`/`>` 等特殊字符的 `exec_sql`、`name` 等字段。
 
 ---
 

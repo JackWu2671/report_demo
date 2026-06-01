@@ -44,7 +44,7 @@
 
 **能不能只存 outline_yaml，不要 JSON？**
 
-不行。`outlineJson` 是程序逻辑必须的结构化数据：`buildSkeleton()` 遍历树生成报告骨架、`findNodeById()` 查节点、`replayCaches()` 校验 summary 缓存是否仍然有效——这些都依赖字段访问和递归遍历，文本格式无法满足。
+不行。`outlineJson` 是程序逻辑必须的结构化数据：`buildSkeleton()` 遍历树生成报告骨架、`findNodeById()` / `findNodeByName()` 查节点、`replayCaches()` 校验 metric / summary 缓存是否仍然有效（metric 缓存按 `exec_sql` 等字段组成的签名失效，summary 缓存按整节点 JSON 失效）——这些都依赖字段访问和递归遍历，文本格式无法满足。
 
 **能不能只存 JSON 和 outline_yaml，不要用户可读版？**
 
@@ -70,7 +70,7 @@
 
 #### YAML 精简视图 — `outlineLlm`
 
-注入到 Agent 的 system prompt（`build_messages` 中 `## 当前大纲` 部分），让大模型在多轮对话中能通过 ID 调用 `modify_outline.py` 修改特定节点。格式省略 level、SQL 字段和空字段，只保留 LLM 需要随时引用的内容：
+注入到 Agent 的 system prompt（`build_messages` 中 `## 当前大纲` 部分），让大模型在多轮对话中能通过 ID 修改特定节点——改属性值用 `edit_node` 工具（如 `exec_sql`、`name`），调结构（增删节点）用 `modify_outline.py`。格式省略 level、SQL 字段和空字段，只保留 LLM 需要随时引用的内容：
 
 ```yaml
 - id: L3_001

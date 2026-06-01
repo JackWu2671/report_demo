@@ -133,13 +133,23 @@ agent.py 主循环每次检测文件变化
 骨架构建完后，在发请求给后端之前，前端先检查这次会话里有没有缓存过某些指标的结果（上次生成时存下来的）：
 
 ```
-metricCacheRef = { "AEC覆盖用户数": "12345\n\n", "安全等级分布": "<div data-echart=...>" }
+metricCacheRef = {
+  "AEC覆盖用户数": { sig: "...", value: "12345\n\n" },
+  "安全等级分布":  { sig: "...", value: "<div data-echart=...>" }
+}
 
-已缓存的指标 → 直接填入骨架，不等后端
-未缓存的指标 → 发给后端执行，POST 时附带 cached_names 列表
+签名一致的已缓存指标 → 直接填入骨架，不等后端
+签名变化或未缓存的指标 → 发给后端执行，POST 时附带 cached_names 列表
 ```
 
-效果：调整大纲后重新生成，没变化的指标**瞬间**显示上次的结果，只有新指标才真正跑 SQL。
+**缓存按签名失效**：缓存值不再只按指标名（`name`）索引，而是连同一个签名 `sig` 一起存。`sig = metricSig(node)`，由决定数据/渲染的字段组成（`exec_sql` / `renderType` / `colX` / `colY`）。预填和计算 `cached_names` 时都比对签名：
+
+- 签名一致 → 命中缓存，瞬间复用上次结果
+- 签名变化（如用 `edit_node` 改了 `exec_sql`）→ 视为失效，保留占位符、不进 `cached_names`，让后端重新执行查询
+
+> 早期缓存只按 `name` 索引，改了 SQL 但指标名没变时会错误复用旧数据。引入 `sig` 后，只要查询逻辑变了就一定重查。summary 缓存同理（按 `JSON.stringify(node)` 失效）。
+
+效果：调整大纲后重新生成，**真正没变化**的指标瞬间显示上次的结果，改了 SQL 或新增的指标才真正跑查询。
 
 ---
 
@@ -202,11 +212,27 @@ with ThreadPoolExecutor(max_workers=5) as pool:
 
 ### SQL 查询优先级
 
+取数有两个来源——实时 SQL 和离线 mock，由环境变量 `FORCE_MOCK` 决定先后，两种模式都互相兜底：
+
 ```
-① 有 exec_sql → 调用 de_sql_execution_client 查真实 API
-② 查询失败或无结果 → 降级到 mock_data（评估指标_mock.json 按 id 叠加到 node.json 的字段）
-③ 也没有 mock_data → 该指标无结果
+FORCE_MOCK=false（默认，在线优先）：
+  ① 有 exec_sql → 调用 de_sql_execution_client 查真实 API
+  ② 查询失败或无结果 → 回落 mock_data
+  ③ 都没有 → 该指标无结果
+
+FORCE_MOCK=true（离线优先，无 DB 演示）：
+  ① 先取 mock_data
+  ② mock 不存在或失效 → 回落实时 SQL
+  ③ 都没有 → 该指标无结果
 ```
+
+**mock 必须与当前 SQL 一致才复用**：`get_mock(node_id, current_sql)` 会比对「生成这份 mock 时所用的 SQL」与「当前节点的 exec_sql」。`评估指标_mock.json` 每条记录的 `answer` 字段里保存了原始 SQL，加载时解析出来一并存入索引。
+
+- 两者归一化（折叠空白）后一致 → 复用 mock
+- 不一致（如 `exec_sql` 被改过）→ 视为 mock 失效，返回 None，按上面的优先级回落到实时 SQL
+- 无法确定 mock 原 SQL（解析失败）→ 保持旧行为，按 id 返回，不误杀存量
+
+> 这与前端 metric 缓存的签名失效是同一思路、不同层：前端避免"命中旧缓存不重查"，后端避免"重查时仍套用 SQL 不匹配的旧 mock"。两层配合，改了 SQL 后整条链路都会重新取数。
 
 ---
 
