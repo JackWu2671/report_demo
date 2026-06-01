@@ -65,7 +65,7 @@ export default function ChatView() {
   const [generatingReport, setGeneratingReport] = useState(false)
   const [chartData, setChartData] = useState({}) // name → {render_type, col_x, col_y, rows}
   const [tableData, setTableData] = useState({}) // name → rows[]
-  const metricCacheRef = useRef({})   // name → chunk/placeholder，跨次生成缓存
+  const metricCacheRef = useRef({})   // name → { sig, value }，跨次生成缓存；sig 变化则失效
   const summaryCacheRef = useRef({})  // node_id → { key, chunk }，subtree 不变时复用
   const outlineJsonRef = useRef(null) // 同步镜像 outlineJson state，供事件回调同帧读取
   const sessionIdRef = useRef(null)
@@ -194,6 +194,26 @@ export default function ChatView() {
     return null
   }
 
+  function findNodeByName(nodes, name) {
+    for (const node of nodes || []) {
+      if (node.name === name) return node
+      const found = findNodeByName(node.children, name)
+      if (found) return found
+    }
+    return null
+  }
+
+  // metric 缓存签名：决定数据/渲染的字段，任一变化即缓存失效（如 exec_sql 改了）
+  function metricSig(node) {
+    if (!node) return ''
+    return JSON.stringify({
+      sql: node.exec_sql || '',
+      rt:  node.renderType || '',
+      x:   node.colX || '',
+      y:   node.colY || '',
+    })
+  }
+
   function applySummaryChunk(str, nodeId, chunk) {
     const ph = '> <span data-ph-summary="' + nodeId + '" class="ph-spin"></span>'
     if (!str.includes(ph)) return str
@@ -205,9 +225,12 @@ export default function ChatView() {
   function replayCaches(sk, tree) {
     let out = sk
     const cache = metricCacheRef.current
-    for (const [name, chunk] of Object.entries(cache)) {
+    const treeChildren = (tree || outlineJson)?.children || []
+    for (const [name, entry] of Object.entries(cache)) {
+      // SQL 等签名变化时缓存失效，保留占位符让后端重新查询
+      if (entry.sig !== metricSig(findNodeByName(treeChildren, name))) continue
       const ph = `<span data-ph="${name}" class="ph-spin"></span>`
-      if (out.includes(ph)) out = out.replace(ph, chunk)
+      if (out.includes(ph)) out = out.replace(ph, entry.value)
     }
     for (const [nodeId, cached] of Object.entries(summaryCacheRef.current)) {
       const node = findNodeById((tree || outlineJson)?.children || [], nodeId)
@@ -228,10 +251,13 @@ export default function ChatView() {
     setReportTab('view')
     setRightTab('report')
 
-    // 预填指标缓存
+    // 预填指标缓存：仅当签名（exec_sql 等）与当前节点一致才算命中，否则需重查
     const cache = metricCacheRef.current
     const allNames = [...sk.matchAll(/data-ph="([^"]+)"/g)].map(m => m[1])
-    const cachedNames = allNames.filter(n => cache[n] !== undefined)
+    const cachedNames = allNames.filter(n => {
+      const entry = cache[n]
+      return entry !== undefined && entry.sig === metricSig(findNodeByName(tree.children || [], n))
+    })
 
     // 预填 summary 缓存：子树 JSON 未变则直接填充，无需 LLM 重新生成
     const summaryNodes = collectSummaryNodes(tree.children || [])
@@ -280,21 +306,22 @@ export default function ChatView() {
             const evt = JSON.parse(raw)
             if (evt.type === 'report_metric') {
               const ph = '<span data-ph="' + evt.name + '" class="ph-spin"></span>'
+              const sig = metricSig(findNodeByName(outlineJsonRef.current?.children || [], evt.name))
               const CHART = new Set(['BAR', 'LINE', 'PIE'])
               if (CHART.has(evt.render_type) && evt.rows?.length) {
                 const info = { render_type: evt.render_type, col_x: evt.col_x, col_y: evt.col_y, rows: evt.rows }
                 setChartData(prev => ({ ...prev, [evt.name]: info }))
                 const placeholder = `<div data-echart="${evt.name}"></div>\n\n`
-                metricCacheRef.current[evt.name] = placeholder
+                metricCacheRef.current[evt.name] = { sig, value: placeholder }
                 setReport(prev => prev.includes(ph) ? prev.replace(ph, placeholder) : prev)
               } else if (evt.render_type === 'TABLE' && evt.rows?.length) {
                 setTableData(prev => ({ ...prev, [evt.name]: evt.rows }))
                 const placeholder = `<div data-table="${evt.name}"></div>\n\n`
-                metricCacheRef.current[evt.name] = placeholder
+                metricCacheRef.current[evt.name] = { sig, value: placeholder }
                 setReport(prev => prev.includes(ph) ? prev.replace(ph, placeholder) : prev)
               } else {
                 const chunk = evt.chunk ?? ''
-                metricCacheRef.current[evt.name] = chunk
+                metricCacheRef.current[evt.name] = { sig, value: chunk }
                 setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk) : prev)
               }
             } else if (evt.type === 'report_summary') {
