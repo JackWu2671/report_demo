@@ -30,6 +30,22 @@ _NODE_FILE         = os.path.join(_KB_DIR, "node.json")
 _METRICS_MOCK_FILE = os.path.join(_KB_DIR, "评估指标_mock.json")   # mock_data 来源，不变
 
 
+def _normalize_sql(sql: str) -> str:
+    """归一化 SQL 用于一致性比对：去首尾空白、折叠连续空白为单空格。"""
+    return re.sub(r"\s+", " ", (sql or "").strip())
+
+
+def _sql_from_mock_record(rec: dict) -> str:
+    """从 mock 记录里取生成它时所用的 exec_sql：优先顶层字段，否则解析 answer JSON 串。"""
+    if rec.get("exec_sql"):
+        return rec["exec_sql"]
+    try:
+        answer = json.loads(rec.get("answer", "{}"))
+        return answer.get("exec_sql", "") or ""
+    except (json.JSONDecodeError, TypeError):
+        return ""
+
+
 class SqlExecutor:
     """
     L5 指标名到 SQL 执行的封装。
@@ -42,7 +58,7 @@ class SqlExecutor:
 
     def __init__(self):
         self._index: Dict[str, Dict] = {}      # name → 指标记录（for eval_condition backward compat）
-        self._mock_index: Dict[str, Any] = {}  # id → mock_data
+        self._mock_index: Dict[str, Dict] = {}  # id → {"mock_data": ..., "exec_sql": 生成时所用 SQL}
         self._load()
 
     # ── 公共接口 ──────────────────────────────────────────────
@@ -189,9 +205,23 @@ class SqlExecutor:
 
     # ── 内部 ──────────────────────────────────────────────────
 
-    def get_mock(self, node_id: str) -> Optional[List]:
-        """按节点 id 返回 mock_data，不存在返回 None。"""
-        return self._mock_index.get(node_id)
+    def get_mock(self, node_id: str, current_sql: Optional[str] = None) -> Optional[List]:
+        """
+        按节点 id 返回 mock_data，不存在返回 None。
+
+        传入 current_sql 时，只有当 mock 生成所用的 SQL 与当前 SQL 一致才复用；
+        若两者都已知且不同，视为 SQL 已被修改、mock 失效，返回 None——
+        避免大纲里改了 exec_sql 却仍套用旧指标的 mock 数据。
+        无法确定 mock 原 SQL（解析失败/为空）时保持旧行为，按 id 返回。
+        """
+        entry = self._mock_index.get(node_id)
+        if entry is None:
+            return None
+        mock_sql = entry.get("exec_sql") or ""
+        if current_sql and mock_sql and _normalize_sql(mock_sql) != _normalize_sql(current_sql):
+            logger.info("[SqlExecutor] 节点 %s 的 SQL 已变更，mock 失效不复用", node_id)
+            return None
+        return entry.get("mock_data")
 
     def _load(self) -> None:
         if not os.path.exists(_NODE_FILE):
@@ -208,13 +238,17 @@ class SqlExecutor:
                 mock_records = json.load(f)
             for r in mock_records:
                 if r.get("id") and "mock_data" in r:
-                    self._mock_index[r["id"]] = r["mock_data"]
+                    # 同时记录生成该 mock 时所用的 SQL，供 get_mock 做一致性校验
+                    self._mock_index[r["id"]] = {
+                        "mock_data": r["mock_data"],
+                        "exec_sql":  _sql_from_mock_record(r),
+                    }
                     mock_count += 1
             # 同时叠加进 name 索引以维持 eval_condition 向后兼容
             id_to_node = {n["id"]: n for n in l5 if n.get("id")}
-            for nid, mock in self._mock_index.items():
+            for nid, entry in self._mock_index.items():
                 if nid in id_to_node:
-                    id_to_node[nid]["mock_data"] = mock
+                    id_to_node[nid]["mock_data"] = entry["mock_data"]
 
         logger.info("[SqlExecutor] 加载 %d 条 L5 指标（%d 条含 mock_data）",
                     len(self._index), mock_count)

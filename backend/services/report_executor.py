@@ -354,7 +354,8 @@ def _run_metric(
         logger.info("[report] FORCE_MOCK=true，跳过真实 SQL: %r", metric_name)
 
     if not rows:
-        rows = executor.get_mock(node_id)
+        # 传入当前 exec_sql：SQL 与 mock 生成时不一致则不复用旧 mock
+        rows = executor.get_mock(node_id, exec_sql)
         if rows:
             logger.info("[report] 使用 mock_data: %r", metric_name)
 
