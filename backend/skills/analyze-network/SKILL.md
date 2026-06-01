@@ -19,7 +19,9 @@ metadata:
 用户提出分析问题，最终目标是一份完整的报告文档来回答这个问题。
 报告分两个阶段生成：先确定结构（大纲），再填充内容（渲染）。
 
-所有工具均为 Python 脚本，通过 `bash` 调用。环境变量 `$SKILLS_DIR` 已预置为脚本根目录，调用格式：
+工具分两类：
+- **原生工具**（直接调用，不走 shell）：`edit_node` — 修改节点属性值
+- **脚本工具**（通过 `bash` 调用）：其余所有脚本。环境变量 `$SKILLS_DIR` 已预置为脚本根目录：
 
 ```bash
 python3 $SKILLS_DIR/analyze-network/scripts/<script>.py [参数]
@@ -32,20 +34,22 @@ python3 $SKILLS_DIR/analyze-network/scripts/<script>.py [参数]
 **L5 query 节点的特殊性**：
 - `name` 就是查询语句本身（如"10GPON套餐用户占比"），是指标的唯一标识，系统据此执行 SQL
 - `description` **永远为空**，没有任何含义，禁止写入
-- 如需修改 L5 节点，**只能改 `name`**，且新 name 须对应知识库中真实存在的指标
-- **改名 = 换指标**：`modify_node_name` 会自动将节点的 `exec_sql`、`renderType`、`colX`、`colY` 等字段全部替换为新指标的值，相当于整体换掉这条查询
 
-**修改 L5 节点前必须先查详情**：
+**修改 L5 节点的两条路**：
 
-用户表达修改 L5 节点的意图时，**必须先调用 `get_node_detail.py`** 查看当前节点的 `exec_sql`，确认当前节点在查什么数据，再结合用户需求判断是否需要换指标以及换成哪个。
+| 场景 | 做法 |
+|------|------|
+| **换成知识库里另一个指标**（整体替换 SQL/renderType 等） | `edit_node(field="name", value="目标指标名称")`，系统自动从 KB 同步 exec_sql / renderType / colX / colY |
+| **在现有 SQL 基础上微调**（改阈值、加过滤条件等） | `edit_node(field="exec_sql", value="完整新 SQL")` |
+
+**修改前必须先查详情**，确认当前节点在查什么，再判断走哪条路：
 
 ```bash
 python3 $SKILLS_DIR/analyze-network/scripts/get_node_detail.py L5_001
 ```
 
-查到详情后：
-1. 若当前指标已符合用户需求 → 无需修改，直接告知用户
-2. 若需要换成其他指标 → 用 `search_graph_tree.py` 找到目标指标的节点 id，再调 `modify_node_name`
+- 换指标时，`value` 必须是知识库中**真实存在**的指标名；可用 `search_graph_tree.py` 查找
+- 直接改 `exec_sql` 时，若当前指标已基本符合、只需微调，才走此路；大幅改动优先考虑换指标
 
 ## 脚本工具参考
 
@@ -116,40 +120,36 @@ python3 $SKILLS_DIR/analyze-network/scripts/build_outline.py L4_001
 
 ### 步骤 4：按用户反馈修改大纲（按需）
 
-**两种调用方式：**
-
-**参数模式**（普通操作，value 不含反引号且不含单引号）：
-> 外层用**双引号**，内层所有 `"` 转义为 `\"`。不可用单引号——Windows cmd.exe 不把单引号当字符串边界。
-
-```bash
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_003\"}, {\"op\": \"modify_node_name\", \"node_id\": \"L4_007\", \"value\": \"新名称\"}]"
-```
-
-**修改节点属性值（exec_sql / name / description / condition 等）→ 用原生 `edit_node` 工具**：
-
-> **禁止**把含反引号 `` ` ``、`<`、`>` 的完整 SQL 或名称当 bash 参数传给 `modify_outline.py`：
-> cmd.exe 会把 `>=70%` 的 `>` 当重定向、把反引号当命令替换，导致静默失败。
->
-> 正确做法：调用 `edit_node` 工具（原生 JSON 工具调用，不走 shell）。
+**修改节点属性值 → 用 `edit_node` 工具（原生，不走 shell）**
 
 ```
 edit_node(node_id="L5_071", field="exec_sql", value="SELECT ... `档位` ...")
-edit_node(node_id="L5_071", field="name",     value="OLT槽位利用率分布（>=80%）")
+edit_node(node_id="L4_007", field="name",     value="新名称")
+edit_node(node_id="L3_002", field="description", value="新描述")
 ```
 
-支持的 field：`exec_sql` / `name` / `description` / `condition` / `summarySuggestion` / `renderType` / `colX` / `colY` / `condition_queries`  
-修改成功后自动推送 `outline` 事件，前端三个 Tab 同步更新。
+支持的 field：`exec_sql` / `name` / `description` / `condition` / `summarySuggestion` / `renderType` / `colX` / `colY` / `condition_queries`
 
-支持的 op 类型：
+> 修改成功后自动推送 `outline` 事件，前端三个 Tab 同步更新。  
+> L5 节点改 `name` 会自动从知识库同步 exec_sql / renderType 等关联字段（相当于换指标）。  
+> L5 节点的 `description` 禁止修改，操作会被拒绝。
+
+---
+
+**结构调整（新增节点 / 删除节点 / 保留分支）→ 用 `bash + modify_outline.py`**
+
+> 外层用**双引号**，内层所有 `"` 转义为 `\"`。不可用单引号——Windows cmd.exe 不把单引号当字符串边界。
+
+```bash
+python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_003\"}]"
+```
+
+支持的结构 op：
 
 | op | 必填字段 | 可选字段 | 说明 |
 |----|---------|---------|------|
 | `add_node` | `node_id`, `parent_id` | `after_id` | 从知识图谱新增节点；node_id 须来自 search_graph_tree 结果 |
 | `delete_node` | `node_id` | — | 删除节点及其全部子树 |
-| `modify_node_name` | `node_id`, `value` | — | 修改节点名称；对 L5 节点会自动同步 exec_sql 等所有关联字段，**调用前必须先用 `get_node_detail.py` 查清楚当前节点** |
-| `modify_node_description` | `node_id`, `value` | — | 修改节点描述（**仅限 L1–L4**；L5 query 节点无 description，操作会被拒绝） |
-| `modify_node_condition` | `node_id`, `value` | — | 设置条件；格式「当……时，本节才展示」；value 传空字符串删除条件 |
-| `modify_node_exec_sql` | `node_id`, `value` | — | 直接修改 L5 节点的 `exec_sql`（仅限 L5）。**含反引号/`<`/`>` 时禁止走 bash，改用 `edit_node` 工具** |
 | `keep_only_node` | `node_id` | — | 保留该节点，同级其他节点自动删除 |
 
 **`add_node` 位置规则（重要）**：
@@ -162,11 +162,8 @@ edit_node(node_id="L5_071", field="name",     value="OLT槽位利用率分布（
   ```
   ❌ 错误：`"parent_id":"L4_012"` → L4_013 会变成 L4_012 的子节点
 
-**调用策略**：
-- 多个独立操作合并为**一次调用**
-- 若后续 op 依赖前一个 op 的结果，则**分多次调用**
-
-成功时输出修改后的 YAML 大纲。跳过的操作以 `# SKIPPED:` 开头输出——出现时**必须继续补救，不得告知用户已完成**。
+多个独立操作合并为**一次调用**；若后续 op 依赖前一个结果则分多次。  
+跳过的操作以 `# SKIPPED:` 开头输出——出现时**必须继续补救，不得告知用户已完成**。
 
 ### 加载模板大纲
 
