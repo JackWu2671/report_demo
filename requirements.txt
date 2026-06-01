@@ -11,6 +11,10 @@ pydantic>=2.7.0
 # Async HTTP client
 aiohttp>=3.9.0
 
+# Sync HTTP client (used by services/de_sql_execution_client.py 调 SQL 执行 API)
+requests>=2.31.0
+urllib3>=2.0.0
+
 # Vector similarity search
 faiss-cpu>=1.8.0
 

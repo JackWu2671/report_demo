@@ -27,8 +27,9 @@ cp backend/config.example.yaml backend/config.yaml
 ### 2. 启动后端
 
 ```bash
-cd backend
+# requirements.txt 在仓库根目录
 uv pip install -r requirements.txt
+cd backend
 uvicorn api_server:app --host 0.0.0.0 --port 8888 --reload
 ```
 
