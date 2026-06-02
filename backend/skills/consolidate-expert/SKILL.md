@@ -57,15 +57,15 @@ python3 $SKILLS_DIR/analyze-network/scripts/search_graph_tree.py "专家描述�
 
 ```
 set_outline(outline_yaml="""
-- id: new_root
+- id: new_L1_root
   name: 报告总标题
   description: 50~100字描述
   children:
-    - id: new_001
+    - id: new_L2_001
       name: 章节
       description: 描述
       children:
-        - id: new_002
+        - id: new_L3_001
           name: 小节
           description: 描述
           children:
@@ -75,13 +75,14 @@ set_outline(outline_yaml="""
 ```
 
 大纲结构约束（违反任意一条视为无效）：
-1. 顶层必须恰好一个根节点（L1），作为报告总标题
-2. L5 query 节点必须是叶子，禁止在其下挂 children
-3. 禁止新建 query 节点（叶子节点 id 不能是 `new_xxx`），L5 只能引用 search_graph_tree 返回的知识库已有 id
-4. 禁止新建 L4 作叶子，每个新建 L4 下方至少挂一个知识库已有 query 节点
-5. 所有新建节点（`id: new_xxx`）必须填 `description`（50~100 字）
-6. L2/L3/L4 由你按专家意图自由设计，不得用知识库节点名替代专家描述的板块名
-7. `condition`/`condition_queries` 按需填，不要写 level/exec_sql 等字段
+1. **新建结构节点 id 必须按 `new_L<层级>_<序号>` 命名，显式编码层级**：根用 `new_L1_xxx`，往下依次 `new_L2_xxx` / `new_L3_xxx` / `new_L4_xxx`。结构节点只能 L1~L4，**绝不能命名为 `new_L5_xxx`**
+2. 顶层必须恰好一个根节点（`new_L1_xxx`），作为报告总标题
+3. L5 query 节点必须是叶子，禁止在其下挂 children
+4. 禁止新建 query 节点，L5 只能引用 search_graph_tree 返回的知识库已有 id（如 `L5_001`）
+5. 每个新建 L4（`new_L4_xxx`）下方至少挂一个知识库已有 query 节点
+6. 所有新建节点必须填 `description`（50~100 字）
+7. L2/L3/L4 由你按专家意图自由设计，不得用知识库节点名替代专家描述的板块名
+8. `condition`/`condition_queries` 按需填，不要写 level/exec_sql 等字段
 
 > **成功判定**：工具返回会回显写入后的大纲 YAML。**若返回以"写入失败"开头或未回显大纲，即为失败——必须修正后重试，绝不可告知专家"大纲已生成"。**
 

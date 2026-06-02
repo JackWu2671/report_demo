@@ -100,11 +100,11 @@ def _yaml_node(node: dict) -> dict:
 
 # ── YAML → outline_tree（逆向解析）───────────────────────────────
 
-_LEVEL_RE = re.compile(r'^L(\d+)_')
+_LEVEL_RE = re.compile(r'^(?:new_)?L(\d+)_')
 
 
 def _infer_level(node_id: str) -> int:
-    """从节点 ID 前缀推断 level：L1_xxx→1, L5_xxx→5, 其他→5。"""
+    """从节点 ID 前缀推断 level：L1_xxx→1, L5_xxx→5, new_L2_xxx→2；无法识别→5。"""
     m = _LEVEL_RE.match(node_id)
     return int(m.group(1)) if m else 5
 
@@ -112,9 +112,10 @@ def _infer_level(node_id: str) -> int:
 def _yaml_to_node(item: dict, depth: int = 1) -> dict:
     node_id = str(item.get("id", ""))
     m = _LEVEL_RE.match(node_id)
-    # KB 节点（L1_/L5_…）：id 前缀即权威 level；
-    # 新建结构节点（new_xxx 等无前缀）：按树深度推断 level，并封顶 4——
-    # 结构节点绝不能是 5（level==5 是"查询指标叶子"的判定标志，会被报告当 SQL 指标处理）。
+    # level 优先从 id 前缀显式读取：
+    #   KB 节点 L1_/L5_… ，新建结构节点约定命名 new_L2_xxx / new_L3_xxx（显式编码层级）。
+    # 兜底：未按约定命名的 new_ 节点按树深度推断并封顶 4，确保结构节点绝不等于 5
+    # （level==5 是"查询指标叶子"的判定标志，会被报告当 SQL 指标处理）。
     level = int(m.group(1)) if m else min(depth, 4)
     return {
         "id": node_id,

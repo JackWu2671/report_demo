@@ -87,8 +87,9 @@ SET_OUTLINE_TOOL: dict = {
             "\n\n【YAML 结构约束】"
             "\n1. 顶层是节点列表，且恰好一个根节点(L1，报告总标题)"
             "\n2. L5 query 节点必须是叶子(无 children)，其 id 须引用 search_graph_tree 返回的知识库已有 id，禁止新建 query 节点"
-            "\n3. 新建结构节点 id 以 new_ 开头并填写 description(50~100 字)"
-            "\n4. 只写 id/name/description/children(及按需 condition/condition_queries)，不要写 level/exec_sql 等字段"
+            "\n3. 新建结构节点 id 必须按 new_L<层级>_<序号> 命名，显式编码层级：根用 new_L1_xxx，其下依次 new_L2_xxx / new_L3_xxx / new_L4_xxx（结构节点只能 L1~L4，绝不能 L5）"
+            "\n4. 新建节点必须填写 description(50~100 字)"
+            "\n5. 只写 id/name/description/children(及按需 condition/condition_queries)，不要写 level/exec_sql 等字段"
             "\n\n成功时工具会回显写入后的大纲；返回'写入失败'或未回显即为失败，须修正重试，不得告知用户已生成。"
         ),
         "parameters": {
