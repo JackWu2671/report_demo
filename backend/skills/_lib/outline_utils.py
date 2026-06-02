@@ -109,16 +109,21 @@ def _infer_level(node_id: str) -> int:
     return int(m.group(1)) if m else 5
 
 
-def _yaml_to_node(item: dict) -> dict:
+def _yaml_to_node(item: dict, depth: int = 1) -> dict:
     node_id = str(item.get("id", ""))
+    m = _LEVEL_RE.match(node_id)
+    # KB 节点（L1_/L5_…）：id 前缀即权威 level；
+    # 新建结构节点（new_xxx 等无前缀）：按树深度推断 level，并封顶 4——
+    # 结构节点绝不能是 5（level==5 是"查询指标叶子"的判定标志，会被报告当 SQL 指标处理）。
+    level = int(m.group(1)) if m else min(depth, 4)
     return {
         "id": node_id,
         "name": str(item.get("name", "")),
-        "level": _infer_level(node_id),
+        "level": level,
         "description": str(item.get("description", "")),
         "condition": str(item.get("condition", "")),
         "condition_queries": list(item.get("condition_queries") or []),
-        "children": [_yaml_to_node(c) for c in (item.get("children") or [])],
+        "children": [_yaml_to_node(c, depth + 1) for c in (item.get("children") or [])],
     }
 
 
