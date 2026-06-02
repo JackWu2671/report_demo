@@ -196,18 +196,10 @@ class AgentWithSkills:
         return {}, f"[read_skill Level {level}] {label}:\n\n{content}"
 
     async def _handle_set_outline(self, args: dict) -> tuple[dict, str]:
-        """一次性写入完整大纲，参数为 JSON 树，不过 shell、无 YAML 缩进问题。"""
-        import yaml
-
-        outline = args.get("outline")
-        if not outline:
-            return {"_events": []}, "[set_outline] 缺少 outline 参数（应为大纲根节点列表）"
-
-        # JSON 结构 → YAML 文本（由 Python 序列化，绝不出缩进错误）→ 复用现有校验/level推断管线
-        try:
-            outline_yaml = yaml.safe_dump(outline, allow_unicode=True, sort_keys=False)
-        except Exception as e:
-            return {"_events": []}, f"[set_outline] outline 结构无法序列化: {e}"
+        """一次性写入完整大纲，参数为 YAML 文本（经工具参数传入，不过 shell）。"""
+        outline_yaml = args.get("outline_yaml", "")
+        if not outline_yaml or not outline_yaml.strip():
+            return {"_events": []}, "[set_outline] 缺少 outline_yaml 参数（应为完整大纲的 YAML 文本）"
 
         result = await set_outline_from_yaml(outline_yaml)
         if result["status"] != "success":

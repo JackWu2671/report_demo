@@ -31,7 +31,7 @@ metadata:
 |------|------|
 | `search_graph_tree.py "查询词"` | 检索知识图谱节点（与 analyze-network 共用脚本） |
 | `get_node_detail.py <node_id> [...]` | 查询节点完整信息，与 analyze-network 共用脚本 |
-| *(原生工具)* `set_outline` | **一次性写入完整大纲**（专家自己组合的报告结构）—— 直接用对话工具调用，不是脚本。outline 参数为 JSON 树，不过 shell、无 YAML 缩进问题 |
+| *(原生工具)* `set_outline` | **一次性写入完整大纲**（专家自己组合的报告结构）—— 直接用对话工具调用，不是脚本。`outline_yaml` 参数为 YAML 文本，经工具参数传入、不过 shell（不要用 heredoc） |
 | `set_metadata.py --scene-name "..." --summary "..." --keywords "kw1,kw2" --usage-conditions "..."` | 写入场景元数据 |
 | `save_template.py` | 将当前大纲和元数据保存为模板 |
 
@@ -53,19 +53,25 @@ python3 $SKILLS_DIR/analyze-network/scripts/search_graph_tree.py "专家描述�
 
 ### 步骤 2：构造大纲 → 用 `set_outline` 工具（原生，不走 shell）
 
-根据专家输入和知识库节点，自行设计大纲结构,以 **JSON 树**作为 `outline` 参数调用 `set_outline` 工具（**禁止再用 bash/heredoc 传 YAML**——Windows 不支持 heredoc，且手写 YAML 缩进极易出错）：
+根据专家输入和知识库节点，自行设计大纲结构，以 **YAML 文本**作为 `outline_yaml` 参数调用 `set_outline` 工具（**禁止再用 bash/heredoc**——Windows 不支持 heredoc；YAML 作为工具参数传入，不过 shell）：
 
 ```
-set_outline(outline=[
-  { "id": "new_root", "name": "报告总标题", "description": "50~100字描述",
-    "children": [
-      { "id": "new_001", "name": "章节", "description": "描述",
-        "children": [
-          { "id": "new_002", "name": "小节", "description": "描述",
-            "children": [
-              { "id": "L5_001", "name": "query节点名称" }
-            ] } ] } ] }
-])
+set_outline(outline_yaml="""
+- id: new_root
+  name: 报告总标题
+  description: 50~100字描述
+  children:
+    - id: new_001
+      name: 章节
+      description: 描述
+      children:
+        - id: new_002
+          name: 小节
+          description: 描述
+          children:
+            - id: L5_001
+              name: query节点名称
+""")
 ```
 
 大纲结构约束（违反任意一条视为无效）：
