@@ -31,7 +31,7 @@ metadata:
 |------|------|
 | `search_graph_tree.py "查询词"` | 检索知识图谱节点（与 analyze-network 共用脚本） |
 | `get_node_detail.py <node_id> [...]` | 查询节点完整信息，与 analyze-network 共用脚本 |
-| `set_outline.py`（从 stdin 读取） | 解析 YAML 大纲写入会话，推送给前端 |
+| *(原生工具)* `set_outline` | **一次性写入完整大纲**（专家自己组合的报告结构）—— 直接用对话工具调用，不是脚本。outline 参数为 JSON 树，不过 shell、无 YAML 缩进问题 |
 | `set_metadata.py --scene-name "..." --summary "..." --keywords "kw1,kw2" --usage-conditions "..."` | 写入场景元数据 |
 | `save_template.py` | 将当前大纲和元数据保存为模板 |
 
@@ -51,47 +51,39 @@ python3 $SKILLS_DIR/analyze-network/scripts/search_graph_tree.py "专家描述�
 - `success` → 进入步骤 2
 - `not_found` → 告知专家当前知识库暂不覆盖该场景
 
-### 步骤 2：构造大纲
+### 步骤 2：构造大纲 → 用 `set_outline` 工具（原生，不走 shell）
 
-根据专家输入和知识库节点，自行设计大纲结构，以 YAML 格式通过 stdin 传入：
+根据专家输入和知识库节点，自行设计大纲结构,以 **JSON 树**作为 `outline` 参数调用 `set_outline` 工具（**禁止再用 bash/heredoc 传 YAML**——Windows 不支持 heredoc，且手写 YAML 缩进极易出错）：
 
-```bash
-python3 $SKILLS_DIR/consolidate-expert/scripts/set_outline.py << 'EOF'
-- id: new_001
-  name: 标题
-  description: 50～100字描述
-  children:
-    - id: new_002
-      name: 章节
-      description: 描述
-      children:
-        - id: new_003
-          name: 节
-          description: 描述
-          children:
-            - id: new_004
-              name: 小节
-              description: 描述
-              children:
-                - id: L5_001
-                  name: query节点名称
-EOF
+```
+set_outline(outline=[
+  { "id": "new_root", "name": "报告总标题", "description": "50~100字描述",
+    "children": [
+      { "id": "new_001", "name": "章节", "description": "描述",
+        "children": [
+          { "id": "new_002", "name": "小节", "description": "描述",
+            "children": [
+              { "id": "L5_001", "name": "query节点名称" }
+            ] } ] } ] }
+])
 ```
 
-YAML 大纲约束（违反任意一条视为无效输出）：
-1. 顶层必须恰好一个节点（即一个 L1），作为大纲根节点（报告总标题）
-2. L5 query 节点必须是叶子节点，禁止在其下挂任何子节点
-3. 禁止新建 query 节点（即禁止 `id: new_xxx` 且无子节点的叶子节点），L5 只能引用 search_graph_tree 返回的知识库节点 id
-4. 禁止 L4 新建节点（`id: new_xxx`）作叶子节点，每个新建 L4 下方必须至少挂一个知识库已有的 query 节点
-5. 所有新建节点（`id: new_xxx`）必须填写 `description`（50～100 字）
-6. L2/L3/L4 由你按专家意图自由设计，不得用知识库节点名称替代专家描述的分析板块名称
-7. `condition`/`condition_queries` 按需填写，其他字段（level、exec_sql 等）不要写入 YAML
+大纲结构约束（违反任意一条视为无效）：
+1. 顶层必须恰好一个根节点（L1），作为报告总标题
+2. L5 query 节点必须是叶子，禁止在其下挂 children
+3. 禁止新建 query 节点（叶子节点 id 不能是 `new_xxx`），L5 只能引用 search_graph_tree 返回的知识库已有 id
+4. 禁止新建 L4 作叶子，每个新建 L4 下方至少挂一个知识库已有 query 节点
+5. 所有新建节点（`id: new_xxx`）必须填 `description`（50~100 字）
+6. L2/L3/L4 由你按专家意图自由设计，不得用知识库节点名替代专家描述的板块名
+7. `condition`/`condition_queries` 按需填，不要写 level/exec_sql 等字段
 
-调用后大纲立即展示给专家。
+> **成功判定**：工具返回会回显写入后的大纲 YAML。**若返回以"写入失败"开头或未回显大纲，即为失败——必须修正后重试，绝不可告知专家"大纲已生成"。**
+
+调用成功后大纲立即展示给专家。
 
 ### 步骤 3：填写场景元数据
 
-`set_outline.py` 调用完毕后，**立即**调用：
+`set_outline` **成功**后，**立即**调用：
 
 ```bash
 python3 $SKILLS_DIR/consolidate-expert/scripts/set_metadata.py --scene-name "传送网络覆盖分析" --summary "面向OTN站点企业覆盖现状的专项分析，识别覆盖缺口与部署机会" --keywords "OTN,企业覆盖,fgOTN,站点部署,覆盖缺口" --usage-conditions "适用于需要评估OTN网络企业覆盖现状、识别部署优先级的场景"

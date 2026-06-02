@@ -72,3 +72,42 @@ EDIT_NODE_TOOL: dict = {
         },
     },
 }
+
+SET_OUTLINE_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "set_outline",
+        "description": (
+            "一次性写入一份完整的报告大纲（结构由你自己组合）。"
+            "参数 outline 是结构化 JSON 树，经 JSON 传递、完全不过 shell，不存在 YAML 缩进/heredoc 问题。"
+            "\n\n【适用场景】用户/专家想自己组合报告结构时使用——典型是专家知识沉淀（把一段业务方法论组织成章节大纲）、"
+            "或用户明确要求按自定义结构搭建报告。"
+            "\n【不适用】在已有大纲上做局部改动：改节点属性用 edit_node，增删/保留节点用 modify_outline.py。"
+            "本工具是整棵覆盖写入，会替换当前大纲。"
+            "\n\n【结构约束】顶层恰好一个根节点(L1，报告总标题)；L5 query 节点必须是叶子，且其 id 必须引用"
+            " search_graph_tree 返回的知识库已有 id，禁止新建 query 节点；新建的结构节点 id 以 new_ 开头并填写 description。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "outline": {
+                    "type": "array",
+                    "description": "大纲根节点列表（通常只含一个 L1 根）。每个节点见 items 结构。",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "description": "节点 id：新建结构节点用 new_xxx；L5 用知识库已有 id（如 L5_311）"},
+                            "name": {"type": "string", "description": "节点名称"},
+                            "description": {"type": "string", "description": "新建节点必填，50~100 字；L5 可省略"},
+                            "condition": {"type": "string", "description": "可选。展示条件"},
+                            "condition_queries": {"type": "array", "items": {"type": "string"}, "description": "可选"},
+                            "children": {"type": "array", "description": "子节点列表，结构同本节点；L5 不可有 children"},
+                        },
+                        "required": ["id", "name"],
+                    },
+                },
+            },
+            "required": ["outline"],
+        },
+    },
+}

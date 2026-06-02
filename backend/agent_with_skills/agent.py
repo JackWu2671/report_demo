@@ -38,20 +38,21 @@ if _BACKEND_DIR not in sys.path:
 from services.llm_service import LLMService
 from agent_with_skills.memory import AgentWithSkillsMemory
 from agent_with_skills.skill_registry import SkillRegistry
-from tools.shared_tools import READ_SKILL_TOOL, BASH_TOOL, EDIT_NODE_TOOL
+from tools.shared_tools import READ_SKILL_TOOL, BASH_TOOL, EDIT_NODE_TOOL, SET_OUTLINE_TOOL
 
 _LIB_DIR = str(_SKILLS_DIR / "_lib")
 if _LIB_DIR not in sys.path:
     sys.path.insert(0, _LIB_DIR)
 
 from modify_outline import modify_outline  # noqa: E402  (imported after sys.path setup)
+from set_outline_from_markdown import set_outline_from_yaml  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = (Path(_AGENT_DIR) / "system_prompt.txt").read_text(encoding="utf-8")
 _MAX_ROUNDS = 12
 
-TOOLS = [READ_SKILL_TOOL, BASH_TOOL, EDIT_NODE_TOOL]
+TOOLS = [READ_SKILL_TOOL, BASH_TOOL, EDIT_NODE_TOOL, SET_OUTLINE_TOOL]
 
 _SKILL_SYSTEM_TEMPLATE = """\
 <skill_system>
@@ -176,6 +177,8 @@ class AgentWithSkills:
             return await self._handle_bash(args.get("command", ""))
         if name == "edit_node":
             return await self._handle_edit_node(args)
+        if name == "set_outline":
+            return await self._handle_set_outline(args)
         return {}, f"未知工具: {name}"
 
     def _handle_read_skill(self, args: dict) -> tuple[dict, str]:
@@ -191,6 +194,38 @@ class AgentWithSkills:
         level = "2" if ref_path else "1"
         label = f"{skill_name}/{ref_path}" if ref_path else skill_name
         return {}, f"[read_skill Level {level}] {label}:\n\n{content}"
+
+    async def _handle_set_outline(self, args: dict) -> tuple[dict, str]:
+        """一次性写入完整大纲，参数为 JSON 树，不过 shell、无 YAML 缩进问题。"""
+        import yaml
+
+        outline = args.get("outline")
+        if not outline:
+            return {"_events": []}, "[set_outline] 缺少 outline 参数（应为大纲根节点列表）"
+
+        # JSON 结构 → YAML 文本（由 Python 序列化，绝不出缩进错误）→ 复用现有校验/level推断管线
+        try:
+            outline_yaml = yaml.safe_dump(outline, allow_unicode=True, sort_keys=False)
+        except Exception as e:
+            return {"_events": []}, f"[set_outline] outline 结构无法序列化: {e}"
+
+        result = await set_outline_from_yaml(outline_yaml)
+        if result["status"] != "success":
+            # 失败必须明确告知，禁止当成功（治"静默失败+谎报"）
+            return {"_events": []}, f"[set_outline] 写入失败: {result['message']}（大纲未生成，请修正后重试，不要告知用户已生成）"
+
+        self.memory.set_outline(
+            result["outline_tree"],
+            result["markdown"],
+            result["outline_yaml"],
+        )
+        events = [{
+            "type":         "outline",
+            "markdown":     result["markdown"],
+            "outline_yaml": result["outline_yaml"],
+            "outline_tree": result["outline_tree"],
+        }]
+        return {"_events": events}, "[set_outline] 大纲已写入并推送\n" + result["outline_yaml"]
 
     async def _handle_edit_node(self, args: dict) -> tuple[dict, str]:
         """直接修改大纲节点属性，参数走 JSON、不过 shell。"""
