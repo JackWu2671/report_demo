@@ -170,7 +170,7 @@ skills/
 ├── _lib/                # 脚本共享库（loader/retriever/subtree/patcher/outline_utils…）
 ├── analyze-network/     # 看网分析：检索→大纲→报告
 │   ├── SKILL.md
-│   └── scripts/         # search_graph_tree / build_outline / modify_outline / trigger_report …
+│   └── scripts/         # search_graph_tree / build_outline_from_anchor / modify_outline / trigger_report …
 ├── consolidate-expert/  # 专家知识沉淀
 └── publish-knowledge/   # 知识发布
 ```

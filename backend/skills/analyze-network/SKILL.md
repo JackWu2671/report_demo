@@ -57,7 +57,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/get_node_detail.py L5_001
 |------|------|
 | `search_graph_tree.py "查询词" [--topk N] [--threshold F]` | 语义检索知识图谱节点，返回带路径的树状结构 |
 | `search_templates.py "查询词" [--topk N]` | 向量检索模板库，返回候选模板 JSON 数组 |
-| `build_outline.py <anchor_id>` | 以锚节点为根展开子树，生成初始大纲写入会话 |
+| `build_outline_from_anchor.py <anchor_id>` | 以锚节点为根展开子树，生成初始大纲写入会话 |
 | `modify_outline.py '<ops_json>'` | 对当前大纲执行结构化修改操作 |
 | *(原生工具)* `edit_node` | **修改节点属性值**（exec_sql/name/description/condition 等）—— 直接用对话工具调用，不是脚本。参数走 JSON、不过 shell，含反引号/`<`/`>` 均安全 |
 | `load_template.py <template_id>` | 按 ID 加载指定模板大纲写入会话 |
@@ -107,7 +107,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/search_graph_tree.py "用户需求�
 ### 步骤 3：展开并主动修剪大纲
 
 ```bash
-python3 $SKILLS_DIR/analyze-network/scripts/build_outline.py L4_001
+python3 $SKILLS_DIR/analyze-network/scripts/build_outline_from_anchor.py L4_001
 ```
 
 输出 YAML 格式大纲，大纲同时写入会话状态并推送给前端。

@@ -64,7 +64,7 @@ async def main():
 
     outline_tree = get_outline_tree()
     if not outline_tree:
-        print(json.dumps({"status": "error", "message": "当前没有大纲，请先调用 build_outline 或 load_template"}, ensure_ascii=False), file=sys.stderr)
+        print(json.dumps({"status": "error", "message": "当前没有大纲，请先调用 build_outline_from_anchor 或 load_template"}, ensure_ascii=False), file=sys.stderr)
         sys.exit(1)
 
     result = await modify_outline(ops, outline_tree)
