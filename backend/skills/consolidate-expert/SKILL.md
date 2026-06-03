@@ -31,7 +31,7 @@ metadata:
 |------|------|
 | `search_graph_tree.py "查询词"` | 检索知识图谱节点（与 analyze-network 共用脚本） |
 | `get_node_detail.py <node_id> [...]` | 查询节点完整信息，与 analyze-network 共用脚本 |
-| *(原生工具)* `set_outline` | **一次性写入完整大纲**（专家自己组合的报告结构）—— 直接用对话工具调用，不是脚本。`outline_yaml` 参数为 YAML 文本，经工具参数传入、不过 shell（不要用 heredoc） |
+| *(原生工具)* `set_outline` | **一次性写入完整大纲**（专家自己组合的报告结构）—— 直接用对话工具调用，不是脚本。`outline` 参数为 JSON 节点数组，经工具参数原生传入、不过 shell、不过 YAML（结构靠括号承载，不会因换行/缩进丢失而解析失败） |
 | `set_metadata.py --scene-name "..." --summary "..." --keywords "kw1,kw2" --usage-conditions "..."` | 写入场景元数据 |
 | `save_template.py` | 将当前大纲和元数据保存为模板 |
 
@@ -53,38 +53,46 @@ python3 $SKILLS_DIR/analyze-network/scripts/search_graph_tree.py "专家描述�
 
 ### 步骤 2：构造大纲 → 用 `set_outline` 工具（原生，不走 shell）
 
-根据专家输入和知识库节点，自行设计大纲结构，以 **YAML 文本**作为 `outline_yaml` 参数调用 `set_outline` 工具（**禁止再用 bash/heredoc**——Windows 不支持 heredoc；YAML 作为工具参数传入，不过 shell）：
+根据专家输入和知识库节点，自行设计大纲结构，以 **JSON 节点数组**作为 `outline` 参数调用 `set_outline` 工具（**禁止用 bash/heredoc，也不要传 YAML 文本**——JSON 结构靠括号承载、不依赖换行缩进，不会因排版被压成一行而解析失败）：
 
 ```
-set_outline(outline_yaml="""
-- id: new_L1_root
-  name: 报告总标题
-  description: 50~100字描述
-  children:
-    - id: new_L2_001
-      name: 章节
-      description: 描述
-      children:
-        - id: new_L3_001
-          name: 小节
-          description: 描述
-          children:
-            - id: L5_001
-              name: query节点名称
-""")
+set_outline(outline=[
+  {
+    "id": "new_L1_root",
+    "name": "报告总标题",
+    "description": "50~100字描述",
+    "children": [
+      {
+        "id": "new_L2_001",
+        "name": "章节",
+        "description": "描述",
+        "children": [
+          {
+            "id": "new_L3_001",
+            "name": "小节",
+            "description": "描述",
+            "children": [
+              { "id": "L5_001", "name": "query节点名称" }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+])
 ```
 
 大纲结构约束（违反任意一条视为无效）：
 1. **新建结构节点 id 必须按 `new_L<层级>_<序号>` 命名，显式编码层级**：根用 `new_L1_xxx`，往下依次 `new_L2_xxx` / `new_L3_xxx` / `new_L4_xxx`。结构节点只能 L1~L4，**绝不能命名为 `new_L5_xxx`**
-2. 顶层必须恰好一个根节点（`new_L1_xxx`），作为报告总标题
+2. 顶层数组必须恰好一个根节点（`new_L1_xxx`），作为报告总标题
 3. L5 query 节点必须是叶子，禁止在其下挂 children
 4. 禁止新建 query 节点，L5 只能引用 search_graph_tree 返回的知识库已有 id（如 `L5_001`）
 5. 每个新建 L4（`new_L4_xxx`）下方至少挂一个知识库已有 query 节点
 6. 所有新建节点必须填 `description`（50~100 字）
 7. L2/L3/L4 由你按专家意图自由设计，不得用知识库节点名替代专家描述的板块名
-8. `condition`/`condition_queries` 按需填，不要写 level/exec_sql 等字段
+8. 每个节点只写 `id`/`name`/`description`/`children`（及按需 `condition`/`condition_queries`），不要写 level/exec_sql 等字段
 
-> **成功判定**：工具返回会回显写入后的大纲 YAML。**若返回以"写入失败"开头或未回显大纲，即为失败——必须修正后重试，绝不可告知专家"大纲已生成"。**
+> **成功判定**：工具返回会回显写入后的大纲。**若返回以"写入失败"开头或未回显大纲，即为失败——必须修正后重试，绝不可告知专家"大纲已生成"。**
 
 调用成功后大纲立即展示给专家。
 

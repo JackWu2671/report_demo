@@ -79,28 +79,34 @@ SET_OUTLINE_TOOL: dict = {
         "name": "set_outline",
         "description": (
             "一次性写入一份完整的报告大纲（结构由你自己组合）。"
-            "参数 outline_yaml 是 YAML 文本，经 JSON 工具参数传递、完全不过 shell，"
-            "不要用 bash/heredoc（Windows cmd.exe 不支持 heredoc，必失败）。"
+            "参数 outline 是 JSON 节点数组，经工具参数原生传递、完全不过 shell。"
+            "务必传结构化数组，不要传 YAML/字符串——JSON 结构靠括号承载、不依赖换行缩进，不会因排版丢失而解析失败。"
             "\n\n【适用场景】用户/专家想自己组合报告结构时使用——典型是专家知识沉淀（把一段业务方法论组织成章节大纲），"
             "或用户明确要求按自定义结构搭建报告。本工具是整棵覆盖写入，会替换当前大纲。"
             "\n【不适用】在已有大纲上做局部改动：改节点属性用 edit_node，增删/保留节点用 modify_outline.py。"
-            "\n\n【YAML 结构约束】"
-            "\n1. 顶层是节点列表，且恰好一个根节点(L1，报告总标题)"
-            "\n2. L5 query 节点必须是叶子(无 children)，其 id 须引用 search_graph_tree 返回的知识库已有 id，禁止新建 query 节点"
-            "\n3. 新建结构节点 id 必须按 new_L<层级>_<序号> 命名，显式编码层级：根用 new_L1_xxx，其下依次 new_L2_xxx / new_L3_xxx / new_L4_xxx（结构节点只能 L1~L4，绝不能 L5）"
-            "\n4. 新建节点必须填写 description(50~100 字)"
-            "\n5. 只写 id/name/description/children(及按需 condition/condition_queries)，不要写 level/exec_sql 等字段"
+            "\n\n【结构约束】"
+            "\n1. outline 是节点对象数组，且恰好一个根节点(L1，报告总标题)"
+            "\n2. 每个节点是对象 {id, name, description, children}，子节点放进 children 数组（无子节点可省略 children）"
+            "\n3. L5 query 节点必须是叶子(无 children)，其 id 须引用 search_graph_tree 返回的知识库已有 id，禁止新建 query 节点"
+            "\n4. 新建结构节点 id 必须按 new_L<层级>_<序号> 命名，显式编码层级：根用 new_L1_xxx，其下依次 new_L2_xxx / new_L3_xxx / new_L4_xxx（结构节点只能 L1~L4，绝不能 L5）"
+            "\n5. 新建节点必须填写 description(50~100 字)"
+            "\n6. 只写 id/name/description/children(及按需 condition/condition_queries)，不要写 level/exec_sql 等字段"
             "\n\n成功时工具会回显写入后的大纲；返回'写入失败'或未回显即为失败，须修正重试，不得告知用户已生成。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "outline_yaml": {
-                    "type": "string",
-                    "description": "完整大纲的 YAML 文本（顶层为节点列表，含一个 L1 根节点）",
+                "outline": {
+                    "type": "array",
+                    "description": (
+                        "完整大纲的节点数组，顶层含一个 L1 根节点。每个节点形如 "
+                        '{"id": "new_L1_root", "name": "报告标题", "description": "...", '
+                        '"children": [{"id": "new_L2_001", "name": "章节", "children": [{"id": "L5_001", "name": "指标名"}]}]}'
+                    ),
+                    "items": {"type": "object"},
                 },
             },
-            "required": ["outline_yaml"],
+            "required": ["outline"],
         },
     },
 }

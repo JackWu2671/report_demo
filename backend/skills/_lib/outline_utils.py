@@ -139,6 +139,17 @@ def from_yaml(text: str) -> dict | None:
         data = yaml.safe_load(text)
     except yaml.YAMLError:
         return None
+    return from_data(data)
+
+
+def from_data(data) -> dict | None:
+    """
+    将已解析的结构（list / dict，通常来自 JSON 工具参数）还原为 outline_tree。
+
+    与 from_yaml 共用建树逻辑，区别仅在入口：本函数接收已解析好的 Python
+    对象，不经过 YAML 文本，因此不受换行/缩进等空白格式影响。
+    顶层为列表时包裹虚拟根节点；顶层为单个 dict 时直接返回；空或类型不符返回 None。
+    """
     if not data:
         return None
     if isinstance(data, list):

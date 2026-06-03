@@ -45,7 +45,7 @@ if _LIB_DIR not in sys.path:
     sys.path.insert(0, _LIB_DIR)
 
 from modify_outline import modify_outline  # noqa: E402  (imported after sys.path setup)
-from set_outline_from_markdown import set_outline_from_yaml  # noqa: E402
+from set_outline_from_markdown import set_outline_from_tree  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -196,12 +196,12 @@ class AgentWithSkills:
         return {}, f"[read_skill Level {level}] {label}:\n\n{content}"
 
     async def _handle_set_outline(self, args: dict) -> tuple[dict, str]:
-        """一次性写入完整大纲，参数为 YAML 文本（经工具参数传入，不过 shell）。"""
-        outline_yaml = args.get("outline_yaml", "")
-        if not outline_yaml or not outline_yaml.strip():
-            return {"_events": []}, "[set_outline] 缺少 outline_yaml 参数（应为完整大纲的 YAML 文本）"
+        """一次性写入完整大纲，参数为 JSON 节点数组（经工具参数传入，不过 shell、不过 YAML）。"""
+        outline = args.get("outline")
+        if not outline or not isinstance(outline, list):
+            return {"_events": []}, "[set_outline] 缺少 outline 参数（应为完整大纲的 JSON 节点数组，顶层含一个 L1 根节点）"
 
-        result = await set_outline_from_yaml(outline_yaml)
+        result = await set_outline_from_tree(outline)
         if result["status"] != "success":
             # 失败必须明确告知，禁止当成功（治"静默失败+谎报"）
             return {"_events": []}, f"[set_outline] 写入失败: {result['message']}（大纲未生成，请修正后重试，不要告知用户已生成）"
