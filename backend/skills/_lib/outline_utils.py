@@ -9,9 +9,10 @@ outline_utils.py — 大纲三种表示之间的转化工具。
 
 逆向解析：
 
-  from_yaml(text)    → outline_tree，将 LLM 输出的 YAML 还原为树
+  from_data(obj)     → outline_tree，将已解析的 JSON 节点结构（list/dict）还原为树
 
 三者可从同一个 tree 独立生成，互不依赖，也不需要 node.json / relation.json。
+LLM 上下文用 to_yaml 只读输出；写回走 from_data（JSON 结构，不依赖空白格式）。
 """
 
 import re
@@ -128,26 +129,12 @@ def _yaml_to_node(item: dict, depth: int = 1) -> dict:
     }
 
 
-def from_yaml(text: str) -> dict | None:
-    """
-    将 LLM 输出的 YAML 文本解析为 outline_tree dict。
-
-    顶层为列表时包裹虚拟根节点；顶层为单个 dict 时直接返回。
-    解析失败时返回 None。
-    """
-    try:
-        data = yaml.safe_load(text)
-    except yaml.YAMLError:
-        return None
-    return from_data(data)
-
-
 def from_data(data) -> dict | None:
     """
     将已解析的结构（list / dict，通常来自 JSON 工具参数）还原为 outline_tree。
 
-    与 from_yaml 共用建树逻辑，区别仅在入口：本函数接收已解析好的 Python
-    对象，不经过 YAML 文本，因此不受换行/缩进等空白格式影响。
+    本函数接收已解析好的 Python 对象（不经过 YAML 文本），因此不受换行/缩进
+    等空白格式影响——set_outline 工具用 JSON 数组而非 YAML 字符串正是为此。
     顶层为列表时包裹虚拟根节点；顶层为单个 dict 时直接返回；空或类型不符返回 None。
     """
     if not data:

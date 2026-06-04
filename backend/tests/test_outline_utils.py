@@ -11,7 +11,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "skills", "_lib"))
-from outline_utils import to_markdown, to_yaml, from_yaml, to_clean_json, VIRTUAL_ROOT_ID
+from outline_utils import to_markdown, to_yaml, from_data, to_clean_json, VIRTUAL_ROOT_ID
 
 # ── 测试数据（模拟 subtree.build_subtree 的输出）──────────────────
 
@@ -121,15 +121,32 @@ def test_to_yaml():
     print("✓ PASS\n")
 
 
-def test_from_yaml_roundtrip():
+def test_from_data_roundtrip():
     print("=" * 60)
-    print("【from_yaml — YAML 逆向解析 roundtrip】")
+    print("【from_data — JSON 节点结构还原 roundtrip】")
     print("=" * 60)
 
-    yaml_text = to_yaml(MOCK_TREE)
-    recovered = from_yaml(yaml_text)
+    # 模拟 set_outline 工具收到的 JSON 节点数组（单根）
+    nodes = [{
+        "id": "L1_001",
+        "name": "传送网络专项分析",
+        "children": [
+            {"id": "L2_003", "name": "覆盖分析"},
+            {
+                "id": "L2_004",
+                "name": "容量分析",
+                "condition": "${number(\"端口占用率\") > 0}",
+                "condition_queries": ["端口占用率"],
+                "children": [
+                    {"id": "L5_014", "name": "端口总数"},
+                    {"id": "L5_015", "name": "端口占用率"},
+                ],
+            },
+        ],
+    }]
+    recovered = from_data(nodes)
 
-    assert recovered is not None, "from_yaml 不应返回 None"
+    assert recovered is not None, "from_data 不应返回 None"
     assert recovered["id"] == "L1_001"
     assert recovered["name"] == "传送网络专项分析"
     assert recovered["level"] == 1
@@ -151,21 +168,18 @@ def test_from_yaml_roundtrip():
     print("✓ PASS\n")
 
 
-def test_from_yaml_multi_root():
+def test_from_data_multi_root():
     """多个顶层节点应包裹虚拟根节点。"""
-    yaml_text = """
-- id: L1_001
-  name: 场景A
-- id: L1_002
-  name: 场景B
-"""
-    result = from_yaml(yaml_text)
+    result = from_data([
+        {"id": "L1_001", "name": "场景A"},
+        {"id": "L1_002", "name": "场景B"},
+    ])
     assert result is not None
     assert result["id"] == VIRTUAL_ROOT_ID
     assert len(result["children"]) == 2
     assert result["children"][0]["level"] == 1
     assert result["children"][1]["level"] == 1
-    print("【from_yaml multi-root】虚拟根包裹 ✓\n")
+    print("【from_data multi-root】虚拟根包裹 ✓\n")
 
 
 def test_to_clean_json():
@@ -199,8 +213,8 @@ def test_yaml_omits_virtual_root():
 if __name__ == "__main__":
     test_to_markdown()
     test_to_yaml()
-    test_from_yaml_roundtrip()
-    test_from_yaml_multi_root()
+    test_from_data_roundtrip()
+    test_from_data_multi_root()
     test_to_clean_json()
     test_yaml_omits_virtual_root()
     print("All tests passed.")
