@@ -27,7 +27,7 @@
 系统只有**一个 Agent**：`AgentWithSkills`。它本身**不含任何业务逻辑**，LLM 也看不到任何业务工具 schema。所有业务能力以 Python 脚本形式存放在 `skills/<name>/scripts/`，LLM 通过 SKILL.md（自然语言 SOP）了解脚本的 CLI 接口，再用 `bash` 调用。
 
 ```
-前端（React）
+客户端（HTTP / SSE）
    │  POST /api/session  →  创建会话，绑定一个 AgentWithSkills 实例
    │  POST /api/chat     →  发消息，接收 SSE 事件流（聊天回合）
    │  POST /api/report   →  渲染报告，接收 SSE 事件流（独立流）
@@ -58,8 +58,8 @@ FastAPI 应用，主要接口：
 | `/api/chat` | POST | 发消息，响应是 `text/event-stream`（聊天回合 SSE） |
 | `/api/report` | POST | 渲染报告，响应是 SSE（与 `/api/chat` 相互独立的流） |
 | `/api/session/{id}/messages` | GET | 拉取会话历史消息 |
-| `/api/kb` | GET | 返回知识图谱节点 JSON（前端知识库页） |
-| `/api/templates` | GET | 返回已保存模板列表（前端模板页） |
+| `/api/kb` | GET | 返回知识图谱节点 JSON |
+| `/api/templates` | GET | 返回已保存模板列表 |
 
 **Session 生命周期**
 
@@ -77,9 +77,9 @@ async for event in agent.chat_stream(message):
 yield "data: [DONE]\n\n"
 ```
 
-`chat_stream` 是 async generator，每发生一件事（工具开始/结束、大纲更新、文字回复）就 yield 一个 dict，原样序列化推给前端。
+`chat_stream` 是 async generator，每发生一件事（工具开始/结束、大纲更新、文字回复）就 yield 一个 dict，原样序列化推给客户端。
 
-> `/api/chat`（聊天回合）和 `/api/report`（报告渲染）是**两条独立的 SSE 流**。触发报告后，agent 立刻结束聊天回合（推送固定回复并 `done`），报告在 `/api/report` 流里单独渲染——避免两个流抢占后端导致聊天流不关闭、前端输入框一直转圈。
+> `/api/chat`（聊天回合）和 `/api/report`（报告渲染）是**两条独立的 SSE 流**。触发报告后，agent 立刻结束聊天回合（推送固定回复并 `done`），报告在 `/api/report` 流里单独渲染——避免两个流抢占后端导致聊天流迟迟不关闭、调用方读不到流结束标志。
 
 ---
 
@@ -156,10 +156,10 @@ bash 调用前：把内存状态（outline_tree / outline_yaml / markdown / extr
 脚本运行：读 session 文件 → 干活 → 把新状态写回 session 文件
    ↓
 bash 调用后：读回 session 文件，_detect_events() 对比前后差异 →
-             生成 outline / confirm / extraction / start_report 事件推给前端
+             生成 outline / confirm / extraction / start_report 事件推给客户端
 ```
 
-`_detect_events` 只在状态**真的变了**时才推事件（如 `outline_tree` 前后不等才推 `outline`）。这套机制让脚本无需感知 SSE / 前端，只管读写 session 文件即可。
+`_detect_events` 只在状态**真的变了**时才推事件（如 `outline_tree` 前后不等才推 `outline`）。这套机制让脚本无需感知 SSE / 调用方，只管读写 session 文件即可。
 
 ---
 
@@ -192,7 +192,7 @@ skills/
 ```python
 class AgentMemory:
     outline_tree: dict    # 大纲 JSON（代码逻辑用）
-    markdown: str         # 大纲 Markdown（前端用户视图）
+    markdown: str         # 大纲 Markdown（用户视图，给人读）
     outline_yaml: str     # 大纲 YAML 精简视图（注入 LLM 上下文）
     kb_tree_text: str     # search_graph_tree 返回的树文本（暂存）
     _history: list[dict]  # 对话历史（不含大纲）
@@ -220,8 +220,8 @@ def build_messages(self, system_prompt):
 
 | 格式 | 谁用 | 含 SQL 等字段 |
 |------|------|--------------|
-| `outline_tree`（JSON dict） | 代码逻辑（patcher 输入输出、前端报告生成） | ✅ 完整 |
-| `markdown` | 前端渲染给用户 | ❌ |
+| `outline_tree`（JSON dict） | 代码逻辑（patcher 输入输出、报告执行器取数） | ✅ 完整 |
+| `markdown` | 渲染给用户阅读 | ❌ |
 | `outline_yaml` | 注入 LLM 上下文 | ❌ 省略 level/SQL 等，LLM 需要时用 `get_node_detail.py` 按需拉取 |
 
 更详细的"为什么三份都不能省"见 `../docs/state-design.md`。
@@ -256,7 +256,7 @@ FORCE_MOCK=false（默认，在线优先）：实时 SQL → 查空回落 mock
 FORCE_MOCK=true （离线优先，无 DB 演示）：mock → 没有/失效回落实时 SQL
 ```
 
-**mock 必须与当前 SQL 一致才复用**：`sql_executor.get_mock(node_id, current_sql)` 会比对「生成 mock 时所用的 SQL」（存于 `评估指标_mock.json` 每条记录的 `answer` 字段）与当前节点 exec_sql，归一化后不同则视为失效。这样改了 SQL 不会再套用旧指标的 mock。前端 metric 缓存也按同样思路（`exec_sql` 等组成的签名）失效，两层配合保证改 SQL 后整条链路重新取数。
+**mock 必须与当前 SQL 一致才复用**：`sql_executor.get_mock(node_id, current_sql)` 会比对「生成 mock 时所用的 SQL」（存于 `评估指标_mock.json` 每条记录的 `answer` 字段）与当前节点 exec_sql，归一化后不同则视为失效。这样改了 SQL 不会再套用旧指标的 mock，保证改 SQL 后重新取数。
 
 离线 mock 由 `scripts/prefetch_mock_data.py` 预取生成。
 
@@ -344,7 +344,7 @@ cd backend
 uvicorn api_server:app --reload --port 8888
 ```
 
-### 命令行交互测试（无需启动前端）
+### 命令行交互测试（纯后端，无需 UI）
 
 ```bash
 cd backend
