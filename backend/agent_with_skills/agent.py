@@ -285,6 +285,9 @@ class AgentWithSkills:
             "REPORT_SESSION_DIR": str(_SESSION_DIR),
             "REPORT_BACKEND_DIR": _BACKEND_DIR,
             "SKILLS_DIR":         str(_SKILLS_DIR),
+            # 子进程统一用 UTF-8 编码 stdout/stderr，与父进程解码一致；
+            # 否则 Windows 下子进程默认按 GBK 输出中文，父进程 UTF-8 解码会乱码。
+            "PYTHONIOENCODING":   "utf-8",
         }
 
         # Expand $VAR references so the command runs correctly on all platforms.
@@ -300,13 +303,16 @@ class AgentWithSkills:
         try:
             proc = subprocess.run(
                 command, shell=True, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
                 env=env, timeout=60,
             )
         except subprocess.TimeoutExpired:
             return {"_events": []}, "[bash] 执行超时（60s）"
 
-        stdout = proc.stdout.strip()
-        stderr = proc.stderr.strip()
+        # 脚本统一输出 UTF-8，显式指定解码避免 Windows 默认 GBK 解码中文失败；
+        # errors="replace" 再兜一层，坏字节也不会让 stdout 变 None。
+        stdout = (proc.stdout or "").strip()
+        stderr = (proc.stderr or "").strip()
 
         # 执行后读回 session 文件，检测变化
         after = _read_session(self.session_id)
