@@ -24,7 +24,9 @@
 
 ## 整体架构
 
-系统只有**一个 Agent**：`AgentWithSkills`。它本身**不含任何业务逻辑**，LLM 也看不到任何业务工具 schema。所有业务能力以 Python 脚本形式存放在 `skills/<name>/scripts/`，LLM 通过 SKILL.md（自然语言 SOP）了解脚本的 CLI 接口，再用 `bash` 调用。
+系统只有**一个 Agent**：`AgentWithSkills`。它本身几乎**不含业务逻辑**，绝大多数业务能力以 Python 脚本形式存放在 `skills/<name>/scripts/`，LLM 通过 SKILL.md（自然语言 SOP）了解脚本的 CLI 接口，再用 `bash` 调用——LLM 不需要为每个能力维护 JSON tool schema。
+
+唯一的例外是 `edit_node`、`set_outline` 两个原生工具：它们确实带业务语义（认识大纲节点、`exec_sql` 等字段），之所以不做成脚本，是因为它们的参数常含反引号/`<`/`>` 的 SQL 或整棵结构化大纲，走 bash 会被 shell 破坏（详见[四个工具](#四个工具read_skill--bash--edit_node--set_outline)）。除这两个窄口子外，业务逻辑仍全部在脚本里。
 
 ```
 客户端（HTTP / SSE）
