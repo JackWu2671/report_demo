@@ -9,7 +9,7 @@
 - [整体架构](#整体架构)
 - [入口：api_server.py](#入口api_serverpy)
 - [Agent 主循环](#agent-主循环)
-- [三个工具：read_skill / bash / edit_node](#三个工具read_skill--bash--edit_node)
+- [四个工具：read_skill / bash / edit_node / set_outline](#四个工具read_skill--bash--edit_node--set_outline)
 - [Session 文件桥：内存 ↔ 脚本](#session-文件桥内存--脚本)
 - [Skill 系统：渐进式加载](#skill-系统渐进式加载)
 - [Memory：状态怎么管理](#memory状态怎么管理)
@@ -37,10 +37,11 @@ api_server.py（FastAPI）
    ▼
 agent.chat_stream(message)   ← async generator，一件事 yield 一个事件
    │
-   ├─ 调 LLM（只带 read_skill / bash / edit_node 三个工具）
-   ├─ read_skill → 读 SKILL.md SOP
-   ├─ bash       → 跑 skills/*/scripts/*.py（业务逻辑都在这里）
-   └─ edit_node  → 直接改大纲节点属性（参数走 JSON，不过 shell）
+   ├─ 调 LLM（只带 read_skill / bash / edit_node / set_outline 四个工具）
+   ├─ read_skill  → 读 SKILL.md SOP
+   ├─ bash        → 跑 skills/*/scripts/*.py（业务逻辑都在这里）
+   ├─ edit_node   → 直接改大纲节点属性（参数走 JSON，不过 shell）
+   └─ set_outline → 整棵覆盖写入大纲（参数 JSON 数组，不过 shell）
 ```
 
 **为什么这么设计？** 业务逻辑放进脚本，LLM 只需理解 SKILL.md 文档化的 CLI，不必为每个能力维护 JSON tool schema；新增能力 = 加一个脚本 + 在 SKILL.md 写一行，不动 agent 代码。
@@ -84,13 +85,13 @@ yield "data: [DONE]\n\n"
 
 ## Agent 主循环
 
-LLM 通过 OpenAI 协议的 `tools` 参数感知三个工具。它在合适时机输出 `tool_calls`，代码执行后把结果放回历史，再调一次 LLM，循环往复（ReAct）。
+LLM 通过 OpenAI 协议的 `tools` 参数感知四个工具。它在合适时机输出 `tool_calls`，代码执行后把结果放回历史，再调一次 LLM，循环往复（ReAct）。
 
 ```python
 async def chat_stream(self, user_message: str):
     self.memory.add_message({"role": "user", "content": user_message})
     for _ in range(_MAX_ROUNDS):
-        response = await self._call_llm()          # 带 read_skill/bash/edit_node
+        response = await self._call_llm()          # 带 read_skill/bash/edit_node/set_outline
         msg = response.choices[0].message
         self.memory.add_message(msg.model_dump(exclude_none=True))
 
@@ -120,22 +121,27 @@ async def chat_stream(self, user_message: str):
 
 ---
 
-## 三个工具：read_skill / bash / edit_node
+## 四个工具：read_skill / bash / edit_node / set_outline
 
-定义在 `tools/shared_tools.py`（`READ_SKILL_TOOL` / `BASH_TOOL` / `EDIT_NODE_TOOL`），在 `agent.py` 的 `_execute_tool` 中分发。
+定义在 `tools/shared_tools.py`（`READ_SKILL_TOOL` / `BASH_TOOL` / `EDIT_NODE_TOOL` / `SET_OUTLINE_TOOL`），在 `agent.py` 的 `_execute_tool` 中分发。
 
 | 工具 | 作用 | 关键点 |
 |------|------|--------|
 | `read_skill(name, path?)` | 加载 SKILL.md SOP（Level 1）或其支持文件（Level 2） | 同一 skill 一个会话只加载一次 |
 | `bash(command)` | 执行命令，通常是 `skills/*/scripts/*.py` | 调用前后做 [session 文件同步](#session-文件桥内存--脚本)；`$SKILLS_DIR` 等变量由 harness 预先展开后再交给 shell |
 | `edit_node(node_id, field, value)` | 直接修改大纲节点属性 | **参数走 JSON、不过 shell**，含反引号/`<`/`>`/`%` 的 SQL 也安全 |
+| `set_outline(outline)` | 一次性整棵覆盖写入大纲（专家自组结构等场景） | **参数是 JSON 节点数组、不过 shell**，结构靠括号承载、不依赖换行缩进 |
 
-**`edit_node` 为什么单独做成工具？** 改 `exec_sql`、`name` 这类字段，值常含反引号、`<`、`>`，走 bash 会被 cmd.exe 当重定向/命令替换破坏（静默失败）。工具参数是 LLM 产出的 JSON，经 `json.loads` 直接入 Python，**完全不过 shell**。其路由逻辑：
+**`edit_node` / `set_outline` 为什么单独做成工具？** 改 `exec_sql`、`name` 这类字段，值常含反引号、`<`、`>`，走 bash 会被 cmd.exe 当重定向/命令替换破坏（静默失败）；整棵大纲若走 YAML 字符串，又会因 LLM 把换行压成一行导致解析失败。两者的共同解法：工具参数是 LLM 产出的 JSON，经 `json.loads` 直接入 Python，**完全不过 shell、不依赖空白格式**。
+
+`edit_node` 的路由逻辑：
 
 - `name` / `description` / `condition` / `exec_sql` → 走 `modify_outline` 管线（保留 L5 改名自动从 KB 同步等逻辑）
 - 其余字段（`renderType` / `colX` / `colY` / `summarySuggestion` / `condition_queries`）→ patcher 的 `set_node_field` op 直接赋值
 
-修改成功后直接更新内存并推送 `outline` 事件（in-process，无需 session 文件中转）。
+`set_outline` 收到 JSON 节点数组后经 `from_data()` 建树（与 LLM 上下文用的 `from_yaml` 共用建树逻辑），整棵替换当前大纲。
+
+两者修改成功后都直接更新内存并推送 `outline` 事件（in-process，无需 session 文件中转）。
 
 ---
 
@@ -297,7 +303,7 @@ backend/
 │   ├── skill_loader.py        # 按需读取 SKILL.md 正文
 │   ├── system_prompt.txt      # 系统提示词
 │   └── agent_test.py          # 命令行交互测试
-├── tools/shared_tools.py      # read_skill / bash / edit_node 的 schema
+├── tools/shared_tools.py      # read_skill / bash / edit_node / set_outline 的 schema
 ├── skills/                    # 业务能力（SOP + 脚本 + _lib 共享库）
 ├── services/                  # llm_service / report_executor / sql_executor / de_sql_execution_client
 ├── memory/store.py            # AgentMemory 基类
