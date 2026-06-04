@@ -217,7 +217,8 @@ export default function ChatView() {
           if (!line.startsWith('data: ')) continue
           const raw = line.slice(6)
           if (raw === '[DONE]') break
-          try { handleEvent(JSON.parse(raw)) } catch {}
+          try { handleEvent(JSON.parse(raw)) }
+          catch (err) { console.warn('[SSE] 解析/处理聊天事件失败:', err, 'raw=', raw) }
         }
       }
     } catch (e) {
@@ -404,7 +405,7 @@ export default function ChatView() {
             } else if (evt.type === 'report_done') {
               appendMsg({ role: 'success', content: '报告已生成完成，请查看右侧报告面板。' })
             }
-          } catch {}
+          } catch (err) { console.warn('[SSE] 解析/处理报告事件失败:', err, 'raw=', raw) }
         }
       }
     } catch (e) {

@@ -64,8 +64,46 @@ app.add_middleware(
 _KB_DIR = os.path.join(_DIR, "expert_knowledge")
 _TEMPLATE_DIR = os.path.join(_DIR, "templates")
 
+import time
+
 # session_id → AgentWithSkills
 _sessions: dict[str, AgentWithSkills] = {}
+# session_id → 最近活跃时间戳（用于过期清理）
+_session_last_active: dict[str, float] = {}
+
+# 内存中 session 的存活上限与数量上限，可由环境变量覆盖。
+# 过期被清理的 session 不会丢数据——每轮对话已由 conversation_store 落盘到
+# logs/，前端再次打开会经 /open 端点从磁盘重建到内存。
+_SESSION_TTL = int(os.environ.get("SESSION_TTL_SECONDS", "7200"))   # 默认 2 小时
+_MAX_SESSIONS = int(os.environ.get("MAX_SESSIONS", "500"))
+
+
+def _touch_session(session_id: str) -> None:
+    _session_last_active[session_id] = time.time()
+
+
+def _drop_session(session_id: str) -> None:
+    _sessions.pop(session_id, None)
+    _session_last_active.pop(session_id, None)
+
+
+def _evict_sessions() -> None:
+    """清理过期的内存 session；若仍超出数量上限，按最久未活跃淘汰。"""
+    now = time.time()
+    expired = [sid for sid, ts in _session_last_active.items() if now - ts > _SESSION_TTL]
+    for sid in expired:
+        _drop_session(sid)
+
+    overflow = len(_sessions) - _MAX_SESSIONS
+    if overflow > 0:
+        oldest = sorted(_session_last_active.items(), key=lambda kv: kv[1])[:overflow]
+        for sid, _ in oldest:
+            _drop_session(sid)
+
+    removed = len(expired) + max(overflow, 0)
+    if removed:
+        logger.info("[Session] 清理内存 session %d 个（过期%d + 超限%d），当前存活 %d",
+                    removed, len(expired), max(overflow, 0), len(_sessions))
 
 
 # —— 知识库 & 模板接口 ————————————————————————————————————————————
@@ -108,9 +146,11 @@ class SessionRequest(BaseModel):
 
 @app.post("/api/session")
 def create_session(req: SessionRequest):
+    _evict_sessions()
     session_id = str(uuid.uuid4())
     _sessions[session_id] = AgentWithSkills(session_id=session_id)
-    logger.info("[Session] 创建 session=%s", session_id)
+    _touch_session(session_id)
+    logger.info("[Session] 创建 session=%s（当前存活 %d）", session_id, len(_sessions))
     return {"session_id": session_id}
 
 
@@ -149,6 +189,7 @@ def open_conversation(session_id: str):
             "markdown":     agent.memory.markdown or "",
             "extraction":   getattr(agent.memory, "extraction", {}) or {},
         })
+    _touch_session(session_id)
 
     return {
         "session_id":   session_id,
@@ -163,7 +204,7 @@ def open_conversation(session_id: str):
 @app.delete("/api/conversations/{session_id}")
 def delete_conversation(session_id: str):
     conversation_store.delete_conversation(session_id)
-    _sessions.pop(session_id, None)
+    _drop_session(session_id)
     return {"ok": True}
 
 
@@ -179,11 +220,13 @@ def _sse(payload: dict) -> str:
 
 
 async def _stream_agent(session_id: str, message: str):
+    _evict_sessions()
     agent = _sessions.get(session_id)
     if agent is None:
         yield _sse({"type": "error", "message": "Session 不存在，请刷新页面重试"})
         yield "data: [DONE]\n\n"
         return
+    _touch_session(session_id)
 
     try:
         async for event in agent.chat_stream(message):
@@ -320,6 +363,8 @@ async def _stream_report(session_id: str, outline_tree: dict, cached_names: set,
 
 @app.post("/api/report")
 async def generate_report(req: ReportRequest):
+    if req.session_id:
+        _touch_session(req.session_id)
     return StreamingResponse(
         _stream_report(req.session_id, req.outline_tree, set(req.cached_names), set(req.cached_summary_ids)),
         media_type="text/event-stream",

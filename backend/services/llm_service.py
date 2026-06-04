@@ -21,6 +21,10 @@ from llm.config import LLMConfig
 
 logger = logging.getLogger(__name__)
 
+# 单条 prompt 消息打日志时的截断长度（避免每次 LLM 调用都把整段 system prompt
+# 写进日志造成膨胀）。设为 0 可关闭截断打印全文，调试时用。
+_PROMPT_LOG_LIMIT = int(os.environ.get("PROMPT_LOG_LIMIT", "800"))
+
 # 绕过代理直连 LLM 服务，避免内网地址被代理拦截
 os.environ.setdefault("NO_PROXY", "oneapi.rnd.huawei.com")
 os.environ.setdefault("no_proxy", "oneapi.rnd.huawei.com")
@@ -100,7 +104,11 @@ class LLMService:
             model, temperature, len(messages),
         )
         for m in messages:
-            logger.info("[LLM Prompt][%s]\n%s", m["role"], m["content"])
+            content = m.get("content")
+            text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+            if _PROMPT_LOG_LIMIT and text and len(text) > _PROMPT_LOG_LIMIT:
+                text = f"{text[:_PROMPT_LOG_LIMIT]}…（截断，共{len(text)}字，PROMPT_LOG_LIMIT=0 看全文）"
+            logger.info("[LLM Prompt][%s]\n%s", m["role"], text)
 
         stream = await self._client.chat.completions.create(
             model=model,
