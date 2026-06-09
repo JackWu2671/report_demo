@@ -1,17 +1,20 @@
 ---
 name: analyze-network
 description: >
-  看网分析工具包。用于一切需要分析传送网络现状的场景：覆盖评估、容量分析、
-  fgOTN/OSU 部署规划、站点选址、企业覆盖缺口、资源瓶颈识别等。
-  只要用户想了解网络现状、发现问题或给出部署建议，就加载此 skill——
+  看网分析工具包。用于一切需要分析传送网络现状的场景，涵盖三大业务方向：
+  【超千兆业务】10G PON覆盖就绪度、超千兆套餐渗透率、OLT/ODN改造优先级；
+  【智能城域】SPN/STN承载利用率、城域出口带宽、5G切片资源、网络质量评估；
+  【政企OTN】fgOTN/OSU部署规划、政企专线覆盖缺口、站点价值分级、低阶交叉资源瓶颈识别。
+  只要用户想了解网络现状、发现问题或给出部署/演进建议，就加载此 skill——
   报告和大纲只是分析的呈现手段，不是触发条件。
   不适用于：与网络分析无关的一般性对话、简单知识问答。
-version: 3.0.0
+version: 3.1.0
 author: report_demo
 metadata:
   hermes:
     category: report
-    tags: [network-analysis, otn, fgotn, coverage, capacity, outline, report]
+    tags: [network-analysis, otn, fgotn, coverage, capacity, outline, report,
+           超千兆, 10g-pon, olt, odn, 智能城域, spn, stn, 5g承载, 政企otn, 专线, fgotn-osu]
 ---
 
 # 生成完整报告
@@ -26,6 +29,16 @@ metadata:
 ```bash
 python3 $SKILLS_DIR/analyze-network/scripts/<script>.py [参数]
 ```
+
+## 业务场景速查
+
+| 业务方向 | 典型分析诉求 | 知识库关键词 |
+|---------|------------|------------|
+| **超千兆业务** | 10G PON 覆盖就绪度评估、超千兆套餐渗透率分析、OLT/ODN 改造优先级排序、超千兆接入网扩容建议 | 超千兆、10GPON、OLT、ODN、FTTR、接入覆盖 |
+| **智能城域** | SPN/STN 承载利用率分析、城域出口带宽评估、5G 切片资源分配、网络时延与质量评估、城域扩容建议 | 智能城域、SPN、STN、城域承载、切片、5G承载、出口带宽 |
+| **政企OTN** | fgOTN/OSU 部署规划、政企专线覆盖缺口识别、站点企业覆盖评估与价值分级、低阶交叉容量瓶颈、设备部署支持度 | 政企OTN、fgOTN、OSU、专线、低阶交叉、站点价值 |
+
+`search_graph_tree.py` 和 `search_templates.py` 都支持以上关键词做语义检索，优先用业务术语查询。
 
 ## 知识体系结构
 
