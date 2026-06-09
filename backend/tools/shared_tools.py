@@ -47,6 +47,10 @@ EDIT_NODE_TOOL: dict = {
             "直接修改当前大纲中某个节点的属性值。"
             "参数经 JSON 传递、完全不过 shell，含反引号、<、>、% 的 SQL 或名称均可安全传入。"
             "修改 exec_sql / name / description / condition 等字段时优先用此工具，不要用 bash + modify_outline.py。"
+            "\n\n【修改 exec_sql 的硬性约束】"
+            "\n- 只能在原始 SQL 的基础上做局部改动（枚举值替换、阈值调整、条件增减等）"
+            "\n- 禁止添加原始 SQL 中不存在的字段名、表名或枚举值——系统无法查看表结构，新增内容大概率执行失败"
+            "\n- 修改前必须先获取节点当前的 exec_sql，以原文为基础改写，不得凭空构造"
         ),
         "parameters": {
             "type": "object",
@@ -65,7 +69,10 @@ EDIT_NODE_TOOL: dict = {
                     "description": "要修改的字段名",
                 },
                 "value": {
-                    "description": "新值。exec_sql/name/description/condition 传字符串；condition_queries 传数组。",
+                    "description": (
+                        "新值。exec_sql/name/description/condition 传字符串；condition_queries 传数组。"
+                        "exec_sql 必须基于节点原有 SQL 改写，禁止引入原 SQL 中未出现的字段或枚举值。"
+                    ),
                 },
             },
             "required": ["node_id", "field", "value"],
