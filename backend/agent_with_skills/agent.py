@@ -225,6 +225,11 @@ class AgentWithSkills:
         field = str(args.get("field", "")).strip()
         value = args.get("value")
 
+        if not node_id:
+            return {"_events": []}, "[edit_node] 缺少必填参数 node_id，请重新调用并传入节点 ID"
+        if not field:
+            return {"_events": []}, "[edit_node] 缺少必填参数 field，请重新调用并指定要修改的字段（如 exec_sql、name、description 等）"
+
         outline_tree = self.memory.outline_tree
         if not outline_tree:
             return {"_events": []}, "[edit_node] 当前没有大纲，请先生成大纲"
@@ -262,8 +267,17 @@ class AgentWithSkills:
             {"type": "confirm", "options": ["生成报告"]},
         ]
 
+        skipped = result.get("skipped", [])
+        if skipped and len(skipped) >= len(ops):
+            # 所有操作都被跳过，视为失败，不推送大纲事件
+            lines = [f"[edit_node] 更新失败 {node_id}.{field}"]
+            for s in skipped:
+                reason = s.get("_skip_reason", "未知") if isinstance(s, dict) else str(s)
+                lines.append(f"SKIPPED: {s.get('op','?')} node_id={s.get('node_id','')} → {reason}")
+            return {"_events": []}, "\n".join(lines)
+
         lines = [f"[edit_node] 已更新 {node_id}.{field}"]
-        for s in result.get("skipped", []):
+        for s in skipped:
             reason = s.get("_skip_reason", "未知") if isinstance(s, dict) else str(s)
             lines.append(f"SKIPPED: {s.get('op','?')} node_id={s.get('node_id','')} → {reason}")
         return {"_events": events}, "\n".join(lines)
