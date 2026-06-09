@@ -198,6 +198,12 @@ class AgentWithSkills:
     async def _handle_set_outline(self, args: dict) -> tuple[dict, str]:
         """一次性写入完整大纲，参数为 JSON 节点数组（经工具参数传入，不过 shell、不过 YAML）。"""
         outline = args.get("outline")
+        # LLM 有时会把数组序列化成字符串再传入，兜底解析一次
+        if isinstance(outline, str):
+            try:
+                outline = json.loads(outline)
+            except json.JSONDecodeError:
+                return {"_events": []}, "[set_outline] outline 参数解析失败：收到字符串但无法反序列化为 JSON，请直接传入数组而非字符串"
         if not outline or not isinstance(outline, list):
             return {"_events": []}, "[set_outline] 缺少 outline 参数（应为完整大纲的 JSON 节点数组，顶层含一个 L1 根节点）"
 
