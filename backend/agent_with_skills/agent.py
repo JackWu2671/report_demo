@@ -66,47 +66,54 @@ _SKILL_SYSTEM_TEMPLATE = """\
 
 
 def _coerce_outline_str(raw: str):
-    """LLM 误将 outline 数组序列化为字符串时尝试还原。
+    """LLM 误将 outline 数组序列化为字符串时尝试还原，返回 list 或抛出 ValueError。
 
-    常见情况：
-      1. 正常 JSON 字符串：直接 json.loads
-      2. 外层多余引号包裹："[{...}]" → 去掉引号后 json.loads
-      3. 双重序列化："\"[{...}]\"" → json.loads 两次
-      4. Python dict repr（单引号）：ast.literal_eval
+    处理顺序（顺序不能乱）：
+      1. json.loads → list：直接返回
+      2. json.loads → str（双重序列化）：对结果再试一次 json.loads
+      3. json.loads 失败 → 去掉外层多余引号后再试 json.loads
+      4. 仍失败 → ast.literal_eval（兼容单引号 Python repr）
+      均失败则抛 ValueError，调用方返回明确报错给 LLM。
+
+    注意：步骤 1/2 必须先于步骤 3，否则双重序列化的 backslash 会被提前破坏。
     """
     import ast
 
     s = raw.strip()
-    # 逐层尝试，最多两次 json.loads
+
+    # ① ② 先走 json.loads，最多两轮（处理双重序列化）
     for _ in range(2):
         try:
             result = json.loads(s)
-        except json.JSONDecodeError as exc:
-            logger.warning("[set_outline] json.loads failed (%s) | head=%r", exc, s[:120])
-            # 尝试去掉外层多余引号后重试
-            if s.startswith('"') and s.endswith('"'):
-                s = s[1:-1]
-                try:
-                    result = json.loads(s)
-                except json.JSONDecodeError:
-                    pass
-                else:
-                    return result if isinstance(result, list) else None
-            # 最后尝试 ast.literal_eval（兼容单引号 Python repr）
-            try:
-                result = ast.literal_eval(s)
-                return result if isinstance(result, list) else None
-            except Exception:
-                return None
-        else:
+        except json.JSONDecodeError:
+            break  # json.loads 失败，走后续降级路径
+        if isinstance(result, list):
+            return result
+        if isinstance(result, str):
+            s = result  # 双重序列化，展开一层再试
+            continue
+        raise ValueError(f"outline 解析后类型为 {type(result).__name__}，期望 list")
+
+    # ③ json.loads 失败，若有外层多余引号则去掉后再试一次 json.loads
+    if s.startswith('"') and s.endswith('"'):
+        inner = s[1:-1]
+        try:
+            result = json.loads(inner)
             if isinstance(result, list):
                 return result
-            if isinstance(result, str):
-                # 双重序列化，再解一层
-                s = result
-                continue
-            return None
-    return None
+        except json.JSONDecodeError:
+            s = inner  # 让后续 ast.literal_eval 也用去掉引号后的内容
+
+    # ④ 最后尝试 ast.literal_eval（兼容单引号 Python repr）
+    try:
+        result = ast.literal_eval(s)
+    except Exception as exc:
+        logger.warning("[set_outline] 所有解析方式均失败 | head=%r | err=%s", s[:120], exc)
+        raise ValueError("outline 字符串无法解析为 JSON 数组，请直接传入 array 而非字符串") from exc
+
+    if isinstance(result, list):
+        return result
+    raise ValueError(f"ast.literal_eval 结果类型为 {type(result).__name__}，期望 list")
 
 
 class AgentWithSkills:
@@ -244,9 +251,12 @@ class AgentWithSkills:
         outline = args.get("outline")
         # LLM 有时会把数组序列化成字符串（甚至双重序列化）再传入，逐层尝试解析
         if isinstance(outline, str):
-            outline = _coerce_outline_str(outline)
+            try:
+                outline = _coerce_outline_str(outline)
+            except ValueError as exc:
+                return {"_events": []}, f"[set_outline] outline 参数解析失败：{exc}（大纲未写入，请重新调用并直接传入 JSON 数组）"
         if not outline or not isinstance(outline, list):
-            return {"_events": []}, "[set_outline] 缺少 outline 参数（应为完整大纲的 JSON 节点数组，顶层含一个 L1 根节点）"
+            return {"_events": []}, "[set_outline] outline 参数缺失或类型错误（应为 JSON 节点数组，顶层含一个 L1 根节点）"
 
         result = await set_outline_from_tree(outline)
         if result["status"] != "success":
