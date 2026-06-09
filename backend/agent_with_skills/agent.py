@@ -65,6 +65,50 @@ _SKILL_SYSTEM_TEMPLATE = """\
 </skill_system>"""
 
 
+def _coerce_outline_str(raw: str):
+    """LLM 误将 outline 数组序列化为字符串时尝试还原。
+
+    常见情况：
+      1. 正常 JSON 字符串：直接 json.loads
+      2. 外层多余引号包裹："[{...}]" → 去掉引号后 json.loads
+      3. 双重序列化："\"[{...}]\"" → json.loads 两次
+      4. Python dict repr（单引号）：ast.literal_eval
+    """
+    import ast
+
+    s = raw.strip()
+    # 逐层尝试，最多两次 json.loads
+    for _ in range(2):
+        try:
+            result = json.loads(s)
+        except json.JSONDecodeError as exc:
+            logger.warning("[set_outline] json.loads failed (%s) | head=%r", exc, s[:120])
+            # 尝试去掉外层多余引号后重试
+            if s.startswith('"') and s.endswith('"'):
+                s = s[1:-1]
+                try:
+                    result = json.loads(s)
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    return result if isinstance(result, list) else None
+            # 最后尝试 ast.literal_eval（兼容单引号 Python repr）
+            try:
+                result = ast.literal_eval(s)
+                return result if isinstance(result, list) else None
+            except Exception:
+                return None
+        else:
+            if isinstance(result, list):
+                return result
+            if isinstance(result, str):
+                # 双重序列化，再解一层
+                s = result
+                continue
+            return None
+    return None
+
+
 class AgentWithSkills:
     """
     脚本驱动的单一 agent。LLM 只感知 read_skill + bash 两个工具。
@@ -198,12 +242,9 @@ class AgentWithSkills:
     async def _handle_set_outline(self, args: dict) -> tuple[dict, str]:
         """一次性写入完整大纲，参数为 JSON 节点数组（经工具参数传入，不过 shell、不过 YAML）。"""
         outline = args.get("outline")
-        # LLM 有时会把数组序列化成字符串再传入，兜底解析一次
+        # LLM 有时会把数组序列化成字符串（甚至双重序列化）再传入，逐层尝试解析
         if isinstance(outline, str):
-            try:
-                outline = json.loads(outline)
-            except json.JSONDecodeError:
-                return {"_events": []}, "[set_outline] outline 参数解析失败：收到字符串但无法反序列化为 JSON，请直接传入数组而非字符串"
+            outline = _coerce_outline_str(outline)
         if not outline or not isinstance(outline, list):
             return {"_events": []}, "[set_outline] 缺少 outline 参数（应为完整大纲的 JSON 节点数组，顶层含一个 L1 根节点）"
 
