@@ -86,8 +86,6 @@ SET_OUTLINE_TOOL: dict = {
         "name": "set_outline",
         "description": (
             "一次性写入一份完整的报告大纲（结构由你自己组合）。"
-            "参数 outline 是 JSON 节点数组，经工具参数原生传递、完全不过 shell。"
-            "务必传结构化数组，不要传 YAML/字符串——outline 字段的类型是 array，直接放 JSON 数组，禁止把数组序列化成字符串再传入。"
             "\n\n【适用场景】用户/专家想自己组合报告结构时使用——典型是专家知识沉淀（把一段业务方法论组织成章节大纲），"
             "或用户明确要求按自定义结构搭建报告。本工具是整棵覆盖写入，会替换当前大纲。"
             "\n【不适用】在已有大纲上做局部改动：改节点属性用 edit_node，增删/保留节点用 modify_outline.py。"
@@ -106,11 +104,26 @@ SET_OUTLINE_TOOL: dict = {
                 "outline": {
                     "type": "array",
                     "description": (
-                        "完整大纲的节点数组，顶层含一个 L1 根节点。每个节点形如 "
-                        '{"id": "new_L1_root", "name": "报告标题", "description": "...", '
-                        '"children": [{"id": "new_L2_001", "name": "章节", "children": [{"id": "L5_001", "name": "指标名"}]}]}'
+                        "【类型：array，禁止传字符串】"
+                        "\n直接传 JSON 数组对象，绝对不能把数组序列化成字符串后传入。"
+                        "\n错误示范（会解析失败）：\"outline\": \"[{\\\"id\\\": \\\"new_L1_root\\\", ...}]\""
+                        "\n正确示范：\"outline\": [{\"id\": \"new_L1_root\", \"name\": \"报告标题\", \"description\": \"...\","
+                        " \"children\": [{\"id\": \"new_L2_001\", \"name\": \"章节\", \"description\": \"...\","
+                        " \"children\": [{\"id\": \"L5_001\", \"name\": \"指标名\"}]}]}]"
+                        "\n顶层含一个 L1 根节点，每个节点含 id/name/description，子节点放 children 数组。"
                     ),
-                    "items": {"type": "object"},
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id":          {"type": "string", "description": "节点 ID：新建结构节点用 new_L<层级>_<序号>，知识库叶子节点用原 id（如 L5_001）"},
+                            "name":        {"type": "string", "description": "节点名称"},
+                            "description": {"type": "string", "description": "节点描述，新建节点必填，50~100 字"},
+                            "children":    {"type": "array",  "description": "子节点数组，L5 叶子节点不填此字段", "items": {"type": "object"}},
+                            "condition":         {"type": "string"},
+                            "condition_queries": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["id", "name"],
+                    },
                 },
             },
             "required": ["outline"],
