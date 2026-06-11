@@ -44,7 +44,8 @@ _LIB_DIR = str(_SKILLS_DIR / "_lib")
 if _LIB_DIR not in sys.path:
     sys.path.insert(0, _LIB_DIR)
 
-from modify_outline import modify_outline  # noqa: E402  (imported after sys.path setup)
+from patcher import apply_patch  # noqa: E402
+from outline_utils import to_clean_json, to_markdown, to_yaml  # noqa: E402
 from set_outline_from_markdown import set_outline_from_tree  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -466,27 +467,11 @@ class AgentWithSkills:
             # summarySuggestion / renderType / colX / colY / condition_queries 等
             ops = [{"op": "set_node_field", "node_id": node_id, "field": field, "value": value}]
 
-        result = await modify_outline(ops, outline_tree)
+        new_tree, skipped = await apply_patch(outline_tree, ops)
+        clean_tree = to_clean_json(new_tree)
+        md = to_markdown(clean_tree)
+        yaml_str = to_yaml(clean_tree)
 
-        if result["status"] != "success":
-            return {"_events": []}, f"[edit_node] {result['message']}"
-
-        self.memory.set_outline(
-            result["outline_tree"],
-            result["markdown"],
-            result["outline_yaml"],
-        )
-        events = [
-            {
-                "type":         "outline",
-                "markdown":     result["markdown"],
-                "outline_yaml": result["outline_yaml"],
-                "outline_tree": result["outline_tree"],
-            },
-            {"type": "confirm", "options": ["生成报告"]},
-        ]
-
-        skipped = result.get("skipped", [])
         if skipped and len(skipped) >= len(ops):
             # 所有操作都被跳过，视为失败，不推送大纲事件
             lines = [f"[edit_node] 更新失败 {node_id}.{field}"]
@@ -495,6 +480,11 @@ class AgentWithSkills:
                 lines.append(f"SKIPPED: {s.get('op','?')} node_id={s.get('node_id','')} → {reason}")
             return {"_events": []}, "\n".join(lines)
 
+        self.memory.set_outline(clean_tree, md, yaml_str)
+        events = [
+            {"type": "outline", "markdown": md, "outline_yaml": yaml_str, "outline_tree": clean_tree},
+            {"type": "confirm", "options": ["生成报告"]},
+        ]
         lines = [f"[edit_node] 已更新 {node_id}.{field}"]
         for s in skipped:
             reason = s.get("_skip_reason", "未知") if isinstance(s, dict) else str(s)
