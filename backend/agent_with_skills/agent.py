@@ -65,6 +65,48 @@ _SKILL_SYSTEM_TEMPLATE = """\
 </skill_system>"""
 
 
+def _repair_truncated_json(s: str) -> list | None:
+    """补全因 token 截断导致末尾括号不完整的 JSON 字符串，成功返回 list，否则返回 None。
+
+    只在确认有未闭合括号时才修复；若括号本身已平衡则说明不是截断问题，返回 None。
+    """
+    stack: list[str] = []
+    in_string = False
+    escape_next = False
+
+    for ch in s:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in '{[':
+            stack.append('}' if ch == '{' else ']')
+        elif ch in '}]':
+            if stack and stack[-1] == ch:
+                stack.pop()
+
+    if not stack:
+        return None  # 括号已平衡，不是截断问题
+
+    repaired = s + ''.join(reversed(stack))
+    try:
+        result = json.loads(repaired)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(result, list):
+        logger.info("[set_outline] 截断 JSON 修复成功，补全了 %d 个括号: %s",
+                    len(stack), ''.join(reversed(stack)))
+        return result
+    return None
+
+
 def _coerce_outline_str(raw: str):
     """LLM 误将 outline 数组序列化为字符串时尝试还原，返回 list 或抛出 ValueError。
 
@@ -72,7 +114,8 @@ def _coerce_outline_str(raw: str):
       1. json.loads → list：直接返回
       2. json.loads → str（双重序列化）：对结果再试一次 json.loads
       3. json.loads 失败 → 去掉外层多余引号后再试 json.loads
-      4. 仍失败 → ast.literal_eval（兼容单引号 Python repr）
+      4. 仍失败 → 补全未闭合括号修复截断 JSON（LLM 生成过长被 token 截断）
+      5. 仍失败 → ast.literal_eval（兼容单引号 Python repr）
       均失败则抛 ValueError，调用方返回明确报错给 LLM。
 
     注意：步骤 1/2 必须先于步骤 3，否则双重序列化的 backslash 会被提前破坏。
@@ -102,9 +145,14 @@ def _coerce_outline_str(raw: str):
             if isinstance(result, list):
                 return result
         except json.JSONDecodeError:
-            s = inner  # 让后续 ast.literal_eval 也用去掉引号后的内容
+            s = inner  # 让后续步骤也用去掉引号后的内容
 
-    # ④ 最后尝试 ast.literal_eval（兼容单引号 Python repr）
+    # ④ 补全截断 JSON（LLM 生成的字符串因 token 限制在末尾被截断，缺少闭合括号）
+    repaired = _repair_truncated_json(s)
+    if repaired is not None:
+        return repaired
+
+    # ⑤ 最后尝试 ast.literal_eval（兼容单引号 Python repr）
     try:
         result = ast.literal_eval(s)
     except Exception as exc:
