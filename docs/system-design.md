@@ -28,7 +28,35 @@
 
 L5 是知识库的叶子节点，直接驱动报告中的图表和表格渲染，不能再挂子节点。
 
-### 1.2 原始数据格式
+### 1.2 节点属性
+
+#### 通用属性（L1–L5 全部具备）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 节点唯一标识，格式 `L<层级>_<序号>`，如 `L3_016` |
+| `level` | int | 层级编号，1–5 |
+| `name` | string | 节点名称。**L5 的 name 即查询语句本身**（如"OTN站点价值分布"），系统据此匹配 SQL，是指标的唯一标识 |
+| `keywords` | list[string] | 3–6 个检索关键词，**仅用于 FAISS 向量索引**，决定该节点能被哪些查询检索到，不在报告中展示 |
+| `description` | string | 节点描述。**L1–L4**：50–100 字的业务说明，解释本节分析什么、如何计算、输出什么；**L5**：即查询参数，直接描述数据过滤范围（如"仅统计南宁市的企业行业分布"），为空时表示全量查询 |
+| `condition` | string | 展示条件，格式为"当……时，本节才展示"。节点并非在任何情况下都展示时填写，无条件则留空。报告渲染时由前端判断是否渲染该节点 |
+| `condition_queries` | list[string] | 条件判断所依赖的数据查询 ID 列表，配合 `condition` 使用 |
+| `summarySuggestion` | string | 章节摘要生成提示，LLM 在为该节点生成总结文字时的参考指引，留空则使用通用提示 |
+
+#### L5 专有属性（仅评估指标节点具备）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `exec_sql` | string | 执行 SQL，报告生成时直接提交给数据库。可通过 `edit_node` 在 SQL 基础上微调，但只能改已有字段/枚举，不能引入新字段 |
+| `apiName` | string | 数据接口名称，与 `exec_sql` 配合使用 |
+| `extracted_table` | list | 预置抽样数据，用于 mock 模式下的预览渲染，正式报告不使用此字段 |
+| `renderType` | string | 图表类型，决定该指标以何种形式渲染。常见值：`bar`（柱状图）、`line`（折线图）、`pie`（饼图）、`table`（表格）、`number`（单数值卡片）等 |
+| `colX` | string | 图表 X 轴（横轴）对应的数据字段名 |
+| `colY` | string | 图表 Y 轴（纵轴）对应的数据字段名 |
+
+> **L5 改名的连锁效应**：通过 `edit_node(field="name")` 修改 L5 节点名称时，系统会自动从知识库中查找同名节点，并将 `exec_sql / renderType / colX / colY / apiName / extracted_table` 全部同步过来，同时更新节点 ID。这是"换指标"的标准操作。
+
+### 1.3 原始数据格式
 
 每一层对应一个 JSON 文件，存放在 `backend/expert_knowledge/` 目录：
 
@@ -41,17 +69,11 @@ expert_knowledge/
   评估指标.json   → L5
 ```
 
-L5 节点的 `answer` 字段为 JSON 字符串，内含：
+L5 原始文件中，SQL 等执行信息被打包在 `answer` 字段（JSON 字符串），`build_knowledge_nodes.py` 构建时会自动解包展开为 `exec_sql / apiName / extracted_table` 等独立字段。
 
-| 字段 | 说明 |
-|------|------|
-| `exec_sql` | 查询 SQL，报告执行时用 |
-| `apiName` | 数据接口名称 |
-| `extracted_table` | 预置抽样数据，用于 mock 模式 |
-| `renderType` | 图表类型（bar / line / pie / table 等） |
-| `colX` / `colY` | 图表轴字段映射 |
+构建后的合并节点文件为 `expert_knowledge/node.json`，关系文件为 `expert_knowledge/relation.json`，运行时由 `loader.py` 加载。
 
-### 1.3 构建流程
+### 1.4 构建流程
 
 构建分三步，全部在 `backend/scripts/` 目录执行：
 
