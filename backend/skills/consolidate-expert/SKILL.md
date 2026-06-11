@@ -85,12 +85,13 @@ set_outline(outline=[
 大纲结构约束（违反任意一条视为无效）：
 1. **新建结构节点 id 必须按 `new_L<层级>_<序号>` 命名，显式编码层级**：根用 `new_L1_xxx`，往下依次 `new_L2_xxx` / `new_L3_xxx` / `new_L4_xxx`。结构节点只能 L1~L4，**绝不能命名为 `new_L5_xxx`**
 2. 顶层数组必须恰好一个根节点（`new_L1_xxx`），作为报告总标题
-3. L5 query 节点必须是叶子，禁止在其下挂 children
-4. 禁止新建 query 节点，L5 只能引用 search_graph_tree 返回的知识库已有 id（如 `L5_001`）
-5. 每个新建 L4（`new_L4_xxx`）下方至少挂一个知识库已有 query 节点
-6. 所有新建节点必须填 `description`（50~100 字）
-7. L2/L3/L4 由你按专家意图自由设计，不得用知识库节点名替代专家描述的板块名
-8. 每个节点只写 `id`/`name`/`description`/`children`（及按需 `condition`/`condition_queries`），不要写 level/exec_sql 等字段
+3. **根节点 `name`（报告总标题）必须与专家描述中已给出的标题完全一致——若专家已明确命名，原文照用，不得擅自摘要或改写；若未给出则自行提炼，须准确概括专家意图**
+4. L5 query 节点必须是叶子，禁止在其下挂 children
+5. 禁止新建 query 节点，L5 只能引用 search_graph_tree 返回的知识库已有 id（如 `L5_001`）
+6. 每个新建 L4（`new_L4_xxx`）下方至少挂一个知识库已有 query 节点
+7. 所有新建节点必须填 `description`（50~100 字）
+8. L2/L3/L4 由你按专家意图自由设计，不得用知识库节点名替代专家描述的板块名
+9. 每个节点只写 `id`/`name`/`description`/`children`（及按需 `condition`/`condition_queries`），不要写 level/exec_sql 等字段
 
 > **成功判定**：工具返回会回显写入后的大纲。**若返回以"写入失败"开头或未回显大纲，即为失败——必须修正后重试，绝不可告知专家"大纲已生成"。**
 

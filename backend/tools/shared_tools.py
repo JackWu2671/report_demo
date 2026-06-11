@@ -91,11 +91,12 @@ SET_OUTLINE_TOOL: dict = {
             "\n【不适用】在已有大纲上做局部改动：改节点属性用 edit_node，增删/保留节点用 modify_outline.py。"
             "\n\n【结构约束】"
             "\n1. outline 是节点对象数组，且恰好一个根节点(L1，报告总标题)"
-            "\n2. 每个节点是对象 {id, name, description, children}，子节点放进 children 数组（无子节点可省略 children）"
-            "\n3. L5 query 节点必须是叶子(无 children)，其 id 须引用 search_graph_tree 返回的知识库已有 id，禁止新建 query 节点"
-            "\n4. 新建结构节点 id 必须按 new_L<层级>_<序号> 命名，显式编码层级：根用 new_L1_xxx，其下依次 new_L2_xxx / new_L3_xxx / new_L4_xxx（结构节点只能 L1~L4，绝不能 L5）"
-            "\n5. 新建节点必须填写 description(50~100 字)"
-            "\n6. 只写 id/name/description/children(及按需 condition/condition_queries)，不要写 level/exec_sql 等字段"
+            "\n2. 根节点的 name 即报告总标题，必须与用户/专家描述中已给出的标题完全一致——若已明确命名，原文照用，不得擅自摘要或改写"
+            "\n3. 每个节点是对象 {id, name, description, children}，子节点放进 children 数组（无子节点可省略 children）"
+            "\n4. L5 query 节点必须是叶子(无 children)，其 id 须引用 search_graph_tree 返回的知识库已有 id，禁止新建 query 节点"
+            "\n5. 新建结构节点 id 必须按 new_L<层级>_<序号> 命名，显式编码层级：根用 new_L1_xxx，其下依次 new_L2_xxx / new_L3_xxx / new_L4_xxx（结构节点只能 L1~L4，绝不能 L5）"
+            "\n6. 新建节点必须填写 description(50~100 字)"
+            "\n7. 只写 id/name/description/children(及按需 condition/condition_queries)，不要写 level/exec_sql 等字段"
             "\n\n成功时工具会回显写入后的大纲；返回'写入失败'或未回显即为失败，须修正重试，不得告知用户已生成。"
         ),
         "parameters": {
@@ -116,7 +117,7 @@ SET_OUTLINE_TOOL: dict = {
                         "type": "object",
                         "properties": {
                             "id":          {"type": "string", "description": "节点 ID：新建结构节点用 new_L<层级>_<序号>，知识库叶子节点用原 id（如 L5_001）"},
-                            "name":        {"type": "string", "description": "节点名称"},
+                            "name":        {"type": "string", "description": "节点名称；根节点（L1）的 name 必须与用户/专家描述中已给出的标题完全一致，原文照用"},
                             "description": {"type": "string", "description": "节点描述，新建节点必填，50~100 字"},
                             "children":    {"type": "array",  "description": "子节点数组，L5 叶子节点不填此字段", "items": {"type": "object"}},
                             "condition":         {"type": "string"},
