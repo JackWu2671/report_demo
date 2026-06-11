@@ -200,7 +200,9 @@ async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[d
 def tree_to_id_text(node: dict, depth: int = 0) -> str:
     """将大纲树渲染为带 id 的缩进文本，供 LLM 在 patch 时引用节点 id。"""
     if node.get("id") == "__root__":
-        return "\n".join(tree_to_id_text(c, 0) for c in node.get("children", []))
+        header = "[id=__root__ L0] （虚拟根节点，add_node 新增顶层章节时 parent_id 填 __root__）"
+        children_text = "\n".join(tree_to_id_text(c, 1) for c in node.get("children", []))
+        return f"{header}\n{children_text}" if children_text else header
     indent = "  " * depth
     desc = f" — {node['description']}" if node.get("description") else ""
     cond = f" ｜条件：{node['condition']}" if node.get("condition") else ""

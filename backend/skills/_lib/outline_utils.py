@@ -76,12 +76,14 @@ def to_yaml(tree: dict) -> str:
 
     只保留 id/name/description/condition/condition_queries/children，
     省略 level、SQL 字段和空的可选字段。
-    虚拟根节点（__root__）被跳过，其子节点作为顶层列表渲染。
+    虚拟根节点（__root__）被跳过，其子节点作为顶层列表渲染；
+    但在 YAML 头部保留一行注释，使 LLM 知道新增顶层章节时 parent_id 填 __root__。
     """
     if _is_virtual_root(tree):
         nodes = [_yaml_node(c) for c in tree.get("children", [])]
-    else:
-        nodes = [_yaml_node(tree)]
+        body = yaml.dump(nodes, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        return f"# 顶层节点的父节点均为虚拟根 __root__（add_node 新增顶层章节时 parent_id 填 \"__root__\"）\n{body}"
+    nodes = [_yaml_node(tree)]
     return yaml.dump(nodes, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
 
