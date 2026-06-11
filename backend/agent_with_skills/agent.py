@@ -164,6 +164,88 @@ def _coerce_outline_str(raw: str):
     raise ValueError(f"ast.literal_eval 结果类型为 {type(result).__name__}，期望 list")
 
 
+# ── 文本 tool call 兜底解析 ────────────────────────────────────────
+# vLLM 的 tool-call-parser 与模型模板失配时（如 Qwen3 未配 --tool-call-parser
+# hermes），模型会把 tool call 当普通文本输出，原生 tool_calls 字段为空。
+# 这里把泄漏到 content 里的 tool call 文本解析回结构化调用，避免直接吐给用户。
+
+_TOOL_CALL_BLOCK_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+_FUNC_NAME_RE = re.compile(r"<function=([A-Za-z_]\w*)")
+_FUNC_CALL_RE = re.compile(r"<function=[A-Za-z_]\w*\((.*)\)\s*", re.DOTALL)
+_PARAM_RE = re.compile(r"<parameter=([^>]+)>\s*(.*?)\s*</parameter>", re.DOTALL)
+
+
+def _parse_one_text_call(block: str) -> dict | None:
+    """解析单个 tool call 文本块，返回 {"name", "arguments"}，失败返回 None。
+
+    兼容三种 Qwen/vLLM 常见变体：
+      A. Hermes JSON  : {"name": "x", "arguments": {...}}
+      B. Qwen XML     : <function=x><parameter=k>v</parameter></function>
+      C. Python 调用式: <function=read_skill(name="analyze-network")>
+    """
+    import ast
+
+    block = block.strip()
+
+    # A. JSON 体（Hermes 风格）
+    if block.startswith("{"):
+        try:
+            obj = json.loads(block)
+        except json.JSONDecodeError:
+            obj = None
+        if isinstance(obj, dict) and obj.get("name"):
+            args = obj.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = {}
+            return {"name": obj["name"], "arguments": args if isinstance(args, dict) else {}}
+
+    name_m = _FUNC_NAME_RE.search(block)
+    if not name_m:
+        return None
+    name = name_m.group(1)
+    args: dict = {}
+
+    # C. Python 调用式 <function=name(k="v", ...)>，用 ast 解析 kwargs
+    call_m = _FUNC_CALL_RE.search(block)
+    if call_m and call_m.group(1).strip():
+        try:
+            node = ast.parse(f"f({call_m.group(1)})", mode="eval").body
+            for kw in node.keywords:  # type: ignore[attr-defined]
+                if kw.arg:
+                    args[kw.arg] = ast.literal_eval(kw.value)
+        except Exception:
+            args = {}
+
+    # B. Qwen XML <parameter=key>value</parameter>
+    if not args:
+        for pk, pv in _PARAM_RE.findall(block):
+            pv = pv.strip()
+            try:
+                args[pk.strip()] = json.loads(pv)
+            except json.JSONDecodeError:
+                args[pk.strip()] = pv
+
+    return {"name": name, "arguments": args}
+
+
+def _parse_text_tool_calls(content: str) -> list[dict]:
+    """从模型文本输出中解析被当成普通文本泄漏的 tool call，解析不出返回 []。"""
+    if not content or ("<tool_call>" not in content and "<function=" not in content):
+        return []
+    blocks = _TOOL_CALL_BLOCK_RE.findall(content)
+    if not blocks:
+        blocks = [content]  # 没有成对 <tool_call> 标签，退而整体扫描 <function=>
+    calls = []
+    for block in blocks:
+        parsed = _parse_one_text_call(block)
+        if parsed:
+            calls.append(parsed)
+    return calls
+
+
 class AgentWithSkills:
     """
     脚本驱动的单一 agent。LLM 只感知 read_skill + bash 两个工具。
@@ -188,19 +270,20 @@ class AgentWithSkills:
             response = await self._call_llm()
             choice = response.choices[0]
             msg = choice.message
-            self.memory.add_message(msg.model_dump(exclude_none=True))
 
-            if choice.finish_reason == "tool_calls" and msg.tool_calls:
+            # 归一化 tool call：优先用服务端解析好的原生 tool_calls；
+            # 若服务端 parser 失配把 tool call 当文本吐出来，则从 content 兜底解析。
+            calls = self._normalize_tool_calls(choice, msg)
+
+            if calls:
                 report_triggered = False
-                for tc in msg.tool_calls:
-                    name = tc.function.name
-                    call_id = tc.id
+                for call_id, name, args_str in calls:
                     try:
-                        args = json.loads(tc.function.arguments)
+                        args = json.loads(args_str)
                     except Exception:
                         args = {}
 
-                    logger.info("[Agent] tool=%s args=%s", name, tc.function.arguments[:200])
+                    logger.info("[Agent] tool=%s args=%s", name, args_str[:200])
                     yield {"type": "step", "name": name, "status": "running",
                            "call_id": call_id, "args": args}
 
@@ -217,7 +300,7 @@ class AgentWithSkills:
                            "result": _result_display(name, result_dict, llm_str),
                            "detail": llm_str}
                     self.memory.add_message(
-                        {"role": "tool", "tool_call_id": tc.id, "content": llm_str}
+                        {"role": "tool", "tool_call_id": call_id, "content": llm_str}
                     )
 
                 # 触发报告生成后立即结束本回合：报告在独立的 /api/report 流中渲染，
@@ -268,6 +351,37 @@ class AgentWithSkills:
             temperature=llm._temperature,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
+
+    def _normalize_tool_calls(self, choice, msg) -> list[tuple[str, str, str]]:
+        """归一化本轮的 tool call，并把 assistant 消息写入 memory。
+
+        返回 [(call_id, name, arguments_str), ...]；无 tool call 时返回 []。
+        优先用服务端原生 tool_calls；服务端 parser 失配时从 content 文本兜底解析。
+        """
+        if choice.finish_reason == "tool_calls" and msg.tool_calls:
+            self.memory.add_message(msg.model_dump(exclude_none=True))
+            return [(tc.id, tc.function.name, tc.function.arguments) for tc in msg.tool_calls]
+
+        text_calls = _parse_text_tool_calls(msg.content or "")
+        if not text_calls:
+            self.memory.add_message(msg.model_dump(exclude_none=True))
+            return []
+
+        # 文本兜底：重写 assistant 消息为规范 tool_calls 形态并清掉泄漏的原始文本，
+        # 否则后续 role:tool 引用的 tool_call_id 在历史中找不到，部分模板会报错。
+        synth_tcs, calls = [], []
+        for i, c in enumerate(text_calls):
+            cid = f"call_text_{i}_{uuid.uuid4().hex[:8]}"
+            args_str = json.dumps(c["arguments"], ensure_ascii=False)
+            synth_tcs.append({
+                "id": cid, "type": "function",
+                "function": {"name": c["name"], "arguments": args_str},
+            })
+            calls.append((cid, c["name"], args_str))
+        self.memory.add_message({"role": "assistant", "content": None, "tool_calls": synth_tcs})
+        logger.warning("[Agent] 服务端未返回原生 tool_calls，已从文本兜底解析 %d 个: %s",
+                       len(calls), [c[1] for c in calls])
+        return calls
 
     async def _execute_tool(self, name: str, args: dict) -> tuple[dict, str]:
         if name == "read_skill":
