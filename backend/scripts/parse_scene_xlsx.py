@@ -19,12 +19,14 @@ parse_scene_xlsx.py — 将场景类 xlsx 转换为 JSON
 """
 
 import json
+import logging
 import os
-import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
 _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
 # ── 配置区（按需增删）────────────────────────────────────────────────
 CONFIGS = [
@@ -86,7 +88,7 @@ def convert_row(scene_key: str, content_str: str, level: str,
     """将一行 Excel 数据转换为目标结构。"""
     obj = parse_content(content_str)
     if obj is None:
-        print(f"[警告] SCENEKEY={scene_key!r} 的 CONTENT 解析失败，跳过", file=sys.stderr)
+        logging.warning("SCENEKEY=%r 的 CONTENT 解析失败，跳过", scene_key)
         return None
 
     return {
@@ -110,7 +112,7 @@ def process_one(cfg: dict) -> None:
     output_file = cfg["output_file"]
 
     if not os.path.exists(input_file):
-        print(f"[跳过] 文件不存在: {input_file}")
+        logging.info("文件不存在，跳过: %s", input_file)
         return
 
     import openpyxl
@@ -122,7 +124,7 @@ def process_one(cfg: dict) -> None:
         idx_key = headers.index("SCENEKEY")
         idx_content = headers.index("CONTENT")
     except ValueError:
-        print(f"[错误] [{level}] 找不到必要列，实际表头: {headers}", file=sys.stderr)
+        logging.error("[%s] 找不到必要列，实际表头: %s", level, headers)
         return
 
     id_prefix = cfg["id_prefix"]
@@ -142,14 +144,14 @@ def process_one(cfg: dict) -> None:
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(scenes, f, ensure_ascii=False, indent=2)
 
-    print(f"[{level}] 完成，共 {len(scenes)} 条 → {output_file}")
+    logging.info("[%s] 完成，共 %d 条 → %s", level, len(scenes), output_file)
 
 
 def main():
     try:
         import openpyxl  # noqa: F401
     except ImportError:
-        print("[错误] 请先安装 openpyxl: pip install openpyxl", file=sys.stderr)
+        logging.error("请先安装 openpyxl: pip install openpyxl")
         sys.exit(1)
 
     for cfg in CONFIGS:
