@@ -15,6 +15,7 @@ generate_description.py — 批量为评估项.xlsx 生成 DESCRIPTION 列
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import sys
@@ -32,12 +33,14 @@ import openpyxl
 from llm.config import LLMConfig
 from services.llm_service import LLMService
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
 # ── 配置区 ────────────────────────────────────────────────────────────
-_KB_DIR     = _BACKEND_DIR / "expert_knowledge"
-INPUT_FILE  = _KB_DIR / "评估项.xlsx"
+_KB_DIR = _BACKEND_DIR / "expert_knowledge"
+INPUT_FILE = _KB_DIR / "评估项.xlsx"
 PROMPT_FILE = _SCRIPT_DIR / "generate_description_prompt.txt"
-CONCURRENCY = 3      # 并发调用数，避免触发限流
-SKIP_NONEMPTY = True # True=跳过已有 DESCRIPTION 的行，False=全量重新生成
+CONCURRENCY = 3       # 并发调用数，避免触发限流
+SKIP_NONEMPTY = True  # True=跳过已有 DESCRIPTION 的行，False=全量重新生成
 # ─────────────────────────────────────────────────────────────────────
 
 
@@ -69,7 +72,7 @@ async def _generate_one(
 async def main() -> None:
     for path, label in [(INPUT_FILE, "评估项.xlsx"), (PROMPT_FILE, "prompt 文件")]:
         if not path.exists():
-            print(f"[错误] {label} 不存在: {path}", file=sys.stderr)
+            logging.error("%s 不存在: %s", label, path)
             sys.exit(1)
 
     prompt_template = _load_prompt()
@@ -81,7 +84,7 @@ async def main() -> None:
     headers = [str(c.value).strip().upper() if c.value else "" for c in ws[1]]
 
     if "CONTENT" not in headers:
-        print("[错误] 找不到 CONTENT 列", file=sys.stderr)
+        logging.error("找不到 CONTENT 列")
         sys.exit(1)
     idx_content = headers.index("CONTENT") + 1  # openpyxl 列号从 1 开始
 
@@ -92,39 +95,39 @@ async def main() -> None:
     else:
         idx_desc = len(headers) + 1
         ws.cell(row=1, column=idx_desc, value="DESCRIPTION")
-        print(f"[信息] 已新增 DESCRIPTION 列（第 {idx_desc} 列）")
+        logging.info("已新增 DESCRIPTION 列（第 %d 列）", idx_desc)
 
     # ── 收集需处理的行 ───────────────────────────────────────────────
     rows_to_process: list[tuple[int, str, str]] = []
     for row_idx in range(2, ws.max_row + 1):
         content_val = ws.cell(row=row_idx, column=idx_content).value
-        desc_val    = ws.cell(row=row_idx, column=idx_desc).value
-        name        = str(ws.cell(row=row_idx, column=idx_key).value or "").strip() \
-                      if idx_key else f"行{row_idx}"
+        desc_val = ws.cell(row=row_idx, column=idx_desc).value
+        name = str(ws.cell(row=row_idx, column=idx_key).value or "").strip() \
+            if idx_key else f"行{row_idx}"
 
         content_str = str(content_val).strip() if content_val else ""
         if not content_str:
             continue
 
         if SKIP_NONEMPTY and desc_val and str(desc_val).strip():
-            print(f"[跳过] {name}（已有 description）")
+            logging.info("跳过 %s（已有 description）", name)
             continue
 
         expand_logic = _get_expand_logic(content_str)
         if not expand_logic:
-            print(f"[跳过] {name}（expandLogic 为空）")
+            logging.info("跳过 %s（expandLogic 为空）", name)
             continue
 
         rows_to_process.append((row_idx, name, expand_logic))
 
     total = len(rows_to_process)
-    print(f"\n共需生成 {total} 条\n")
+    logging.info("共需生成 %d 条", total)
     if total == 0:
-        print("无需处理，退出。")
+        logging.info("无需处理，退出。")
         return
 
     # ── 并发调用 LLM ─────────────────────────────────────────────────
-    sem  = asyncio.Semaphore(CONCURRENCY)
+    sem = asyncio.Semaphore(CONCURRENCY)
     done = 0
     failed = 0
 
@@ -136,20 +139,20 @@ async def main() -> None:
                 ws.cell(row=row_idx, column=idx_desc, value=desc)
                 done += 1
                 preview = desc[:80] + ("…" if len(desc) > 80 else "")
-                print(f"[{done + failed}/{total}] ✓ {name}\n  {preview}\n")
+                logging.info("[%d/%d] ✓ %s\n  %s", done + failed, total, name, preview)
             except Exception as exc:
                 failed += 1
-                print(f"[{done + failed}/{total}] ✗ {name}: {exc}\n", file=sys.stderr)
+                logging.error("[%d/%d] ✗ %s: %s", done + failed, total, name, exc)
 
     await asyncio.gather(*[_process(r, n, e) for r, n, e in rows_to_process])
 
     # ── 备份 + 保存 ──────────────────────────────────────────────────
     backup = INPUT_FILE.with_suffix(".bak.xlsx")
     shutil.copy(INPUT_FILE, backup)
-    print(f"原文件已备份至 {backup.name}")
+    logging.info("原文件已备份至 %s", backup.name)
 
     wb.save(INPUT_FILE)
-    print(f"完成：成功 {done} 条，失败 {failed} 条 → {INPUT_FILE}")
+    logging.info("完成：成功 %d 条，失败 %d 条 → %s", done, failed, INPUT_FILE)
 
 
 if __name__ == "__main__":

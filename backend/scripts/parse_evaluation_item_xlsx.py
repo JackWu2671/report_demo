@@ -30,6 +30,7 @@ Excel 列说明:
 """
 
 import json
+import logging
 import os
 import re
 import sys
@@ -38,11 +39,13 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
 _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
 # ── 配置区 ────────────────────────────────────────────────────────────
-INPUT_FILE  = os.path.join(_KB_DIR, "评估项.xlsx")
+INPUT_FILE = os.path.join(_KB_DIR, "评估项.xlsx")
 OUTPUT_FILE = os.path.join(_KB_DIR, "评估项.json")
-ID_PREFIX   = "L4"   # 短 id 前缀，生成 L4_001 / L4_002 ...
-ID_START    = 1      # 起始序号
+ID_PREFIX = "L4"   # 短 id 前缀，生成 L4_001 / L4_002 ...
+ID_START = 1       # 起始序号
 # ─────────────────────────────────────────────────────────────────────
 
 
@@ -103,7 +106,7 @@ def convert_row(
     try:
         obj = json.loads(content_str)
     except (json.JSONDecodeError, TypeError):
-        print(f"[警告] SCENEKEY={scene_key!r} CONTENT 解析失败，跳过", file=sys.stderr)
+        logging.warning("SCENEKEY=%r CONTENT 解析失败，跳过", scene_key)
         return None
 
     expand_logic = obj.get("expandLogic", "")
@@ -116,23 +119,22 @@ def convert_row(
     condition_queries = parse_condition_queries(xl_condition_queries) \
         or extract_condition_queries(condition)
 
-    # description: Excel 列优先，为空时回退到 CONTENT.description
-    description = xl_description.strip() if xl_description and xl_description.strip() \
-        else obj.get("description", "")
+    # description: Excel 列优先，为空时留空
+    description = xl_description.strip() if xl_description and xl_description.strip() else ""
 
     return {
-        "uuid":              obj.get("id", ""),
-        "id":                make_short_id(index),
-        "name":              obj.get("name", scene_key),
-        "level":             4,
-        "description":       description,
-        "keywords":          obj.get("keyWords") or [],
-        "sampleIssue":       obj.get("sampleIssue", ""),
-        "condition":         condition,
+        "uuid": obj.get("id", ""),
+        "id": make_short_id(index),
+        "name": obj.get("name", scene_key),
+        "level": 4,
+        "description": description,
+        "keywords": obj.get("keyWords") or [],
+        "sampleIssue": obj.get("sampleIssue", ""),
+        "condition": condition,
         "condition_queries": condition_queries,
         "summarySuggestion": obj.get("summarySuggestion") or "",
-        "template":          expand_logic,
-        "dimensions":        obj.get("metrics") or [],
+        "template": expand_logic,
+        "dimensions": obj.get("metrics") or [],
     }
 
 
@@ -142,11 +144,11 @@ def main():
     try:
         import openpyxl
     except ImportError:
-        print("[错误] 请先安装 openpyxl: pip install openpyxl", file=sys.stderr)
+        logging.error("请先安装 openpyxl: pip install openpyxl")
         sys.exit(1)
 
     if not os.path.exists(INPUT_FILE):
-        print(f"[错误] 文件不存在: {INPUT_FILE}", file=sys.stderr)
+        logging.error("文件不存在: %s", INPUT_FILE)
         sys.exit(1)
 
     wb = openpyxl.load_workbook(INPUT_FILE, data_only=True)
@@ -156,33 +158,33 @@ def main():
 
     # 必要列
     try:
-        idx_key     = headers.index("SCENEKEY")
+        idx_key = headers.index("SCENEKEY")
         idx_content = headers.index("CONTENT")
     except ValueError:
-        print(f"[错误] 找不到必要列 SCENEKEY/CONTENT，实际表头: {headers}", file=sys.stderr)
+        logging.error("找不到必要列 SCENEKEY/CONTENT，实际表头: %s", headers)
         sys.exit(1)
 
     # 可选新增列（兼容旧版 Excel）
     def _col(name: str) -> int:
         return headers.index(name) if name in headers else -1
 
-    idx_condition         = _col("CONDITION")
+    idx_condition = _col("CONDITION")
     idx_condition_queries = _col("CONDITION_QUERIES")
-    idx_description       = _col("DESCRIPTION")
+    idx_description = _col("DESCRIPTION")
 
     if idx_condition < 0:
-        print("[提示] 未找到 CONDITION 列，将从 expandLogic 自动提取")
+        logging.info("未找到 CONDITION 列，将从 expandLogic 自动提取")
     if idx_condition_queries < 0:
-        print("[提示] 未找到 CONDITION_QUERIES 列，condition_queries 将为空列表")
+        logging.info("未找到 CONDITION_QUERIES 列，condition_queries 将为空列表")
     if idx_description < 0:
-        print("[提示] 未找到 DESCRIPTION 列，将使用 CONTENT.description 字段")
+        logging.info("未找到 DESCRIPTION 列，description 将留空")
 
     def _cell(row, idx: int) -> str:
         return str(row[idx]).strip() if idx >= 0 and row[idx] is not None else ""
 
     items = []
     for row in ws.iter_rows(min_row=2, values_only=True):
-        scene_key   = _cell(row, idx_key)
+        scene_key = _cell(row, idx_key)
         content_str = _cell(row, idx_content)
         if not scene_key and not content_str:
             continue
@@ -197,19 +199,19 @@ def main():
         if item:
             items.append(item)
 
-    has_cond  = sum(1 for it in items if it["condition"])
-    has_cq    = sum(1 for it in items if it["condition_queries"])
-    has_desc  = sum(1 for it in items if it["description"])
+    has_cond = sum(1 for it in items if it["condition"])
+    has_cq = sum(1 for it in items if it["condition_queries"])
+    has_desc = sum(1 for it in items if it["description"])
 
-    print(f"转换完成，共 {len(items)} 条 [评估项]")
-    print(f"  有 condition:         {has_cond}")
-    print(f"  有 condition_queries: {has_cq}")
-    print(f"  有 description:       {has_desc}")
-    print(f"  id 范围: {make_short_id(ID_START)} ~ {make_short_id(ID_START + len(items) - 1)}")
+    logging.info("转换完成，共 %d 条 [评估项]", len(items))
+    logging.info("  有 condition: %d", has_cond)
+    logging.info("  有 condition_queries: %d", has_cq)
+    logging.info("  有 description: %d", has_desc)
+    logging.info("  id 范围: %s ~ %s", make_short_id(ID_START), make_short_id(ID_START + len(items) - 1))
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(items, f, ensure_ascii=False, indent=2)
-    print(f"→ {OUTPUT_FILE}")
+    logging.info("→ %s", OUTPUT_FILE)
 
 
 if __name__ == "__main__":

@@ -18,19 +18,21 @@ build_knowledge_relations.py — 从各层级 JSON 自动生成 knowledge_relati
 """
 
 import json
+import logging
 import os
 import shutil
-import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
 _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
 # ── 配置区 ────────────────────────────────────────────────────────────
 # 按层级顺序列出，前三个用 UUID 匹配，最后一个用 name 匹配
 UUID_LEVELS = ["场景.json", "子场景.json", "评估维度.json"]
-NAME_LEVEL  = "评估项.json"
-LEAF_LEVEL  = "评估指标.json"
+NAME_LEVEL = "评估项.json"
+LEAF_LEVEL = "评估指标.json"
 OUTPUT_FILE = os.path.join(_KB_DIR, "knowledge_relations.json")
 # ─────────────────────────────────────────────────────────────────────
 
@@ -38,7 +40,7 @@ OUTPUT_FILE = os.path.join(_KB_DIR, "knowledge_relations.json")
 def load_json(filename: str) -> list[dict]:
     path = os.path.join(_KB_DIR, filename)
     if not os.path.exists(path):
-        print(f"[跳过] 文件不存在: {filename}")
+        logging.info("文件不存在，跳过: %s", filename)
         return []
     with open(path, encoding="utf-8") as f:
         return json.load(f)
@@ -46,8 +48,8 @@ def load_json(filename: str) -> list[dict]:
 
 def main():
     # ── 建立查找表 ─────────────────────────────────────────────────────
-    uuid_to_id: dict[str, str] = {}   # uuid → id（所有层级）
-    name_to_id: dict[str, str] = {}   # name → id（仅评估指标）
+    uuid_to_id: dict[str, str] = {}  # uuid → id（所有层级）
+    name_to_id: dict[str, str] = {}  # name → id（仅评估指标）
 
     all_files = UUID_LEVELS + [NAME_LEVEL, LEAF_LEVEL]
     all_data: dict[str, list[dict]] = {}
@@ -65,7 +67,7 @@ def main():
 
     # ── 生成关系 ───────────────────────────────────────────────────────
     relations = []
-    missing   = 0
+    missing = 0
 
     # 场景 / 子场景 / 评估维度 → 下一层（UUID 匹配）
     for filename in UUID_LEVELS:
@@ -74,14 +76,14 @@ def main():
             dims = record.get("dimensions") or []
             for dim in dims:
                 child_uuid = dim.get("uuid", "")
-                child_id   = uuid_to_id.get(child_uuid)
+                child_id = uuid_to_id.get(child_uuid)
                 if not child_id:
                     missing += 1
                     continue
                 relations.append({
                     "parent": parent_id,
-                    "child":  child_id,
-                    "order":  dim.get("rank") or len(relations) + 1,
+                    "child": child_id,
+                    "order": dim.get("rank") or len(relations) + 1,
                 })
 
     # 评估项 → 评估指标（name 匹配）
@@ -95,19 +97,20 @@ def main():
                 continue
             relations.append({
                 "parent": parent_id,
-                "child":  child_id,
-                "order":  i + 1,
+                "child": child_id,
+                "order": i + 1,
             })
 
     # ── 输出 ───────────────────────────────────────────────────────────
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(relations, f, ensure_ascii=False, indent=2)
 
-    print(f"\n生成完成，共 {len(relations)} 条关系，{missing} 条未匹配（子节点数据不存在）→ {OUTPUT_FILE}")
+    logging.info("生成完成，共 %d 条关系，%d 条未匹配（子节点数据不存在）→ %s",
+                 len(relations), missing, OUTPUT_FILE)
 
     sync_target = os.path.join(_KB_DIR, "relation.json")
     shutil.copy(OUTPUT_FILE, sync_target)
-    print(f"→ 已同步到 relation.json")
+    logging.info("已同步到 relation.json")
 
 
 if __name__ == "__main__":

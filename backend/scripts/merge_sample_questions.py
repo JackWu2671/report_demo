@@ -17,20 +17,22 @@ merge_sample_questions.py — 合并 appSampleQuestion.json 和 sampleQuestion.j
 """
 
 import json
+import logging
 import os
-import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
 _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
 INPUT_FILES = [
     os.path.join(_KB_DIR, "appSampleQuestion.json"),
     os.path.join(_KB_DIR, "sampleQuestion.json"),
 ]
-OUTPUT_FILE  = os.path.join(_KB_DIR, "评估指标.json")
-NODE_PREFIX  = "L5"
-NODE_START   = 1
+OUTPUT_FILE = os.path.join(_KB_DIR, "评估指标.json")
+NODE_PREFIX = "L5"
+NODE_START = 1
 
 FIELDS = ["id", "question", "answer", "domain", "renderType", "colX", "colY"]
 
@@ -77,14 +79,14 @@ def main():
     for path in INPUT_FILES:
         filename = os.path.basename(path)
         if not os.path.exists(path):
-            print(f"[警告] 文件不存在，跳过: {path}", file=sys.stderr)
+            logging.warning("文件不存在，跳过: %s", path)
             continue
 
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         if not isinstance(data, list):
-            print(f"[错误] {filename} 不是 JSON 数组，跳过", file=sys.stderr)
+            logging.error("%s 不是 JSON 数组，跳过", filename)
             continue
 
         before = len(merged)
@@ -96,19 +98,23 @@ def main():
                 dup += 1
                 continue
             seen_ids.add(rid)
-            item["id"]    = make_node_id(NODE_START + len(merged))
+            item["id"] = make_node_id(NODE_START + len(merged))
             item["level"] = 5
             # 调整字段顺序：id / level 放最前
             item = {"id": item.pop("id"), "level": item.pop("level"), **item}
             merged.append(item)
 
         added = len(merged) - before
-        print(f"[{filename}] 读入 {len(data)} 条，新增 {added} 条，跳过重复 {dup} 条")
+        logging.info("[%s] 读入 %d 条，新增 %d 条，跳过重复 %d 条", filename, len(data), added, dup)
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
 
-    print(f"\n合并完成，共 {len(merged)} 条，nodeId 范围: {make_node_id(NODE_START)} ~ {make_node_id(NODE_START + len(merged) - 1)} → {OUTPUT_FILE}")
+    logging.info("合并完成，共 %d 条，nodeId 范围: %s ~ %s → %s",
+                 len(merged),
+                 make_node_id(NODE_START),
+                 make_node_id(NODE_START + len(merged) - 1),
+                 OUTPUT_FILE)
 
 
 if __name__ == "__main__":
