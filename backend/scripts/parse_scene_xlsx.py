@@ -29,24 +29,24 @@ _KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
 # ── 配置区（按需增删）────────────────────────────────────────────────
 CONFIGS = [
     {
-        "level":       1,
-        "id_prefix":   "L1",
-        "id_start":    1,
-        "input_file":  os.path.join(_KB_DIR, "场景.xlsx"),
+        "level": 1,
+        "id_prefix": "L1",
+        "id_start": 1,
+        "input_file": os.path.join(_KB_DIR, "场景.xlsx"),
         "output_file": os.path.join(_KB_DIR, "场景.json"),
     },
     {
-        "level":       2,
-        "id_prefix":   "L2",
-        "id_start":    1,
-        "input_file":  os.path.join(_KB_DIR, "子场景.xlsx"),
+        "level": 2,
+        "id_prefix": "L2",
+        "id_start": 1,
+        "input_file": os.path.join(_KB_DIR, "子场景.xlsx"),
         "output_file": os.path.join(_KB_DIR, "子场景.json"),
     },
     {
-        "level":       3,
-        "id_prefix":   "L3",
-        "id_start":    1,
-        "input_file":  os.path.join(_KB_DIR, "评估维度.xlsx"),
+        "level": 3,
+        "id_prefix": "L3",
+        "id_start": 1,
+        "input_file": os.path.join(_KB_DIR, "评估维度.xlsx"),
         "output_file": os.path.join(_KB_DIR, "评估维度.json"),
     },
 ]
@@ -60,7 +60,7 @@ def parse_dimensions(raw) -> list[dict]:
     result = []
     for d in raw:
         result.append({
-            "uuid": d.get("id",   ""),
+            "uuid": d.get("id", ""),
             "name": d.get("name", ""),
             "rank": d.get("rank", None),
         })
@@ -90,23 +90,23 @@ def convert_row(scene_key: str, content_str: str, level: str,
         return None
 
     return {
-        "uuid":        obj.get("id", ""),
-        "id":          make_short_id(id_prefix, index),
-        "name":        obj.get("name", scene_key),
-        "level":       level,
+        "uuid": obj.get("id", ""),
+        "id": make_short_id(id_prefix, index),
+        "name": obj.get("name", scene_key),
+        "level": level,
         "description": obj.get("description", ""),
         "expandLogic": obj.get("expandLogic", ""),
-        "keywords":    obj.get("keyWords", []),
+        "keywords": obj.get("keyWords", []),
         "sampleIssue": obj.get("sampleIssue", ""),
-        "condition":   "",
-        "dimensions":  parse_dimensions(obj.get("dimensions", [])),
+        "condition": "",
+        "dimensions": parse_dimensions(obj.get("dimensions", [])),
     }
 
 
 def process_one(cfg: dict) -> None:
     """处理单个 xlsx，转换后写入对应 json。"""
-    level       = cfg["level"]
-    input_file  = cfg["input_file"]
+    level = cfg["level"]
+    input_file = cfg["input_file"]
     output_file = cfg["output_file"]
 
     if not os.path.exists(input_file):
@@ -119,18 +119,18 @@ def process_one(cfg: dict) -> None:
 
     headers = [str(cell.value).strip().upper() if cell.value else "" for cell in ws[1]]
     try:
-        idx_key     = headers.index("SCENEKEY")
+        idx_key = headers.index("SCENEKEY")
         idx_content = headers.index("CONTENT")
     except ValueError:
         print(f"[错误] [{level}] 找不到必要列，实际表头: {headers}", file=sys.stderr)
         return
 
     id_prefix = cfg["id_prefix"]
-    id_start  = cfg["id_start"]
+    id_start = cfg["id_start"]
 
     scenes = []
     for row in ws.iter_rows(min_row=2, values_only=True):
-        scene_key   = str(row[idx_key]).strip()    if row[idx_key]     else ""
+        scene_key = str(row[idx_key]).strip() if row[idx_key] else ""
         content_str = str(row[idx_content]).strip() if row[idx_content] else ""
         if not scene_key and not content_str:
             continue
