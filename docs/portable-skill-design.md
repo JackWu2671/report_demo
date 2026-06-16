@@ -39,7 +39,7 @@
 
 ## 3. 可移植性核心原则：产出「文件」而非「事件」
 
-opencode 给 agent 的能力很朴素：`read` / `write` / `bash`。可移植 skill 必须把整条链收敛成「输入一句话 → 输出一个文件」：
+opencode 给 agent 的能力很朴素：`read` / `write` / `bash`。可移植 skill 必须把整条链收敛成「输入一句话 → 输出一组文件」：
 
 ```
 输入：一句话（用户需求原文）
@@ -49,10 +49,38 @@ opencode 给 agent 的能力很朴素：`read` / `write` / `bash`。可移植 sk
   ▼  数据：parallel reference/（知识图谱 + FAISS 索引）
   │
   ▼
-输出：report.md（图表内联，可直接打开/预览）
+输出（多视图产物，见 §3.1）：
+  outline.json / outline.md / outline.yaml   大纲三视图
+  report.md / report.html                     报告两视图
+  report.state.json                           增量用隐藏状态
 ```
 
-没有 session 桥、没有 SSE、没有前端。agent 跑完脚本，磁盘上多出一个 `report.md`。这才是「把全部内容写进 skill」的真正含义——**逻辑、SOP、产出全部收敛进 skill 包内**，外部只剩可配置的服务端点与平行 `reference/` 数据。
+没有 session 桥、没有 SSE、没有前端。agent 跑完脚本，磁盘上多出这组文件，opencode 直接打开。这才是「把全部内容写进 skill」的真正含义——**逻辑、SOP、产出全部收敛进 skill 包内**，外部只剩可配置的服务端点与平行 `reference/` 数据。
+
+### 3.1 多视图产物模型（真源 + 投影）
+
+产物按「同一份结构化真源 → 多种渲染投影」组织，**视图之间不并列可编辑**，否则手改某个视图会与真源漂移。
+
+| 产物 | 角色 | 由谁生成 | 用途 |
+|------|------|----------|------|
+| `outline.json` | **大纲真源**（`outline_tree`） | 检索/编辑流水线 | 机器读、唯一可改对象 |
+| `outline.md` | 大纲投影 | `outline_utils.to_markdown` | 人读、可 diff |
+| `outline.yaml` | 大纲投影 | `outline_utils.to_yaml` | 人读 / agent 上下文格式 |
+| `report.md` | 报告投影（源视图） | `render.py`（Mermaid + 表格） | 可移植、可 diff、opencode 直读 |
+| `report.html` | 报告投影（富视图） | `render.py`（ECharts/chart.js） | 与原前端同等图表保真 |
+| `report.state.json` | **增量隐藏状态** | `render.py` | 存上次 outline 快照 + `report_data` + `summaries`，供下次 diff |
+
+三条铁律（违反任何一条都会导致视图漂移或谎报）：
+
+1. **唯一真源**：结构化数据（`outline.json` + `report.state.json` 内的报告数据）是唯一可信源；其余视图每次变更**整体重投影**，禁止手编 md/yaml/html。
+2. **编辑入口永远是结构**：沿用「修改报告 = 修改大纲」——
+   `用户改 → 改 outline_tree → 重生成大纲三视图 → 增量重渲报告 → 重生成报告两视图`。
+   不存在「直接编辑 report.md / report.html」的路径。
+3. **增量靠持久化状态**：SSE 时代靠前端内存 + session 文件记住「查过哪些指标、结果、哪些总结生成过」（`report_executor._persist_report_data` 写 `report_data`/`report_summaries`）。文件态无常驻前端，故落 `report.state.json`；下次修改 diff 它，复用未变子树、只重渲改动部分（对应现有 `cached_names`/`cached_summary_ids`）。
+
+> **报告两视图为何成立**：`report.md` 用 Mermaid/表格保证可移植与可 diff；`report.html` 内嵌真实图表库，恢复原前端的全保真图表。二者都是同一份报告数据的投影，互不为源。这也取代了早期「只产单 markdown、图表退化」的方案。
+
+> **写入原子性**：一次变更涉及多文件，应「写临时文件 + rename」成组提交，避免出现半更新的视图集合。
 
 ---
 
@@ -122,50 +150,85 @@ report-skill-package/
 
 | 步骤 | 做什么 | 复用现有 |
 |------|--------|----------|
-| 0. 解析入参 | 接收用户一句话 + `--out` | 新增 |
+| 0. 解析入参 | 接收用户一句话 + `--out-dir` | 新增 |
 | 1. 检索 | embed → FAISS → 候选节点树 | `_lib/retriever.search_graph_tree`（`retriever.py:134`） |
 | 2. 选锚点 | 单节点直选 / 多节点选共同祖先（可调 LLM 决策） | SKILL.md 锚点选择原则 → 脚本化 |
 | 3. 展开大纲 | 从锚点展开子树为 outline_tree | `_lib/build_outline_from_anchor` |
 | 4. 自动修剪 | 删除与需求无关分支（一句话场景由 LLM 一次判定，不等用户） | `_lib/patcher` + LLM |
-| 5. 渲染报告 | 遍历 outline_tree，查 SQL、判 condition、生成总结 | `report_executor.run_report`（`report_executor.py:37`） |
-| 6. 落地文件 | 把指标/图表/总结组装成 Markdown 写盘 | **新增 render sink，替代 SSE** |
+| 5. 写大纲三视图 | `outline_tree` → json/md/yaml 落盘 | `outline_utils.to_clean_json/to_markdown/to_yaml` |
+| 6. 渲染报告 | 遍历 outline_tree，查 SQL、判 condition、生成总结 | `report_executor.run_report`（`report_executor.py:37`） |
+| 7. 写报告两视图 + 状态 | 事件 → report.md / report.html + report.state.json | **新增 render sink，替代 SSE** |
 
-### 6.1 关键改造：渲染从「推事件」改为「写文件」
+> 修改场景从步骤 4 进入：改 `outline.json`（真源）→ 重做步骤 5 → 步骤 6 带 `report.state.json`
+> 做增量 → 重做步骤 7。详见 §6.3。
+
+### 6.1 大纲三视图
+
+`outline_tree`（步骤 3/4 的产物）即真源，三视图全部由它投影，每次变更整体重写：
+
+```python
+# 落大纲三视图
+clean = to_clean_json(outline_tree)
+write_atomic("outline.json", json.dumps(clean, ensure_ascii=False, indent=2))
+write_atomic("outline.md",   to_markdown(clean))
+write_atomic("outline.yaml", to_yaml(clean))
+```
+
+### 6.2 报告两视图：渲染从「推事件」改为「写文件」
 
 现在 `report_executor.run_report(outline_tree, on_event=...)` 通过回调把
 `report_metric` / `report_summary` / `report_skip` 事件推给前端
 （`report_executor.py:37`）。它的回调是注入的——**这正是解耦点**。
 
-移植时只需提供一个**收集型 on_event**，把事件累积进内存，最后按大纲顺序拼成 Markdown：
+移植时提供一个**收集型 on_event**，把事件累积进内存，最后同时投影出 md 与 html，并写增量状态：
 
 ```python
 # render.py（伪代码）
-buf = []   # 按大纲顺序收集
+metrics, summaries, skipped = {}, {}, set()
 def on_event(ev):
-    if ev["type"] == "report_metric":
-        buf.append(render_metric(ev))     # 表格 / 图表
-    elif ev["type"] == "report_summary":
-        buf.append(ev["chunk"])
-    elif ev["type"] == "report_skip":
-        pass                              # 条件不满足，跳过整章
+    t = ev["type"]
+    if t == "report_metric":   metrics[ev["name"]] = ev           # 含 rows/render_type/colX/colY
+    elif t == "report_summary": summaries[ev["node_id"]] = ev["chunk"]
+    elif t == "report_skip":    skipped.add(ev["node_id"])
 
-run_report(outline_tree, on_event=on_event, session_id="")
-Path(out).write_text(assemble_markdown(outline_tree, buf))
+# 增量：带上次状态，未变子树复用、只重渲改动部分（见 §6.3）
+prev = load_state("report.state.json")
+run_report(outline_tree, on_event=on_event, session_id="",
+           cached_names=prev.cached_names, cached_summary_ids=prev.cached_summary_ids)
+
+write_atomic("report.md",   assemble_md(outline_tree, metrics, summaries, skipped))   # Mermaid+表格
+write_atomic("report.html", assemble_html(outline_tree, metrics, summaries, skipped)) # ECharts
+write_atomic("report.state.json", dump_state(outline_tree, metrics, summaries))
 ```
 
-> `run_report` 已经把 LLM/SQL 客户端做成可独立创建（`DeApiClient` / `LLMService.from_env` /
-> `SqlExecutor`），只要 env 配好端点即可在 skill 进程内直接运行，无需 backend 主进程。
+> `run_report` 已把 LLM/SQL 客户端做成可独立创建（`DeApiClient` / `LLMService.from_env` /
+> `SqlExecutor`），env 配好端点即可在 skill 进程内直接运行，无需 backend 主进程。
 
-### 6.2 图表如何落地（前端 ECharts 不存在了）
+**两视图的图表策略**（同一份 `rows / render_type / colX / colY`，两种投影）：
 
-前端原先用 `render_type / colX / colY / rows` 渲染 ECharts（BAR/LINE/PIE）。
-Markdown 文件里没有 React，按可移植性优先级：
+| 视图 | BAR/LINE/PIE | TABLE / 兜底 | 特点 |
+|------|--------------|--------------|------|
+| `report.md` | **Mermaid**（`pie` / `xychart-beta`） | Markdown 表格 | 纯文本、可 diff、opencode 直读 |
+| `report.html` | **ECharts/chart.js**（与原前端同保真） | HTML 表格 | 富渲染，离线自包含（图表库内联或 CDN） |
 
-1. **Mermaid 图表**（推荐）：`pie` / `xychart-beta` 等，GitHub、VS Code、多数 Markdown 预览器原生渲染，纯文本、可 diff。
-2. **Markdown 表格回退**：任何渲染器都认，作为 Mermaid 不支持图型时的兜底。
-3. （可选）**matplotlib 出 PNG 内嵌**：最像原前端，但引入重依赖、产物非纯文本，默认不选。
+`render_type → 图表`的映射逻辑集中在 `render.py`，md/html 各一套 emitter，数据入口共用。
 
-设计决策：**BAR/PIE/LINE → Mermaid，TABLE 及兜底 → Markdown 表格**。`render_type` 的映射逻辑集中在 `render.py`。
+### 6.3 增量修改（report.state.json）
+
+`report.state.json` 是文件态对原 session 文件 `report_data`/`report_summaries` 的等价物
+（`report_executor._persist_report_data`，`report_executor.py:63`），结构：
+
+```jsonc
+{
+  "outline_tree": { ... },              // 上次的大纲快照，用于 diff
+  "report_data":  { "指标名": [rows] }, // 上次各指标查询结果
+  "summaries":    { "node_id": "文本" } // 上次各节点总结
+}
+```
+
+修改时 `render.py` 用它推出 `cached_names`（数据可复用的指标）与 `cached_summary_ids`
+（总结可复用的节点）传给 `run_report`，未变子树不再查 SQL / 不再调 LLM，只重渲改动部分——
+直接复用 `report_executor` 既有的缓存语义，无需新增执行逻辑。
 
 ---
 
@@ -179,7 +242,8 @@ name: generate-report
 description: >
   一句话生成传送网络分析报告。当用户用自然语言描述网络分析/评估/规划需求
   （超千兆升级、城域网规划、OTN/fgOTN/OSU、覆盖与容量评估、政企专线承载等）时使用。
-  自动检索知识库、构建并修剪大纲、执行指标查询，最终在工作目录产出完整 Markdown 报告文件。
+  自动检索知识库、构建并修剪大纲、执行指标查询，产出大纲三视图与报告两视图文件。
+  用户要求修改报告时同样用本 skill：改大纲真源 → 三视图同步、报告增量重渲。
   不适用于与传送网络无关的一般对话。
 ---
 ```
@@ -189,12 +253,22 @@ description: >
 ```markdown
 # 一句话生成报告
 
+## 首次生成
 用户描述网络分析需求时，直接运行入口脚本，全链路自动完成：
 
-    python3 $SKILL_DIR/scripts/generate_report.py "<用户需求原话>" --out report.md
+    python3 $SKILL_DIR/scripts/generate_report.py "<用户需求原话>" --out-dir ./out
 
-脚本内部依次完成：检索知识库 → 选锚点 → 展开大纲 → 自动修剪 → 执行查询 → 渲染。
-完成后告知用户报告已生成在 ./report.md，并用 1-2 句话概述报告涵盖的主要章节。
+脚本内部依次完成：检索 → 选锚点 → 展开大纲 → 自动修剪 → 写大纲三视图 → 执行查询 → 写报告两视图。
+产物：out/outline.{json,md,yaml}、out/report.{md,html}、out/report.state.json。
+完成后告知用户报告已生成（指向 out/report.md 与 out/report.html），用 1-2 句概述主要章节。
+
+## 修改报告（= 修改大纲）
+报告/大纲已存在时，用户的后续输入优先理解为修改指令。改的是大纲真源，绝不直接编辑渲染文件：
+
+    python3 $SKILL_DIR/scripts/modify_report.py --out-dir ./out --ops '<结构化修改>'
+
+脚本改 outline.json → 大纲三视图同步重写 → 借 report.state.json 增量重渲报告两视图
+（未变章节复用、不重复查 SQL/调 LLM）。
 
 ## 失败处理
 - 检索无命中（not_found）→ 如实告知知识库未覆盖该场景，不要编造、不要重试。
@@ -202,21 +276,24 @@ description: >
 
 ## 不要做
 - 不要在对话里粘贴大纲或报告全文；产物在文件里。
+- 不要手编 outline.md/yaml 或 report.md/html——它们是投影，改动只走 outline.json。
 - 用户只是闲聊时，不调用脚本。
 ```
 
-> 进阶（多轮修改大纲）可作为 Level 2 文档（`reference.md`）渐进披露，保持主 SOP 聚焦「一句话」。
+> 进阶（结构化修改操作清单）可作为 Level 2 文档（`reference.md`）渐进披露，保持主 SOP 聚焦「一句话」。
 
 ---
 
 ## 8. 入口脚本接口
 
 ```
-generate_report.py "<需求原话>" [--out report.md] [--format md]
+generate_report.py "<需求原话>" [--out-dir ./out]
                     [--reference-dir DIR] [--no-mock] [--top-k N]
+modify_report.py    --out-dir ./out --ops '<json>'   # 改大纲真源 → 三视图同步 + 报告增量重渲
 
 退出码：0 成功 / 2 检索无命中 / 3 服务不可达 / 1 其他错误
-stdout：成功时打印产物路径 + 章节概览（JSON 或纯文本，供 agent 转述）
+stdout：成功时打印产物路径清单 + 章节概览（JSON 或纯文本，供 agent 转述）
+产物目录：outline.{json,md,yaml}、report.{md,html}、report.state.json（见 §3.1）
 ```
 
 设计要点：
@@ -309,11 +386,12 @@ skill 不打包重计算服务，仅通过 env 指向：
 
 ## 13. 待决问题与风险
 
-1. **图表保真度**：Mermaid 能覆盖大部分 BAR/PIE/LINE，但复杂图型（多系列/双轴）可能退化为表格。是否接受？
-2. **FAISS 索引随包分发**：索引文件较大且与 Embedding 模型绑定；换模型需重建。是否随包还是首次运行时构建？
-3. **一句话 vs 可控性**：跳过多轮确认提升体验，但用户失去大纲干预机会。是否提供 `--interactive` 或 Level 2 修改 SOP？
-4. **维护双源**：`reference/lib` 与 backend 的同步策略需尽早定（见 §11），否则会漂移。
-5. **SQL API 不可移植**：政企 SQL 执行 API 属内网服务；对外演示场景默认 `FORCE_MOCK`。
+1. **图表保真度**：`report.md` 的 Mermaid 覆盖大部分 BAR/PIE/LINE，复杂图型（多系列/双轴）可能退化为表格；`report.html` 用 ECharts 全保真。md 退化是否接受？
+2. **HTML 自包含 vs CDN**：`report.html` 内嵌图表库（离线可用、体积大）还是引 CDN（轻、需联网）？
+3. **FAISS 索引随包分发**：索引文件较大且与 Embedding 模型绑定；换模型需重建。随包还是首次运行时构建？
+4. **一句话 vs 可控性**：跳过多轮确认提升体验，但用户失去大纲干预机会。`modify_report.py` 是否够，还是需 `--interactive`？
+5. **维护双源**：`reference/lib` 与 backend 的同步策略需尽早定（见 §11），否则会漂移。
+6. **SQL API 不可移植**：政企 SQL 执行 API 属内网服务；对外演示场景默认 `FORCE_MOCK`。
 
 ---
 
@@ -324,12 +402,18 @@ skill 不打包重计算服务，仅通过 env 指向：
    │
    ▼ generate_report.py
    ├─ retrieve.py ──→ Embedding 服务 + reference/index/faiss ──→ 候选节点树
-   ├─ build_outline.py ──→ reference/knowledge/*.json ──→ outline_tree
+   ├─ build_outline.py ──→ reference/knowledge/*.json ──→ outline_tree（真源）
    ├─ (LLM) 自动修剪无关分支
-   ├─ render.py ──→ run_report(on_event=收集器)
+   ├─ 写大纲三视图 ──→ outline.json / outline.md / outline.yaml
+   ├─ render.py ──→ run_report(on_event=收集器, cached_* 来自 report.state.json)
    │                   ├─ SQL API / reference/knowledge/evaluation_mock.json（FORCE_MOCK）
    │                   └─ LLM：condition 判定 + 章节总结
-   └─ 组装 Markdown（Mermaid 图表 + 表格 + 总结）
+   └─ 写报告两视图 + 状态 ──→ report.md（Mermaid+表格） / report.html（ECharts） / report.state.json
    ▼
-report.md   ← opencode 直接打开
+opencode 打开 report.md / report.html
+
+后续修改：
+modify_report.py --ops ... ──→ 改 outline.json（真源）
+   ├─ 大纲三视图同步重写
+   └─ render.py + report.state.json 增量 ──→ 仅改动章节重渲，report 两视图更新
 ```
