@@ -45,7 +45,7 @@ def extract_node(record: dict, desc_field: str | None) -> dict:
         "level":             record.get("level", ""),
         "name":              record.get("name", ""),
         "description":       record.get(desc_field, "") if desc_field else "",
-        "detail":            record.get("detail", ""),
+        "expandLogic":       record.get("expandLogic", ""),
         "condition":         record.get("condition", ""),
         "condition_queries": record.get("condition_queries", []),
         "summarySuggestion": record.get("summarySuggestion", ""),

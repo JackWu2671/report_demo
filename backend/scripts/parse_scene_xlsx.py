@@ -11,7 +11,7 @@ parse_scene_xlsx.py — 将场景类 xlsx 转换为 JSON
   name        — 场景名称（同 SCENEKEY）
   level       — 由 LEVEL 变量指定
   description — 一句话描述
-  detail      — 详细拓展逻辑（原字段名 expandLogic）
+  expandLogic — 详细拓展逻辑
   keywords    — 关键词列表（原字段名 keyWords）
   sampleIssue — 示例提问
   condition   — 触发条件（原数据无此字段，默认空字符串）
@@ -95,7 +95,7 @@ def convert_row(scene_key: str, content_str: str, level: str,
         "name":        obj.get("name", scene_key),
         "level":       level,
         "description": obj.get("description", ""),
-        "detail":      obj.get("expandLogic", ""),
+        "expandLogic": obj.get("expandLogic", ""),
         "keywords":    obj.get("keyWords", []),
         "sampleIssue": obj.get("sampleIssue", ""),
         "condition":   "",
