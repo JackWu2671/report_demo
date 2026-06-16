@@ -79,6 +79,17 @@ def parse_condition_queries(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def extract_condition_queries(condition: str) -> list[str]:
+    """
+    从 condition 表达式中提取所有 number("指标名") 里的指标名。
+    示例：'${number("AEC覆盖用户数")>0}' → ['AEC覆盖用户数']
+    Excel 无 CONDITION_QUERIES 列时作为回退。
+    """
+    if not condition:
+        return []
+    return re.findall(r'number\("([^"]+)"\)', condition)
+
+
 # ── 行转换 ────────────────────────────────────────────────────────────
 
 def convert_row(
@@ -101,8 +112,9 @@ def convert_row(
     condition = xl_condition.strip() if xl_condition and xl_condition.strip() \
         else extract_condition(expand_logic)
 
-    # condition_queries: 来自 Excel 列
-    condition_queries = parse_condition_queries(xl_condition_queries)
+    # condition_queries: Excel 列优先，为空时从 condition 表达式自动提取
+    condition_queries = parse_condition_queries(xl_condition_queries) \
+        or extract_condition_queries(condition)
 
     # description: Excel 列优先，为空时回退到 CONTENT.description
     description = xl_description.strip() if xl_description and xl_description.strip() \
