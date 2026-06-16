@@ -29,6 +29,8 @@ from dotenv import load_dotenv
 load_dotenv(_BACKEND_DIR / ".env")
 
 import openpyxl
+from openpyxl.workbook import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
 
 from llm.config import LLMConfig
 from services.llm_service import LLMService
@@ -57,11 +59,7 @@ def _get_expand_logic(content_str: str) -> str:
         return ""
 
 
-async def _generate_one(
-    llm: LLMService,
-    prompt_template: str,
-    expand_logic: str,
-) -> str:
+async def _generate_one(llm: LLMService, prompt_template: str, expand_logic: str) -> str:
     prompt = prompt_template.replace("{expand_logic}", expand_logic)
     messages = [{"role": "user", "content": prompt}]
     config = LLMConfig(max_tokens=512, temperature=0.3)
@@ -69,25 +67,22 @@ async def _generate_one(
     return result.strip()
 
 
-async def main() -> None:
+def _validate_inputs() -> None:
     for path, label in [(INPUT_FILE, "评估项.xlsx"), (PROMPT_FILE, "prompt 文件")]:
         if not path.exists():
             logging.error("%s 不存在: %s", label, path)
             sys.exit(1)
 
-    prompt_template = _load_prompt()
-    llm = LLMService.from_env()
 
-    wb = openpyxl.load_workbook(INPUT_FILE)
-    ws = wb.active
-
+def _resolve_columns(ws: Worksheet) -> tuple[int, int | None, int]:
+    """返回 (idx_content, idx_key, idx_desc)，列号均为 1-based。"""
     headers = [str(c.value).strip().upper() if c.value else "" for c in ws[1]]
 
     if "CONTENT" not in headers:
         logging.error("找不到 CONTENT 列")
         sys.exit(1)
-    idx_content = headers.index("CONTENT") + 1  # openpyxl 列号从 1 开始
 
+    idx_content = headers.index("CONTENT") + 1
     idx_key = (headers.index("SCENEKEY") + 1) if "SCENEKEY" in headers else None
 
     if "DESCRIPTION" in headers:
@@ -97,8 +92,17 @@ async def main() -> None:
         ws.cell(row=1, column=idx_desc, value="DESCRIPTION")
         logging.info("已新增 DESCRIPTION 列（第 %d 列）", idx_desc)
 
-    # ── 收集需处理的行 ───────────────────────────────────────────────
-    rows_to_process: list[tuple[int, str, str]] = []
+    return idx_content, idx_key, idx_desc
+
+
+def _collect_rows(
+    ws: Worksheet,
+    idx_content: int,
+    idx_desc: int,
+    idx_key: int | None,
+) -> list[tuple[int, str, str]]:
+    """返回需要生成 description 的行列表：[(row_idx, name, expand_logic)]。"""
+    rows = []
     for row_idx in range(2, ws.max_row + 1):
         content_val = ws.cell(row=row_idx, column=idx_content).value
         desc_val = ws.cell(row=row_idx, column=idx_desc).value
@@ -108,25 +112,26 @@ async def main() -> None:
         content_str = str(content_val).strip() if content_val else ""
         if not content_str:
             continue
-
         if SKIP_NONEMPTY and desc_val and str(desc_val).strip():
             logging.info("跳过 %s（已有 description）", name)
             continue
-
         expand_logic = _get_expand_logic(content_str)
         if not expand_logic:
             logging.info("跳过 %s（expandLogic 为空）", name)
             continue
+        rows.append((row_idx, name, expand_logic))
+    return rows
 
-        rows_to_process.append((row_idx, name, expand_logic))
 
-    total = len(rows_to_process)
-    logging.info("共需生成 %d 条", total)
-    if total == 0:
-        logging.info("无需处理，退出。")
-        return
-
-    # ── 并发调用 LLM ─────────────────────────────────────────────────
+async def _run_batch(
+    llm: LLMService,
+    prompt_template: str,
+    ws: Worksheet,
+    rows: list[tuple[int, str, str]],
+    idx_desc: int,
+) -> tuple[int, int]:
+    """并发调用 LLM，返回 (done, failed)。"""
+    total = len(rows)
     sem = asyncio.Semaphore(CONCURRENCY)
     done = 0
     failed = 0
@@ -144,14 +149,37 @@ async def main() -> None:
                 failed += 1
                 logging.error("[%d/%d] ✗ %s: %s", done + failed, total, name, exc)
 
-    await asyncio.gather(*[_process(r, n, e) for r, n, e in rows_to_process])
+    await asyncio.gather(*[_process(r, n, e) for r, n, e in rows])
+    return done, failed
 
-    # ── 备份 + 保存 ──────────────────────────────────────────────────
+
+def _backup_and_save(wb: Workbook) -> None:
     backup = INPUT_FILE.with_suffix(".bak.xlsx")
     shutil.copy(INPUT_FILE, backup)
     logging.info("原文件已备份至 %s", backup.name)
-
     wb.save(INPUT_FILE)
+
+
+async def main() -> None:
+    _validate_inputs()
+
+    prompt_template = _load_prompt()
+    llm = LLMService.from_env()
+
+    wb = openpyxl.load_workbook(INPUT_FILE)
+    ws = wb.active
+
+    idx_content, idx_key, idx_desc = _resolve_columns(ws)
+    rows = _collect_rows(ws, idx_content, idx_desc, idx_key)
+
+    logging.info("共需生成 %d 条", len(rows))
+    if not rows:
+        logging.info("无需处理，退出。")
+        return
+
+    done, failed = await _run_batch(llm, prompt_template, ws, rows, idx_desc)
+
+    _backup_and_save(wb)
     logging.info("完成：成功 %d 条，失败 %d 条 → %s", done, failed, INPUT_FILE)
 
 
