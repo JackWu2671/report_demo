@@ -240,7 +240,7 @@ body {
    Chat Panel (left)
    ========================================= */
 .chat-panel {
-  width: 40%;
+  width: 30%;
   min-width: 320px;
   display: flex;
   flex-direction: column;
