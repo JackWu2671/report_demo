@@ -16,17 +16,15 @@ generate_description.py — 批量为评估项.xlsx 生成 DESCRIPTION 列
 import asyncio
 import json
 import logging
-import os
 import shutil
 import sys
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).parent
-_BACKEND_DIR = _SCRIPT_DIR.parent
-sys.path.insert(0, str(_BACKEND_DIR))
+# sys.path 调整和环境变量加载属于导入准备，放在本地模块导入之前
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
-load_dotenv(_BACKEND_DIR / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 import openpyxl
 from openpyxl.workbook import Workbook
@@ -35,9 +33,11 @@ from openpyxl.worksheet.worksheet import Worksheet
 from llm.config import LLMConfig
 from services.llm_service import LLMService
 
+# ── 常量（所有 import 完成后统一声明）────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-# ── 配置区 ────────────────────────────────────────────────────────────
+_SCRIPT_DIR = Path(__file__).parent
+_BACKEND_DIR = _SCRIPT_DIR.parent
 _KB_DIR = _BACKEND_DIR / "expert_knowledge"
 INPUT_FILE = _KB_DIR / "评估项.xlsx"
 PROMPT_FILE = _SCRIPT_DIR / "generate_description_prompt.txt"
