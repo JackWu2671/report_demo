@@ -22,14 +22,13 @@ from services.faiss_service import FAISSService
 
 logger = logging.getLogger(__name__)
 
-_DATA_DIR = os.path.join(_BACKEND_DIR, "data")
 _EXPERT_DIR = os.path.join(_BACKEND_DIR, "reference")
 
 
 async def _build_index_if_missing() -> None:
     """索引文件不存在时自动构建，省去手动跑 build_index.py。"""
-    index_path  = os.path.join(_DATA_DIR, "faiss.index")
-    id_map_path = os.path.join(_DATA_DIR, "faiss_id_map.json")
+    index_path  = os.path.join(_EXPERT_DIR, "faiss.index")
+    id_map_path = os.path.join(_EXPERT_DIR, "faiss_id_map.json")
     if os.path.exists(index_path) and os.path.exists(id_map_path):
         return
 
@@ -47,7 +46,6 @@ async def _build_index_if_missing() -> None:
     texts = [n["name"] + " " + " ".join(n.get("keywords", [])) for n in nodes]
     embeddings = await emb_svc.get_embeddings_batch(texts, batch_size=32)
 
-    os.makedirs(_DATA_DIR, exist_ok=True)
     faiss_svc = FAISSService(dim=int(os.getenv("EMBEDDING_DIM", 1024)))
     faiss_svc.build(nodes, embeddings)
     faiss_svc.save(index_path, id_map_path)
@@ -56,7 +54,7 @@ async def _build_index_if_missing() -> None:
 
 async def load_resources() -> tuple[FAISSService, dict, dict]:
     """
-    加载 FAISS 索引（data/faiss.index）和 JSON 知识图谱（reference/）。
+    加载 FAISS 索引（reference/faiss.index）和 JSON 知识图谱（reference/）。
     索引不存在时自动构建。
 
     Returns:
@@ -68,8 +66,8 @@ async def load_resources() -> tuple[FAISSService, dict, dict]:
 
     faiss_svc = FAISSService(dim=int(os.getenv("EMBEDDING_DIM", 1024)))
     faiss_svc.load(
-        os.path.join(_DATA_DIR, "faiss.index"),
-        os.path.join(_DATA_DIR, "faiss_id_map.json"),
+        os.path.join(_EXPERT_DIR, "faiss.index"),
+        os.path.join(_EXPERT_DIR, "faiss_id_map.json"),
     )
 
     with open(os.path.join(_EXPERT_DIR, "node.json"), encoding="utf-8") as f:

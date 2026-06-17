@@ -8,8 +8,8 @@
 | `reference/relation.json` | 知识库关系数据 | 存储节点之间的父子关系（parent → child） |
 | `EmbeddingService` | 向量化服务客户端 | 把文本（节点名称）发给 Embedding 模型，换回一串数字（向量） |
 | `FAISSService` | 向量索引服务 | 存储和检索向量；给一个问题的向量，返回最相似的节点 |
-| `data/faiss.index` | 二进制索引文件 | FAISS 把所有节点向量压缩存在这里，加载后可极速检索 |
-| `data/faiss_id_map.json` | 索引映射文件 | 记录索引里每个位置对应哪个节点（FAISS 内部只存数字，不存名字） |
+| `reference/faiss.index` | 二进制索引文件 | FAISS 把所有节点向量压缩存在这里，加载后可极速检索 |
+| `reference/faiss_id_map.json` | 索引映射文件 | 记录索引里每个位置对应哪个节点（FAISS 内部只存数字，不存名字） |
 | `scripts/build_index.py` | 手动构建脚本 | 手动跑一次，把 node.json 转成 FAISS 索引文件 |
 | `skills/_lib/loader.py` | 启动加载器 | 程序启动时加载索引；发现索引不存在时自动触发构建 |
 | `skills/_lib/retriever.py` | 检索器 | 接收用户问题，完成"向量化 → 检索 → 补全路径"的完整流程 |
@@ -68,8 +68,8 @@ reference/node.json
 ④ 用所有向量构建 FAISS 索引（IndexFlatIP）
          ↓
 ⑤ 保存两个文件：
-   data/faiss.index       ← 向量数据（二进制，不能直接读）
-   data/faiss_id_map.json ← 位置 → 节点映射 [{id, name, level, ...}, ...]
+   reference/faiss.index       ← 向量数据（二进制，不能直接读）
+   reference/faiss_id_map.json ← 位置 → 节点映射 [{id, name, level, ...}, ...]
 ```
 
 FAISS 内部只存位置（0, 1, 2, ...），不存名字。`faiss_id_map.json` 记录"第 0 号是 L1_001，第 1 号是 L2_003..."，检索结果返回位置后靠它翻译成节点信息。
@@ -89,15 +89,15 @@ Embedding: 32/238
 Embedding: 64/238
 ...
 ✅ 索引构建完成，共 238 条向量
-   → backend/data/faiss.index
-   → backend/data/faiss_id_map.json
+   → backend/reference/faiss.index
+   → backend/reference/faiss_id_map.json
 ```
 
 ---
 
 ## 五、FAISS 索引文件不存在时自动构建
 
-`data/faiss.index` 是二进制文件，**不提交到 git**（`.gitignore` 里排除了 `backend/data/`）。
+`reference/faiss.index` 是二进制文件，**不提交到 git**（`.gitignore` 里排除了 `backend/data/`）。
 
 每次新克隆仓库或清空 data 目录后，索引文件就不存在了。系统通过两层机制保证索引始终可用。
 
@@ -270,8 +270,8 @@ path = " > ".join(chain)
 |------|------|
 | `reference/node.json` | 知识节点原始数据（索引的输入） |
 | `reference/relation.json` | 节点父子关系（构建路径和树状结构用） |
-| `data/faiss.index` | FAISS 二进制索引（不提交 git，运行时自动生成） |
-| `data/faiss_id_map.json` | 索引位置 → 节点映射（不提交 git，运行时自动生成） |
+| `reference/faiss.index` | FAISS 二进制索引（不提交 git，运行时自动生成） |
+| `reference/faiss_id_map.json` | 索引位置 → 节点映射（不提交 git，运行时自动生成） |
 | `services/embedding_service.py` | Embedding HTTP 客户端，支持单条和批量 |
 | `services/faiss_service.py` | FAISS 封装：build / save / load / search |
 | `scripts/build_index.py` | 手动构建索引的脚本 |

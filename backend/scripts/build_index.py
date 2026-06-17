@@ -2,15 +2,15 @@
 build_index.py — 构建 FAISS 向量索引。
 
 从 reference/node.json 读取知识节点，
-调用 Embedding 服务获取向量，构建 FAISS 索引并保存到 data/ 目录。
+调用 Embedding 服务获取向量，构建 FAISS 索引并保存到 reference/ 目录。
 
 使用方法:
     cd backend
     python scripts/build_index.py
 
 输出:
-    data/faiss.index        FAISS 向量索引文件
-    data/faiss_id_map.json  节点 ID 映射文件
+    reference/faiss.index        FAISS 向量索引文件
+    reference/faiss_id_map.json  节点 ID 映射文件
 """
 
 import asyncio
@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _EXPERT_DIR = os.path.join(_BASE_DIR, "reference")
-_DATA_DIR = os.path.join(_BASE_DIR, "data")
 
 
 async def build_index() -> None:
@@ -57,16 +56,15 @@ async def build_index() -> None:
     embeddings = await emb_svc.get_embeddings_batch(texts, batch_size=32)
     logger.info(f"Embedding 完成，shape: {embeddings.shape}")
 
-    os.makedirs(_DATA_DIR, exist_ok=True)
     faiss_svc = FAISSService(dim=int(os.getenv("EMBEDDING_DIM", 1024)))
     faiss_svc.build(nodes, embeddings)
     faiss_svc.save(
-        os.path.join(_DATA_DIR, "faiss.index"),
-        os.path.join(_DATA_DIR, "faiss_id_map.json"),
+        os.path.join(_EXPERT_DIR, "faiss.index"),
+        os.path.join(_EXPERT_DIR, "faiss_id_map.json"),
     )
     logger.info(f"✅ 索引构建完成，共 {faiss_svc.total} 条向量")
-    logger.info(f"   → {os.path.join(_DATA_DIR, 'faiss.index')}")
-    logger.info(f"   → {os.path.join(_DATA_DIR, 'faiss_id_map.json')}")
+    logger.info(f"   → {os.path.join(_EXPERT_DIR, 'faiss.index')}")
+    logger.info(f"   → {os.path.join(_EXPERT_DIR, 'faiss_id_map.json')}")
 
 
 if __name__ == "__main__":

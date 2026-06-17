@@ -12,16 +12,17 @@ dist/
 build/
 
 # 知识库构建产物（本地生成，不入库）
-backend/expert_knowledge/node.json
-backend/expert_knowledge/relation.json
-backend/expert_knowledge/评估指标.json
+backend/reference/node.json
+backend/reference/relation.json
+backend/reference/评估指标.json
 
 # FAISS 索引（本地构建，体积大）
 backend/*.faiss
 backend/*.index
 backend/*.pkl
 backend/*.bin
-backend/data/
+backend/reference/faiss.index
+backend/reference/faiss_id_map.json
 
 # 模板（用户本地数据）
 backend/templates/

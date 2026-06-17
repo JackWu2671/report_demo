@@ -210,7 +210,7 @@ reference/
 └── 评估指标_mock.json  # 指标 SQL 定义及离线 mock 数据
 ```
 
-FAISS 索引文件（`data/faiss.index`、`data/faiss_id_map.json`）不提交 git，运行时自动生成。
+FAISS 索引文件（`reference/faiss.index`、`reference/faiss_id_map.json`）不提交 git，运行时自动生成。
 
 ---
 

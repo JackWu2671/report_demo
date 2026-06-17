@@ -110,8 +110,8 @@ python scripts/build_index.py
 构建 FAISS 索引并保存：
 
 ```
-data/faiss.index       → 向量索引
-data/faiss_id_map.json → 索引位置 → 节点 ID 映射
+reference/faiss.index       → 向量索引
+reference/faiss_id_map.json → 索引位置 → 节点 ID 映射
 ```
 
 > **注意**：每次通过知识发布新增节点后，必须重新执行第三步重建索引，新节点才能被检索命中。
