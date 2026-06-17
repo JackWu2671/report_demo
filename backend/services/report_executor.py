@@ -58,6 +58,8 @@ def run_report(
 
     if session_id:
         _persist_report_data(session_id, collected, summaries)
+        from services.temp_store import write_report as _write_temp_report
+        _write_temp_report(session_id, outline_tree, summaries)
 
 
 def _persist_report_data(session_id: str, collected: Dict[str, List], summaries: Dict[str, str]) -> None:

@@ -340,6 +340,8 @@ async def _stream_report(session_id: str, outline_tree: dict, cached_names: set,
                         session.get("markdown", ""),
                         session.get("outline_yaml", ""),
                     )
+                    from services.temp_store import write_outline as _write_temp_outline
+                    _write_temp_outline(session_id, updated_tree, session.get("markdown", ""), session.get("outline_yaml", ""))
                     names = "、".join(f"「{s['node_name']}」" for s in skipped)
                     agent.memory.add_message({
                         "role": "assistant",

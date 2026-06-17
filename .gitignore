@@ -27,6 +27,9 @@ backend/reference/faiss_id_map.json
 # 模板（用户本地数据）
 backend/templates/
 
+# Session 临时文件（运行时生成，不提交）
+backend/temp/
+
 # 环境
 .env
 .env.local

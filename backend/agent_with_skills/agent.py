@@ -47,6 +47,7 @@ if _LIB_DIR not in sys.path:
 from patcher import apply_patch  # noqa: E402
 from outline_utils import to_clean_json, to_markdown, to_yaml  # noqa: E402
 from set_outline_from_markdown import set_outline_from_tree  # noqa: E402
+from services.temp_store import write_outline as _write_temp_outline  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -431,6 +432,7 @@ class AgentWithSkills:
             result["markdown"],
             result["outline_yaml"],
         )
+        _write_temp_outline(self.session_id, result["outline_tree"], result["markdown"], result["outline_yaml"])
         events = [{
             "type":         "outline",
             "markdown":     result["markdown"],
@@ -481,6 +483,7 @@ class AgentWithSkills:
             return {"_events": []}, "\n".join(lines)
 
         self.memory.set_outline(clean_tree, md, yaml_str)
+        _write_temp_outline(self.session_id, clean_tree, md, yaml_str)
         events = [
             {"type": "outline", "markdown": md, "outline_yaml": yaml_str, "outline_tree": clean_tree},
             {"type": "confirm", "options": ["生成报告"]},
@@ -559,6 +562,7 @@ class AgentWithSkills:
         before_outline = before.get("outline_tree") or {}
         if after_outline and after_outline != before_outline:
             self.memory.set_outline(after_outline, after.get("markdown", ""), after.get("outline_yaml", ""))
+            _write_temp_outline(self.session_id, after_outline, after.get("markdown", ""), after.get("outline_yaml", ""))
             events.append({
                 "type":         "outline",
                 "markdown":     after.get("markdown", ""),
