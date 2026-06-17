@@ -161,13 +161,20 @@ edit_node(node_id="L3_002", field="description", value="新描述")
 python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_003\"}]"
 ```
 
-支持的结构 op：
+支持的 op：
 
 | op | 必填字段 | 可选字段 | 说明 |
 |----|---------|---------|------|
 | `add_node` | `node_id`, `parent_id` | `after_id` | 从知识图谱新增节点；node_id 须来自 search_graph_tree 结果 |
-| `delete_node` | `node_id` | — | 删除节点及其全部子树 |
-| `keep_only_node` | `node_id` | — | 保留该节点，同级其他节点自动删除 |
+| `delete_node` | `node_id` | — | 删除节点及其全部子树（**不是** `remove_node`） |
+| `keep_only_node` | `node_id` | — | 保留该节点，删除所有同级兄弟节点 |
+| `modify_node_name` | `node_id`, `value` | — | 修改节点名称；L5 节点改名后自动从 KB 同步 exec_sql 等关联字段 |
+| `modify_node_description` | `node_id`, `value` | — | 修改节点描述（L5 节点禁止） |
+| `modify_node_condition` | `node_id`, `value` | — | 设置或修改节点展示条件 |
+| `modify_node_exec_sql` | `node_id`, `value` | — | 直接修改 L5 节点的 SQL（仅限 L5） |
+| `set_node_field` | `node_id`, `field`, `value` | — | 通用字段赋值（任意字段名） |
+
+> ⚠️ **常见错误**：删除节点必须用 `delete_node`，不存在 `remove_node` 这个 op。
 
 **`add_node` 位置规则（重要）**：
 
