@@ -2,7 +2,7 @@
 patcher.py — 将结构化操作列表应用到大纲树。
 
 支持的 patch 操作:
-  add_node                — 从知识图谱新增节点，挂到指定父节点下
+  add_node                — 新增节点：node_id 在 KB 中存在时从知识图谱拉取完整子树；不在 KB 中时需传 name（和可选 description）创建自定义结构节点
   delete_node             — 删除指定节点及其所有子节点
   modify_node_name        — 修改节点的 name；对 L5 节点会自动从 KB 同步 exec_sql 等所有关联字段
   modify_node_description — 修改节点的 description（L5 query 节点禁止，会被 skip）
@@ -14,7 +14,16 @@ patcher.py — 将结构化操作列表应用到大纲树。
 import copy
 import logging
 import os
+import re
 import sys
+
+_LEVEL_RE = re.compile(r'^(?:new_)?L(\d+)_')
+
+
+def _infer_level_from_id(node_id: str) -> int:
+    """从节点 ID 前缀推断 level，无法识别时默认 4（结构节点）。"""
+    m = _LEVEL_RE.match(node_id)
+    return int(m.group(1)) if m else 4
 
 _LIB_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(os.path.dirname(_LIB_DIR))
@@ -71,10 +80,24 @@ async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[d
                 kb = await _get_kb()
                 subtree = _build_kb_subtree(node_id, kb["nodes_dict"], kb["children_map"])
             if not subtree:
-                msg = f"节点 {node_id} 在知识图谱中不存在"
-                logger.warning("[Step 9] add_node: %s，跳过", msg)
-                skipped.append({**op, "_skip_reason": msg})
-                continue
+                # KB 中不存在时，尝试用 name/description 创建自定义结构节点
+                custom_name = str(op.get("name", "")).strip()
+                if custom_name:
+                    subtree = {
+                        "id":                node_id,
+                        "name":              custom_name,
+                        "level":             _infer_level_from_id(node_id),
+                        "description":       str(op.get("description", "")),
+                        "condition":         "",
+                        "condition_queries": [],
+                        "children":          [],
+                    }
+                    logger.info("[Step 9] add_node: 自定义节点 %s（%r）", node_id, custom_name)
+                else:
+                    msg = f"节点 {node_id} 在知识图谱中不存在，且未提供 name 参数"
+                    logger.warning("[Step 9] add_node: %s，跳过", msg)
+                    skipped.append({**op, "_skip_reason": msg})
+                    continue
             ids_before = _collect_ids(tree)
             parent_id = op.get("parent_id") or ""
             after_id  = op.get("after_id")  or ""

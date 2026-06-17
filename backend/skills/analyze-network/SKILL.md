@@ -161,8 +161,11 @@ edit_node(node_id="L3_002", field="description", value="新描述")
 # 删除节点（注意：是 delete_node，不是 remove_node / remove / del）
 modify_outline(ops=[{"op": "delete_node", "node_id": "L4_003"}])
 
-# 从知识图谱新增节点（node_id 必须来自 search_graph_tree 结果）
+# 从知识图谱新增节点（node_id 来自 search_graph_tree 结果，自动拉取完整子树）
 modify_outline(ops=[{"op": "add_node", "node_id": "L4_013", "parent_id": "L3_002", "after_id": "L4_012"}])
+
+# 新增自定义结构节点（node_id 不在 KB 中时，需传 name，可选 description）
+modify_outline(ops=[{"op": "add_node", "node_id": "new_L3_010", "name": "竞品对比", "description": "与主要竞品的网络能力横向比较", "parent_id": "L2_001"}])
 
 # 保留指定节点，删除其所有同级兄弟
 modify_outline(ops=[{"op": "keep_only_node", "node_id": "L3_005"}])
@@ -176,7 +179,7 @@ modify_outline(ops=[{"op": "delete_node", "node_id": "L4_001"}, {"op": "delete_n
 | op | 必填字段 | 可选字段 | 说明 |
 |----|---------|---------|------|
 | `delete_node` | `node_id` | — | 删除节点及其全部子树 |
-| `add_node` | `node_id`, `parent_id` | `after_id` | 从知识图谱新增节点；node_id 须来自 search_graph_tree 结果 |
+| `add_node` | `node_id`, `parent_id` | `after_id`, `name`, `description` | node_id 在 KB 中时自动拉取完整子树；不在 KB 中时需传 `name`（可选 `description`）创建自定义结构节点 |
 | `keep_only_node` | `node_id` | — | 保留该节点，删除所有同级兄弟节点 |
 
 节点属性修改（name / exec_sql / description / condition 等）→ 用 `edit_node`，不要用 `modify_outline`。

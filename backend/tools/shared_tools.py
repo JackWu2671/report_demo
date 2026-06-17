@@ -92,7 +92,8 @@ MODIFY_OUTLINE_TOOL: dict = {
             "整棵大纲重建用 set_outline。"
             "\n\n【ops 支持的操作类型】"
             "\n- delete_node    删除节点及其全部子树。必填：node_id"
-            "\n- add_node       从知识图谱新增节点，挂到指定父节点下。必填：node_id（来自 search_graph_tree 结果）, parent_id；可选：after_id（插入到此兄弟节点之后）"
+            "\n- add_node       新增节点，挂到指定父节点下。必填：node_id, parent_id；可选：after_id（插入到此兄弟节点之后）。"
+            "node_id 在知识图谱中存在时自动拉取完整子树；不在 KB 中时需额外传 name（和可选 description）创建自定义结构节点"
             "\n- keep_only_node 保留该节点，删除同级所有其他节点。必填：node_id"
             "\n\n节点属性修改（name / exec_sql / description 等）请用 edit_node，不要用 modify_outline。"
             "\n多个独立操作可合并为一次调用。"
@@ -107,12 +108,12 @@ MODIFY_OUTLINE_TOOL: dict = {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "op":        {"type": "string", "description": "操作类型，如 delete_node / add_node / keep_only_node 等"},
-                            "node_id":   {"type": "string", "description": "目标节点 ID"},
-                            "parent_id": {"type": "string", "description": "（add_node 专用）父节点 ID，填新节点的直接父节点，不能填兄弟节点"},
-                            "after_id":  {"type": "string", "description": "（add_node 可选）将新节点插入到此兄弟节点之后；省略则追加到末尾"},
-                            "value":     {"description": "（modify_* 专用）新值，字符串或数组"},
-                            "field":     {"type": "string", "description": "（set_node_field 专用）字段名"},
+                            "op":          {"type": "string", "description": "操作类型：delete_node / add_node / keep_only_node"},
+                            "node_id":     {"type": "string", "description": "目标节点 ID；自定义节点用 new_L<层级>_<序号> 格式"},
+                            "parent_id":   {"type": "string", "description": "（add_node 专用）父节点 ID，填新节点的直接父节点，不能填兄弟节点"},
+                            "after_id":    {"type": "string", "description": "（add_node 可选）将新节点插入到此兄弟节点之后；省略则追加到末尾"},
+                            "name":        {"type": "string", "description": "（add_node 自定义节点专用）节点名称；node_id 不在知识图谱中时必填"},
+                            "description": {"type": "string", "description": "（add_node 自定义节点可选）节点描述"},
                         },
                         "required": ["op", "node_id"],
                     },
