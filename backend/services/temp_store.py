@@ -5,7 +5,7 @@ temp_store.py — 将 session 状态持久化到 backend/temp/{session_id}/
   outline.json      大纲树（JSON）
   outline.md        大纲（Markdown，供人阅读）
   outline.yaml      大纲（YAML，LLM 上下文视图）
-  report_data.json  指标原始数据（供重新渲染用，每指标最多 500 行）
+  report_data.json  指标原始数据（供重新渲染用，全量）
   report.md         最终报告（Markdown，含数据表格 + LLM 总结 + 标题序号）
   report.html       最终报告（HTML，含 ECharts 交互图表，需联网加载 CDN）
 """
@@ -123,15 +123,6 @@ def write_report(
 
 # ── 公共工具 ─────────────────────────────────────────────────
 
-def _find_min_structural_level(node: dict) -> int:
-    """找出树中最浅的非 L5 层级（与前端 buildSkeleton 的 minLevel 逻辑一致）。"""
-    lv = node.get("level", 0)
-    result = lv if (0 < lv < 5) else 999
-    for child in node.get("children", []):
-        result = min(result, _find_min_structural_level(child))
-    return result
-
-
 def _rows_to_md_table(rows: List) -> str:
     if not rows or not isinstance(rows[0], dict):
         return "_（暂无数据）_"
@@ -152,22 +143,18 @@ def _render_report_md(
     summaries: Dict[str, str],
     collected: Dict[str, List],
 ) -> str:
-    min_lv = _find_min_structural_level(outline_tree)
-    if min_lv == 999:
-        min_lv = 1
-
     lines: List[str] = []
-    _cnt: Dict[int, int] = {}   # level → 当前计数，用于自动序号
+    _cnt: Dict[int, int] = {}   # depth → 当前计数，用于自动序号
 
-    def _section_num(level: int) -> str:
+    def _section_num(depth: int) -> str:
         """更新计数器并返回如 "1.2.3" 的序号字符串。"""
-        _cnt[level] = _cnt.get(level, 0) + 1
-        for lv in list(_cnt.keys()):
-            if lv > level:
-                del _cnt[lv]
-        return ".".join(str(_cnt[lv]) for lv in sorted(_cnt.keys()))
+        _cnt[depth] = _cnt.get(depth, 0) + 1
+        for d in list(_cnt.keys()):
+            if d > depth:
+                del _cnt[d]
+        return ".".join(str(_cnt[d]) for d in sorted(_cnt.keys()))
 
-    def _walk(node: dict) -> None:
+    def _walk(node: dict, depth: int = 1) -> None:
         node_id  = node.get("id", "")
         name     = node.get("name", "")
         level    = node.get("level", 0)
@@ -176,11 +163,10 @@ def _render_report_md(
 
         if node_id == "__root__":
             for child in children:
-                _walk(child)
+                _walk(child, depth)   # __root__ 不占一个层级
             return
 
-        # 归一化 heading 深度（与前端 buildSkeleton 一致）
-        h = min(max(1, level - min_lv + 1), 6)
+        h = min(max(1, depth), 6)
         hashes = "#" * h
 
         if level == 5:
@@ -191,14 +177,14 @@ def _render_report_md(
             return
 
         # 结构节点：标题（带序号）+ 描述
-        sec = _section_num(level)
+        sec = _section_num(depth)
         lines.append(f"\n{hashes} {sec} {name}\n")
         if desc:
             lines.append(f"{desc}\n")
 
         # 先渲染所有子节点
         for child in children:
-            _walk(child)
+            _walk(child, depth + 1)
 
         # 再渲染当前节点的 summary（与前端 buildSkeleton 顺序一致）
         if node_id in summaries:
@@ -310,23 +296,19 @@ def _render_report_html(
     summaries: Dict[str, str],
     collected: Dict[str, List],
 ) -> str:
-    min_lv = _find_min_structural_level(outline_tree)
-    if min_lv == 999:
-        min_lv = 1
-
     body_parts:    List[str] = []
     chart_scripts: List[str] = []
     _cnt: Dict[int, int] = {}
     chart_counter = [0]
 
-    def _section_num(level: int) -> str:
-        _cnt[level] = _cnt.get(level, 0) + 1
-        for lv in list(_cnt.keys()):
-            if lv > level:
-                del _cnt[lv]
-        return ".".join(str(_cnt[lv]) for lv in sorted(_cnt.keys()))
+    def _section_num(depth: int) -> str:
+        _cnt[depth] = _cnt.get(depth, 0) + 1
+        for d in list(_cnt.keys()):
+            if d > depth:
+                del _cnt[d]
+        return ".".join(str(_cnt[d]) for d in sorted(_cnt.keys()))
 
-    def _walk(node: dict) -> None:
+    def _walk(node: dict, depth: int = 1) -> None:
         node_id  = node.get("id", "")
         name     = node.get("name", "")
         level    = node.get("level", 0)
@@ -338,10 +320,10 @@ def _render_report_html(
 
         if node_id == "__root__":
             for child in children:
-                _walk(child)
+                _walk(child, depth)   # __root__ 不占一个层级
             return
 
-        h = min(max(1, level - min_lv + 1), 6)
+        h = min(max(1, depth), 6)
         tag = f"h{h}"
 
         if level == 5:
@@ -364,7 +346,7 @@ def _render_report_html(
                 body_parts.append('<p class="no-data">（暂无数据）</p>')
             return
 
-        sec = _section_num(level)
+        sec = _section_num(depth)
         body_parts.append(
             f"<{tag}>{sec}&nbsp;{html.escape(name)}</{tag}>"
         )
@@ -372,7 +354,7 @@ def _render_report_html(
             body_parts.append(f"<p>{html.escape(desc)}</p>")
 
         for child in children:
-            _walk(child)
+            _walk(child, depth + 1)
 
         if node_id in summaries:
             body_parts.append(

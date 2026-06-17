@@ -7,26 +7,16 @@ import QueryInput from '../components/QueryInput'
 // 从大纲树生成带占位符的报告骨架
 // 占位符格式：<!--PH:指标名-->_加载中…_
 // ChatView 收到 report_metric 事件后，用实际数据替换对应占位符
+// heading 层级由节点在树中的深度决定（depth=1 → h1），与节点的 level 字段无关，
+// 保证同级兄弟节点无论 Lx 编号是否一致都渲染为相同 heading 层级。
 function buildSkeleton(tree) {
   if (!tree) return ''
 
-  // 找最浅的非 L5 level，作为 H1 基准
-  let minLevel = Infinity
-  function scanMin(nodes) {
-    for (const node of nodes || []) {
-      const lv = node.level || 1
-      if (lv !== 5) minLevel = Math.min(minLevel, lv)
-      scanMin(node.children)
-    }
-  }
-  scanMin(tree.children || [])
-  if (minLevel === Infinity) minLevel = 1
-
   const lines = []
-  function walk(nodes) {
+  function walk(nodes, depth) {
     for (const node of nodes || []) {
       const lv = node.level || 1
-      const h = Math.min(Math.max(1, lv - minLevel + 1), 6)
+      const h = Math.min(Math.max(1, depth), 6)
       if (lv === 5) {
         // L5 = 查询叶子节点，只渲染占位符
         lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
@@ -36,7 +26,7 @@ function buildSkeleton(tree) {
         // 结构节点（任意非 L5 层级）：递归处理所有子节点
         lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
         if (node.description) lines.push(node.description + '\n\n')
-        walk(node.children)
+        walk(node.children, depth + 1)
         if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
         // 只在叶子结构节点（子节点全为 L5 或无子节点）后加分隔线
         const hasStructuralChild = (node.children || []).some(c => (c.level || 1) !== 5)
@@ -44,7 +34,7 @@ function buildSkeleton(tree) {
       }
     }
   }
-  walk(tree.children || [])
+  walk(tree.children || [], 1)
   return lines.join('')
 }
 
