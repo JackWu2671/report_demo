@@ -1,12 +1,11 @@
 """
 agent.py — 脚本驱动的单一 agent，无业务 tool schema。
 
-LLM 有五个工具：
+LLM 有四个工具：
   read_skill      — 加载 SKILL.md SOP（Level 1）或支持文件（Level 2）
   bash            — 执行 bash 命令（通常是 skills/<name>/scripts/*.py）
-  edit_node       — 直接修改大纲单个节点属性（参数走 JSON、不过 shell，含特殊字符的 SQL 安全）
   set_outline     — 一次性写入完整大纲
-  modify_outline  — 对已有大纲执行结构化修改（增删节点、保留分支、批量属性修改）
+  modify_outline  — 对已有大纲执行修改（增删节点、保留分支、修改节点属性）
 
 所有业务逻辑以 Python 脚本形式存放在 skills/<name>/scripts/，
 LLM 通过 SKILL.md 了解脚本 CLI 接口，无需感知任何 JSON tool schema。
@@ -40,7 +39,7 @@ if _BACKEND_DIR not in sys.path:
 from services.llm_service import LLMService
 from agent_with_skills.memory import AgentWithSkillsMemory
 from agent_with_skills.skill_registry import SkillRegistry
-from tools.shared_tools import READ_SKILL_TOOL, BASH_TOOL, EDIT_NODE_TOOL, SET_OUTLINE_TOOL, MODIFY_OUTLINE_TOOL
+from tools.shared_tools import READ_SKILL_TOOL, BASH_TOOL, SET_OUTLINE_TOOL, MODIFY_OUTLINE_TOOL
 
 _LIB_DIR = str(_SKILLS_DIR / "_lib")
 if _LIB_DIR not in sys.path:
@@ -56,7 +55,7 @@ logger = logging.getLogger(__name__)
 _SYSTEM_PROMPT = (Path(_AGENT_DIR) / "system_prompt.txt").read_text(encoding="utf-8")
 _MAX_ROUNDS = 12
 
-TOOLS = [READ_SKILL_TOOL, BASH_TOOL, EDIT_NODE_TOOL, SET_OUTLINE_TOOL, MODIFY_OUTLINE_TOOL]
+TOOLS = [READ_SKILL_TOOL, BASH_TOOL, SET_OUTLINE_TOOL, MODIFY_OUTLINE_TOOL]
 
 _SKILL_SYSTEM_TEMPLATE = """\
 <skill_system>
@@ -392,8 +391,6 @@ class AgentWithSkills:
             return self._handle_read_skill(args)
         if name == "bash":
             return await self._handle_bash(args.get("command", ""))
-        if name == "edit_node":
-            return await self._handle_edit_node(args)
         if name == "set_outline":
             return await self._handle_set_outline(args)
         if name == "modify_outline":
@@ -445,59 +442,6 @@ class AgentWithSkills:
         }]
         return {"_events": events}, "[set_outline] 大纲已写入并推送\n" + result["outline_yaml"]
 
-    async def _handle_edit_node(self, args: dict) -> tuple[dict, str]:
-        """直接修改大纲节点属性，参数走 JSON、不过 shell。"""
-        node_id = args.get("node_id", "").strip()
-        field = str(args.get("field", "")).strip()
-        value = args.get("value")
-
-        if not node_id:
-            return {"_events": []}, "[edit_node] 缺少必填参数 node_id，请重新调用并传入节点 ID"
-        if not field:
-            return {"_events": []}, "[edit_node] 缺少必填参数 field，请重新调用并指定要修改的字段（如 exec_sql、name、description 等）"
-
-        outline_tree = self.memory.outline_tree
-        if not outline_tree:
-            return {"_events": []}, "[edit_node] 当前没有大纲，请先生成大纲"
-
-        # 有专属 patcher op 的字段，走 modify_outline 管线（name 会触发 L5 KB 同步等逻辑）
-        _field_op = {
-            "name":        "modify_node_name",
-            "description": "modify_node_description",
-            "condition":   "modify_node_condition",
-            "exec_sql":    "modify_node_exec_sql",
-        }
-        if field in _field_op:
-            ops = [{"op": _field_op[field], "node_id": node_id, "value": value}]
-        else:
-            # summarySuggestion / renderType / colX / colY / condition_queries 等
-            ops = [{"op": "set_node_field", "node_id": node_id, "field": field, "value": value}]
-
-        new_tree, skipped = await apply_patch(outline_tree, ops)
-        clean_tree = to_clean_json(new_tree)
-        md = to_markdown(clean_tree)
-        yaml_str = to_yaml(clean_tree)
-
-        if skipped and len(skipped) >= len(ops):
-            # 所有操作都被跳过，视为失败，不推送大纲事件
-            lines = [f"[edit_node] 更新失败 {node_id}.{field}"]
-            for s in skipped:
-                reason = s.get("_skip_reason", "未知") if isinstance(s, dict) else str(s)
-                lines.append(f"SKIPPED: {s.get('op','?')} node_id={s.get('node_id','')} → {reason}")
-            return {"_events": []}, "\n".join(lines)
-
-        self.memory.set_outline(clean_tree, md, yaml_str)
-        _write_temp_outline(self.session_id, clean_tree, md, yaml_str)
-        events = [
-            {"type": "outline", "markdown": md, "outline_yaml": yaml_str, "outline_tree": clean_tree},
-            {"type": "confirm", "options": ["生成报告"]},
-        ]
-        lines = [f"[edit_node] 已更新 {node_id}.{field}"]
-        for s in skipped:
-            reason = s.get("_skip_reason", "未知") if isinstance(s, dict) else str(s)
-            lines.append(f"SKIPPED: {s.get('op','?')} node_id={s.get('node_id','')} → {reason}")
-        return {"_events": events}, "\n".join(lines)
-
     async def _handle_modify_outline(self, args: dict) -> tuple[dict, str]:
         """对已有大纲执行一个或多个结构化修改操作，参数走 JSON、不过 shell。"""
         ops = args.get("ops")
@@ -509,20 +453,24 @@ class AgentWithSkills:
             return {"_events": []}, "[modify_outline] 当前没有大纲，请先生成大纲"
 
         new_tree, skipped = await apply_patch(outline_tree, ops)
+
+        lines = [f"[modify_outline] 已执行 {len(ops) - len(skipped)}/{len(ops)} 个操作"]
+        for s in skipped:
+            reason = s.get("_skip_reason", "未知") if isinstance(s, dict) else str(s)
+            lines.append(f"SKIPPED: {s.get('op', '?')} node_id={s.get('node_id', '')} → {reason}")
+
+        if skipped and len(skipped) >= len(ops):
+            return {"_events": []}, "\n".join(lines)
+
         clean_tree = to_clean_json(new_tree)
         md = to_markdown(clean_tree)
         yaml_str = to_yaml(clean_tree)
-
         self.memory.set_outline(clean_tree, md, yaml_str)
         _write_temp_outline(self.session_id, clean_tree, md, yaml_str)
         events = [
             {"type": "outline", "markdown": md, "outline_yaml": yaml_str, "outline_tree": clean_tree},
             {"type": "confirm", "options": ["生成报告"]},
         ]
-        lines = [f"[modify_outline] 已执行 {len(ops) - len(skipped)}/{len(ops)} 个操作"]
-        for s in skipped:
-            reason = s.get("_skip_reason", "未知") if isinstance(s, dict) else str(s)
-            lines.append(f"SKIPPED: {s.get('op', '?')} node_id={s.get('node_id', '')} → {reason}")
         return {"_events": events}, "\n".join(lines)
 
     async def _handle_bash(self, command: str) -> tuple[dict, str]:

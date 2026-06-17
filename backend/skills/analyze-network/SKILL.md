@@ -23,7 +23,7 @@ metadata:
 报告分两个阶段生成：先确定结构（大纲），再填充内容（渲染）。
 
 工具分两类：
-- **原生工具**（直接调用，不走 shell）：`edit_node` — 修改节点属性值；`modify_outline` — 增删节点、保留分支等结构调整
+- **原生工具**（直接调用，不走 shell）：`modify_outline` — 大纲所有修改（增删节点、属性修改等）；`set_outline` — 整棵重建
 - **脚本工具**（通过 `bash` 调用）：其余所有脚本。环境变量 `$SKILLS_DIR` 已预置为脚本根目录：
 
 ```bash
@@ -61,7 +61,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/get_node_detail.py L5_001
 | `search_graph_tree.py "查询词" [--topk N] [--threshold F]` | 语义检索知识图谱节点，返回带路径的树状结构 |
 | `search_templates.py "查询词" [--topk N]` | 向量检索模板库，返回候选模板 JSON 数组 |
 | `build_outline_from_anchor.py <anchor_id>` | 以锚节点为根展开子树，生成初始大纲写入会话 |
-| *(原生工具)* `modify_outline` | **结构调整**（新增节点/删除节点/保留分支/修改属性）—— 直接用对话工具调用，不是脚本。参数走 JSON、不过 shell，无需任何引号转义 |
+| *(原生工具)* `modify_outline` | **大纲所有修改**（新增/删除/保留节点，修改节点属性）—— 直接用对话工具调用，不是脚本。参数走 JSON、无需引号转义 |
 | *(原生工具)* `edit_node` | **修改节点属性值**（exec_sql/name/description/condition 等）—— 直接用对话工具调用，不是脚本。参数走 JSON、不过 shell，含反引号/`<`/`>` 均安全 |
 | `load_template.py <template_id>` | 按 ID 加载指定模板大纲写入会话 |
 | `get_node_detail.py <node_id> [node_id2 ...]` | 查询节点完整信息（summarySuggestion、exec_sql、renderType 等） |
@@ -126,34 +126,31 @@ python3 $SKILLS_DIR/analyze-network/scripts/build_outline_from_anchor.py L4_001
 
 ### 步骤 4：按用户反馈修改大纲（按需）
 
-**修改节点属性值 → 用 `edit_node` 工具（原生，不走 shell）**
+**大纲所有修改 → 用 `modify_outline` 原生工具（直接调用，参数走 JSON、无需任何引号转义）**
+
+修改节点属性用 `update_node` op：
 
 ```
-edit_node(node_id="L5_071", field="exec_sql", value="SELECT ... `档位` ...")
-edit_node(node_id="L4_007", field="name",     value="新名称")
-edit_node(node_id="L3_002", field="description", value="新描述")
+modify_outline(ops=[{"op": "update_node", "node_id": "L5_071", "field": "exec_sql", "value": "SELECT ..."}])
+modify_outline(ops=[{"op": "update_node", "node_id": "L4_007", "field": "name",     "value": "新名称"}])
+modify_outline(ops=[{"op": "update_node", "node_id": "L3_002", "field": "description", "value": "新描述"}])
 ```
 
-支持的 field 及其适用层级：
+`update_node` 支持的 field：
 
 | field | 适用层级 | 说明 |
 |-------|---------|------|
-| `name` | 全部 | 节点名称 |
-| `description` | **仅 L1–L4** | 节点描述；L5 query 节点无 description，禁止修改 |
+| `name` | 全部 | 节点名称；L5 改名后自动从知识库同步 exec_sql / renderType 等关联字段（相当于换指标） |
+| `description` | **仅 L1–L4** | L5 query 节点无 description，禁止修改 |
 | `condition` | 全部 | 展示条件 |
-| `exec_sql` / `renderType` / `colX` / `colY` / `summarySuggestion` / `condition_queries` | **仅 L5 查询节点** | 这些字段只存在于 L5 指标节点，非 L5 节点没有 |
+| `exec_sql` / `renderType` / `colX` / `colY` / `summarySuggestion` / `condition_queries` | **仅 L5** | 这些字段只存在于 L5 指标节点 |
 
-> ⚠️ **修改 L5 节点前必须先 `get_node_detail.py` 查询节点详情**，确认当前 exec_sql/renderType 等的真实值，再决定怎么改：
+> ⚠️ **修改 L5 节点 exec_sql 前必须先查询当前值**，以原文为基础改写，禁止引入原 SQL 中不存在的字段或枚举值：
 > ```bash
 > python3 $SKILLS_DIR/analyze-network/scripts/get_node_detail.py L5_071
 > ```
->
-> 修改成功后自动推送 `outline` 事件，前端三个 Tab 同步更新。  
-> L5 节点改 `name` 会自动从知识库同步 exec_sql / renderType 等关联字段（相当于换指标）。
 
 ---
-
-**结构调整（新增节点 / 删除节点 / 保留分支 / 修改属性）→ 用 `modify_outline` 原生工具（直接调用，参数走 JSON、无需任何引号转义）**
 
 支持的 op 及示例：
 
@@ -182,7 +179,6 @@ modify_outline(ops=[{"op": "delete_node", "node_id": "L4_001"}, {"op": "delete_n
 | `add_node` | `node_id`, `parent_id` | `after_id`, `name`, `description` | node_id 在 KB 中时自动拉取完整子树；不在 KB 中时需传 `name`（可选 `description`）创建自定义结构节点 |
 | `keep_only_node` | `node_id` | — | 保留该节点，删除所有同级兄弟节点 |
 
-节点属性修改（name / exec_sql / description / condition 等）→ 用 `edit_node`，不要用 `modify_outline`。
 
 **`add_node` 位置规则（重要）**：
 

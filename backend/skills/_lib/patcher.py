@@ -74,7 +74,22 @@ async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[d
         if op_name == "keep_only_node":
             continue  # 已批量处理
 
-        elif op_name == "add_node":
+        # update_node → 路由到对应的专属 op，复用已有处理逻辑
+        if op_name == "update_node":
+            field = op.get("field", "")
+            if not field:
+                skipped.append({**op, "_skip_reason": "缺少 field 参数"})
+                continue
+            _FIELD_TO_OP = {
+                "name":        "modify_node_name",
+                "description": "modify_node_description",
+                "condition":   "modify_node_condition",
+                "exec_sql":    "modify_node_exec_sql",
+            }
+            op = {**op, "op": _FIELD_TO_OP.get(field, "set_node_field")}
+            op_name = op["op"]
+
+        if op_name == "add_node":
             subtree = op.get("subtree")
             if not subtree:
                 kb = await _get_kb()
