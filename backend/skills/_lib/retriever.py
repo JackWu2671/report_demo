@@ -191,7 +191,12 @@ async def search_graph_tree(question: str) -> tuple[list[dict], list[dict]]:
 
     # 补全：对每个 FAISS 命中节点，递归展开所有后代节点
     # 避免 LLM 因阈值过滤漏掉未命中但实际存在的子节点
+    _expand_visited: set[str] = set()
+
     def _expand_all(node_id: str, parent_name: str) -> None:
+        if node_id in _expand_visited:
+            return
+        _expand_visited.add(node_id)
         for child_id in children_map.get(node_id, []):
             child_node = nodes_dict.get(child_id)
             if not child_node:
@@ -215,9 +220,13 @@ async def search_graph_tree(question: str) -> tuple[list[dict], list[dict]]:
             continue
         _expand_all(hit_id, hit_name)
 
-    def _to_dict(name: str) -> dict:
+    def _to_dict(name: str, _visiting: frozenset[str] = frozenset()) -> dict:
+        if name in _visiting:
+            logger.warning("[search_graph_tree] 检测到环形引用，跳过节点: %s", name)
+            return {"id": None, "name": name, "level": 0, "description": "", "hit": False, "score": None, "children": []}
         meta = name_meta[name]
         node_id = meta["id"]
+        _next = _visiting | {name}
         return {
             "id": node_id,
             "name": name,
@@ -225,7 +234,7 @@ async def search_graph_tree(question: str) -> tuple[list[dict], list[dict]]:
             "description": meta.get("description", ""),
             "hit": node_id in hit_ids,
             "score": score_by_id.get(node_id),
-            "children": [_to_dict(child) for child in meta["children_names"]],
+            "children": [_to_dict(child, _next) for child in meta["children_names"]],
         }
 
     tree = [_to_dict(r) for r in roots]
