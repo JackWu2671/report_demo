@@ -115,11 +115,17 @@ def _infer_level(node_id: str) -> int:
 def _yaml_to_node(item: dict, depth: int = 1) -> dict:
     node_id = str(item.get("id", ""))
     m = _LEVEL_RE.match(node_id)
-    # level 优先从 id 前缀显式读取：
-    #   KB 节点 L1_/L5_… ，新建结构节点约定命名 new_L2_xxx / new_L3_xxx（显式编码层级）。
-    # 兜底：未按约定命名的 new_ 节点按树深度推断并封顶 4，确保结构节点绝不等于 5
-    # （level==5 是"查询指标叶子"的判定标志，会被报告当 SQL 指标处理）。
-    level = int(m.group(1)) if m else min(depth, 4)
+    # KB 节点（L1_xxx / L5_xxx 等）：level 从 ID 前缀读取，保持与知识库一致
+    #   （level==5 是"查询指标叶子"的判定标志，不能改动）。
+    # 新建结构节点（new_L*_xxx）：level 按树深度推断，封顶 4。
+    #   这样即使 LLM 在同一 children 数组里混用了 new_L2_xxx 和 new_L3_xxx，
+    #   两者的 level 字段仍一致（都等于 depth），不会造成兄弟节点层级错乱。
+    if node_id.startswith("new_"):
+        level = min(depth, 4)
+    elif m:
+        level = int(m.group(1))
+    else:
+        level = min(depth, 4)
     return {
         "id": node_id,
         "name": str(item.get("name", "")),
