@@ -2,11 +2,12 @@
 temp_store.py — 将 session 状态持久化到 backend/temp/{session_id}/
 
 每个 session 目录包含：
-  outline.json   大纲树（JSON）
-  outline.md     大纲（Markdown，供人阅读）
-  outline.yaml   大纲（YAML，LLM 上下文视图）
-  report.md      最终报告（Markdown，含数据表格 + LLM 总结 + 标题序号）
-  report.html    最终报告（HTML，含 ECharts 交互图表，需联网加载 CDN）
+  outline.json      大纲树（JSON）
+  outline.md        大纲（Markdown，供人阅读）
+  outline.yaml      大纲（YAML，LLM 上下文视图）
+  report_data.json  指标原始数据（供重新渲染用，每指标最多 500 行）
+  report.md         最终报告（Markdown，含数据表格 + LLM 总结 + 标题序号）
+  report.html       最终报告（HTML，含 ECharts 交互图表，需联网加载 CDN）
 """
 
 import html
@@ -22,6 +23,15 @@ logger = logging.getLogger(__name__)
 _BACKEND_DIR = Path(__file__).parent.parent
 _TEMP_ROOT   = Path(os.environ.get("REPORT_TEMP_DIR", str(_BACKEND_DIR / "temp")))
 
+# 显示行数上限（超出后加截断提示）
+_MAX_TABLE_ROWS_MD   = 100
+_MAX_TABLE_ROWS_HTML = 200
+_MAX_CHART_POINTS    = 50   # BAR / LINE 最多数据点
+_MAX_PIE_SLICES      = 15   # PIE 最多扇区
+# 保存到 temp/report_data.json 的每指标上限
+# session JSON 里只存 10 行（agent 上下文用），这里存更完整的版本供重渲染
+_MAX_STORED_ROWS     = 500
+
 
 def _session_dir(session_id: str) -> Path:
     d = _TEMP_ROOT / session_id
@@ -32,21 +42,37 @@ def _session_dir(session_id: str) -> Path:
 # ── 公开写入接口 ──────────────────────────────────────────────
 
 def _cached_report_data(session_id: str) -> tuple[dict, dict] | None:
-    """从 /tmp/report_sessions/{session_id}.json 读取已缓存的报告数据。
-    返回 (collected, summaries)，或 None（文件不存在 / 无报告数据）。
+    """读取已缓存的报告数据，返回 (collected, summaries) 或 None。
+
+    优先从 temp/{session_id}/report_data.json 读取 collected（最多 500 行/指标），
+    再从 session JSON 读取 summaries（文本，体积小）。
+    这样大纲变更后重渲染时能拿到比 session JSON 里 10 行更完整的数据。
     """
+    collected: dict = {}
+    summaries: dict = {}
+
+    # 1. 从 temp 目录读 collected（更完整）
+    temp_data_path = _TEMP_ROOT / session_id / "report_data.json"
+    if temp_data_path.exists():
+        try:
+            collected = json.loads(temp_data_path.read_text(encoding="utf-8"))
+        except Exception:
+            collected = {}
+
+    # 2. 从 session JSON 读 summaries；若 temp 没有 collected 则也从这里回退
     session_dir = Path(os.environ.get("REPORT_SESSION_DIR", "/tmp/report_sessions"))
     p = session_dir / f"{session_id}.json"
-    if not p.exists():
-        return None
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        collected  = data.get("report_data", {})
-        summaries  = data.get("report_summaries", {})
-        if collected or summaries:
-            return collected, summaries
-    except Exception:
-        pass
+    if p.exists():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            summaries = data.get("report_summaries", {})
+            if not collected:
+                collected = data.get("report_data", {})
+        except Exception:
+            pass
+
+    if collected or summaries:
+        return collected, summaries
     return None
 
 
@@ -79,13 +105,20 @@ def write_report(
     summaries: Dict[str, str],
     collected: Dict[str, List],
 ) -> None:
-    """报告生成完成后调用，渲染并写 report.md 和 report.html。"""
+    """报告生成完成后调用，渲染并写 report.md、report.html 和 report_data.json。"""
     if not session_id or not outline_tree:
         return
     summaries = summaries or {}
     collected = collected or {}
     try:
         d = _session_dir(session_id)
+
+        # 持久化原始数据（每指标最多 _MAX_STORED_ROWS 行），供大纲变更后重渲染
+        capped = {name: rows[:_MAX_STORED_ROWS] for name, rows in collected.items()}
+        (d / "report_data.json").write_text(
+            json.dumps(capped, ensure_ascii=False), encoding="utf-8"
+        )
+
         md = _render_report_md(outline_tree, summaries, collected)
         (d / "report.md").write_text(md, encoding="utf-8")
 
@@ -112,12 +145,15 @@ def _rows_to_md_table(rows: List) -> str:
     if not rows or not isinstance(rows[0], dict):
         return "_（暂无数据）_"
     headers = list(rows[0].keys())
+    display  = rows[:_MAX_TABLE_ROWS_MD]
     lines = [
         "| " + " | ".join(str(h) for h in headers) + " |",
         "| " + " | ".join("---" for _ in headers) + " |",
     ]
-    for row in rows:
+    for row in display:
         lines.append("| " + " | ".join(str(row.get(h, "")) for h in headers) + " |")
+    if len(rows) > _MAX_TABLE_ROWS_MD:
+        lines.append(f"\n_（数据共 {len(rows)} 行，已显示前 {_MAX_TABLE_ROWS_MD} 行）_")
     return "\n".join(lines)
 
 
@@ -195,15 +231,25 @@ def _render_report_md(
 def _build_chart_option(render_type: str, col_x: str, col_y: str, rows: List[dict]) -> dict:
     t = render_type.upper()
     if t == "PIE":
-        data = [{"name": str(r.get(col_x, "")), "value": r.get(col_y, 0)} for r in rows]
-        return {
+        display   = rows[:_MAX_PIE_SLICES]
+        truncated = len(rows) > _MAX_PIE_SLICES
+        data = [{"name": str(r.get(col_x, "")), "value": r.get(col_y, 0)} for r in display]
+        opt: dict = {
             "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
             "series":  [{"type": "pie", "radius": ["35%", "65%"], "data": data,
                          "label": {"formatter": "{b}\n{d}%"}}],
         }
-    categories = [str(r.get(col_x, "")) for r in rows]
-    values     = [r.get(col_y, 0) for r in rows]
-    return {
+        if truncated:
+            opt["title"] = {"text": f"（仅显示前 {_MAX_PIE_SLICES} 项，共 {len(rows)} 项）",
+                            "bottom": 0, "left": "center",
+                            "textStyle": {"fontSize": 11, "color": "#999"}}
+        return opt
+
+    display   = rows[:_MAX_CHART_POINTS]
+    truncated = len(rows) > _MAX_CHART_POINTS
+    categories = [str(r.get(col_x, "")) for r in display]
+    values     = [r.get(col_y, 0) for r in display]
+    opt = {
         "tooltip": {"trigger": "axis"},
         "xAxis":   {"type": "category", "data": categories,
                     "axisLabel": {"rotate": 30 if len(categories) > 6 else 0}},
@@ -211,18 +257,27 @@ def _build_chart_option(render_type: str, col_x: str, col_y: str, rows: List[dic
         "series":  [{"type": "line" if t == "LINE" else "bar",
                      "data": values, "smooth": t == "LINE"}],
     }
+    if truncated:
+        opt["title"] = {"text": f"（仅显示前 {_MAX_CHART_POINTS} 项，共 {len(rows)} 项）",
+                        "bottom": 0, "left": "center",
+                        "textStyle": {"fontSize": 11, "color": "#999"}}
+    return opt
 
 
 def _rows_to_html_table(rows: List) -> str:
     if not rows or not isinstance(rows[0], dict):
         return '<p class="no-data">（暂无数据）</p>'
     headers = list(rows[0].keys())
+    display  = rows[:_MAX_TABLE_ROWS_HTML]
     th  = "".join(f"<th>{html.escape(str(h))}</th>" for h in headers)
     trs = []
-    for row in rows:
+    for row in display:
         td = "".join(f"<td>{html.escape(str(row.get(h, '')))}</td>" for h in headers)
         trs.append(f"<tr>{td}</tr>")
-    return f"<table><thead><tr>{th}</tr></thead><tbody>{''.join(trs)}</tbody></table>"
+    table = f"<table><thead><tr>{th}</tr></thead><tbody>{''.join(trs)}</tbody></table>"
+    if len(rows) > _MAX_TABLE_ROWS_HTML:
+        table += f'<p class="no-data">数据共 {len(rows)} 行，已显示前 {_MAX_TABLE_ROWS_HTML} 行</p>'
+    return table
 
 
 def _summary_to_html(text: str) -> str:
