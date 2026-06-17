@@ -178,6 +178,7 @@ modify_outline(ops=[{"op": "delete_node", "node_id": "L4_001"}, {"op": "delete_n
 | `delete_node` | `node_id` | — | 删除节点及其全部子树 |
 | `add_node` | `node_id`, `parent_id` | `after_id`, `name`, `description` | node_id 在 KB 中时自动拉取完整子树；不在 KB 中时需传 `name`（可选 `description`）创建自定义结构节点 |
 | `keep_only_node` | `node_id` | — | 保留该节点，删除所有同级兄弟节点 |
+| `update_node` | `node_id`, `field`, `value` | — | 修改节点属性值；field 见上方字段表 |
 
 
 **`add_node` 位置规则（重要）**：
