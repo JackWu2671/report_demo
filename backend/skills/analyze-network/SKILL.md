@@ -167,15 +167,6 @@ modify_outline(ops=[{"op": "add_node", "node_id": "L4_013", "parent_id": "L3_002
 # 保留指定节点，删除其所有同级兄弟
 modify_outline(ops=[{"op": "keep_only_node", "node_id": "L3_005"}])
 
-# 修改节点名称（L5 节点改名后自动从 KB 同步 exec_sql 等字段）
-modify_outline(ops=[{"op": "modify_node_name", "node_id": "L4_007", "value": "新名称"}])
-
-# 修改节点描述（仅限非 L5 节点）
-modify_outline(ops=[{"op": "modify_node_description", "node_id": "L3_002", "value": "新描述文字"}])
-
-# 修改展示条件
-modify_outline(ops=[{"op": "modify_node_condition", "node_id": "L4_005", "value": "当前节点有数据时展示"}])
-
 # 多个操作合并为一次调用
 modify_outline(ops=[{"op": "delete_node", "node_id": "L4_001"}, {"op": "delete_node", "node_id": "L4_002"}])
 ```
@@ -184,14 +175,11 @@ modify_outline(ops=[{"op": "delete_node", "node_id": "L4_001"}, {"op": "delete_n
 
 | op | 必填字段 | 可选字段 | 说明 |
 |----|---------|---------|------|
-| `add_node` | `node_id`, `parent_id` | `after_id` | 从知识图谱新增节点；node_id 须来自 search_graph_tree 结果 |
 | `delete_node` | `node_id` | — | 删除节点及其全部子树 |
+| `add_node` | `node_id`, `parent_id` | `after_id` | 从知识图谱新增节点；node_id 须来自 search_graph_tree 结果 |
 | `keep_only_node` | `node_id` | — | 保留该节点，删除所有同级兄弟节点 |
-| `modify_node_name` | `node_id`, `value` | — | 修改节点名称；L5 节点改名后自动从 KB 同步 exec_sql 等关联字段 |
-| `modify_node_description` | `node_id`, `value` | — | 修改节点描述（L5 节点禁止） |
-| `modify_node_condition` | `node_id`, `value` | — | 设置或修改节点展示条件 |
-| `modify_node_exec_sql` | `node_id`, `value` | — | 直接修改 L5 节点的 SQL（仅限 L5） |
-| `set_node_field` | `node_id`, `field`, `value` | — | 通用字段赋值（任意字段名） |
+
+节点属性修改（name / exec_sql / description / condition 等）→ 用 `edit_node`，不要用 `modify_outline`。
 
 **`add_node` 位置规则（重要）**：
 
