@@ -23,14 +23,6 @@ logger = logging.getLogger(__name__)
 _BACKEND_DIR = Path(__file__).parent.parent
 _TEMP_ROOT   = Path(os.environ.get("REPORT_TEMP_DIR", str(_BACKEND_DIR / "temp")))
 
-# 显示行数上限（超出后加截断提示）
-_MAX_TABLE_ROWS_MD   = 100
-_MAX_TABLE_ROWS_HTML = 200
-_MAX_CHART_POINTS    = 50   # BAR / LINE 最多数据点
-_MAX_PIE_SLICES      = 15   # PIE 最多扇区
-# 保存到 temp/report_data.json 的每指标上限
-# session JSON 里只存 10 行（agent 上下文用），这里存更完整的版本供重渲染
-_MAX_STORED_ROWS     = 500
 
 
 def _session_dir(session_id: str) -> Path:
@@ -113,10 +105,9 @@ def write_report(
     try:
         d = _session_dir(session_id)
 
-        # 持久化原始数据（每指标最多 _MAX_STORED_ROWS 行），供大纲变更后重渲染
-        capped = {name: rows[:_MAX_STORED_ROWS] for name, rows in collected.items()}
+        # 持久化原始数据（全量），供大纲变更后重渲染
         (d / "report_data.json").write_text(
-            json.dumps(capped, ensure_ascii=False), encoding="utf-8"
+            json.dumps(collected, ensure_ascii=False), encoding="utf-8"
         )
 
         md = _render_report_md(outline_tree, summaries, collected)
@@ -145,15 +136,12 @@ def _rows_to_md_table(rows: List) -> str:
     if not rows or not isinstance(rows[0], dict):
         return "_（暂无数据）_"
     headers = list(rows[0].keys())
-    display  = rows[:_MAX_TABLE_ROWS_MD]
     lines = [
         "| " + " | ".join(str(h) for h in headers) + " |",
         "| " + " | ".join("---" for _ in headers) + " |",
     ]
-    for row in display:
+    for row in rows:
         lines.append("| " + " | ".join(str(row.get(h, "")) for h in headers) + " |")
-    if len(rows) > _MAX_TABLE_ROWS_MD:
-        lines.append(f"\n_（数据共 {len(rows)} 行，已显示前 {_MAX_TABLE_ROWS_MD} 行）_")
     return "\n".join(lines)
 
 
@@ -231,25 +219,15 @@ def _render_report_md(
 def _build_chart_option(render_type: str, col_x: str, col_y: str, rows: List[dict]) -> dict:
     t = render_type.upper()
     if t == "PIE":
-        display   = rows[:_MAX_PIE_SLICES]
-        truncated = len(rows) > _MAX_PIE_SLICES
-        data = [{"name": str(r.get(col_x, "")), "value": r.get(col_y, 0)} for r in display]
-        opt: dict = {
+        data = [{"name": str(r.get(col_x, "")), "value": r.get(col_y, 0)} for r in rows]
+        return {
             "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
             "series":  [{"type": "pie", "radius": ["35%", "65%"], "data": data,
                          "label": {"formatter": "{b}\n{d}%"}}],
         }
-        if truncated:
-            opt["title"] = {"text": f"（仅显示前 {_MAX_PIE_SLICES} 项，共 {len(rows)} 项）",
-                            "bottom": 0, "left": "center",
-                            "textStyle": {"fontSize": 11, "color": "#999"}}
-        return opt
-
-    display   = rows[:_MAX_CHART_POINTS]
-    truncated = len(rows) > _MAX_CHART_POINTS
-    categories = [str(r.get(col_x, "")) for r in display]
-    values     = [r.get(col_y, 0) for r in display]
-    opt = {
+    categories = [str(r.get(col_x, "")) for r in rows]
+    values     = [r.get(col_y, 0) for r in rows]
+    return {
         "tooltip": {"trigger": "axis"},
         "xAxis":   {"type": "category", "data": categories,
                     "axisLabel": {"rotate": 30 if len(categories) > 6 else 0}},
@@ -257,27 +235,18 @@ def _build_chart_option(render_type: str, col_x: str, col_y: str, rows: List[dic
         "series":  [{"type": "line" if t == "LINE" else "bar",
                      "data": values, "smooth": t == "LINE"}],
     }
-    if truncated:
-        opt["title"] = {"text": f"（仅显示前 {_MAX_CHART_POINTS} 项，共 {len(rows)} 项）",
-                        "bottom": 0, "left": "center",
-                        "textStyle": {"fontSize": 11, "color": "#999"}}
-    return opt
 
 
 def _rows_to_html_table(rows: List) -> str:
     if not rows or not isinstance(rows[0], dict):
         return '<p class="no-data">（暂无数据）</p>'
     headers = list(rows[0].keys())
-    display  = rows[:_MAX_TABLE_ROWS_HTML]
     th  = "".join(f"<th>{html.escape(str(h))}</th>" for h in headers)
     trs = []
-    for row in display:
+    for row in rows:
         td = "".join(f"<td>{html.escape(str(row.get(h, '')))}</td>" for h in headers)
         trs.append(f"<tr>{td}</tr>")
-    table = f"<table><thead><tr>{th}</tr></thead><tbody>{''.join(trs)}</tbody></table>"
-    if len(rows) > _MAX_TABLE_ROWS_HTML:
-        table += f'<p class="no-data">数据共 {len(rows)} 行，已显示前 {_MAX_TABLE_ROWS_HTML} 行</p>'
-    return table
+    return f"<table><thead><tr>{th}</tr></thead><tbody>{''.join(trs)}</tbody></table>"
 
 
 def _summary_to_html(text: str) -> str:
