@@ -80,6 +80,53 @@ EDIT_NODE_TOOL: dict = {
     },
 }
 
+MODIFY_OUTLINE_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "modify_outline",
+        "description": (
+            "对当前大纲执行一个或多个结构化修改操作（增删节点、保留分支、修改属性等）。"
+            "参数经 JSON 传递、完全不过 shell，无需任何引号转义。"
+            "\n\n【适用场景】在已有大纲上做结构调整：新增/删除节点、保留某分支、批量修改多个节点属性。"
+            "单节点属性修改（exec_sql / name / description 等）优先用 edit_node；"
+            "整棵大纲重建用 set_outline。"
+            "\n\n【ops 支持的操作类型】"
+            "\n- delete_node      删除节点及其全部子树。必填：node_id"
+            "\n- add_node         从知识图谱新增节点，挂到指定父节点下。必填：node_id（来自 search_graph_tree 结果）, parent_id；可选：after_id（插入到此兄弟节点之后）"
+            "\n- keep_only_node   保留该节点，删除同级所有其他节点。必填：node_id"
+            "\n- modify_node_name         修改节点名称；L5 改名后自动从 KB 同步 exec_sql 等关联字段。必填：node_id, value"
+            "\n- modify_node_description  修改节点描述（L5 禁止）。必填：node_id, value"
+            "\n- modify_node_condition    设置节点展示条件。必填：node_id, value"
+            "\n- modify_node_exec_sql     修改 L5 节点 SQL（仅限 L5）。必填：node_id, value"
+            "\n- set_node_field           通用字段赋值。必填：node_id, field, value"
+            "\n\n多个独立操作可合并为一次调用。"
+            "跳过的操作会在返回内容中以 SKIPPED 标注——出现时必须继续补救，不得告知用户已完成。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ops": {
+                    "type": "array",
+                    "description": "操作数组，每项是一个包含 op 字段的操作对象",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "op":        {"type": "string", "description": "操作类型，如 delete_node / add_node / keep_only_node 等"},
+                            "node_id":   {"type": "string", "description": "目标节点 ID"},
+                            "parent_id": {"type": "string", "description": "（add_node 专用）父节点 ID，填新节点的直接父节点，不能填兄弟节点"},
+                            "after_id":  {"type": "string", "description": "（add_node 可选）将新节点插入到此兄弟节点之后；省略则追加到末尾"},
+                            "value":     {"description": "（modify_* 专用）新值，字符串或数组"},
+                            "field":     {"type": "string", "description": "（set_node_field 专用）字段名"},
+                        },
+                        "required": ["op", "node_id"],
+                    },
+                },
+            },
+            "required": ["ops"],
+        },
+    },
+}
+
 SET_OUTLINE_TOOL: dict = {
     "type": "function",
     "function": {
@@ -88,7 +135,7 @@ SET_OUTLINE_TOOL: dict = {
             "一次性写入一份完整的报告大纲（结构由你自己组合）。"
             "\n\n【适用场景】用户/专家想自己组合报告结构时使用——典型是专家知识沉淀（把一段业务方法论组织成章节大纲），"
             "或用户明确要求按自定义结构搭建报告。本工具是整棵覆盖写入，会替换当前大纲。"
-            "\n【不适用】在已有大纲上做局部改动：改节点属性用 edit_node，增删/保留节点用 modify_outline.py。"
+            "\n【不适用】在已有大纲上做局部改动：改节点属性用 edit_node，增删/保留节点用 modify_outline。"
             "\n\n【结构约束】"
             "\n1. outline 是节点对象数组，且恰好一个根节点(L1，报告总标题)"
             "\n2. 根节点的 name 即报告总标题，必须与用户/专家描述中已给出的标题完全一致——若已明确命名，原文照用，不得擅自摘要或改写"

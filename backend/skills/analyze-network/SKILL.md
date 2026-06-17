@@ -23,7 +23,7 @@ metadata:
 报告分两个阶段生成：先确定结构（大纲），再填充内容（渲染）。
 
 工具分两类：
-- **原生工具**（直接调用，不走 shell）：`edit_node` — 修改节点属性值
+- **原生工具**（直接调用，不走 shell）：`edit_node` — 修改节点属性值；`modify_outline` — 增删节点、保留分支等结构调整
 - **脚本工具**（通过 `bash` 调用）：其余所有脚本。环境变量 `$SKILLS_DIR` 已预置为脚本根目录：
 
 ```bash
@@ -61,7 +61,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/get_node_detail.py L5_001
 | `search_graph_tree.py "查询词" [--topk N] [--threshold F]` | 语义检索知识图谱节点，返回带路径的树状结构 |
 | `search_templates.py "查询词" [--topk N]` | 向量检索模板库，返回候选模板 JSON 数组 |
 | `build_outline_from_anchor.py <anchor_id>` | 以锚节点为根展开子树，生成初始大纲写入会话 |
-| `modify_outline.py '<ops_json>'` | 对当前大纲执行结构化修改操作 |
+| *(原生工具)* `modify_outline` | **结构调整**（新增节点/删除节点/保留分支/修改属性）—— 直接用对话工具调用，不是脚本。参数走 JSON、不过 shell，无需任何引号转义 |
 | *(原生工具)* `edit_node` | **修改节点属性值**（exec_sql/name/description/condition 等）—— 直接用对话工具调用，不是脚本。参数走 JSON、不过 shell，含反引号/`<`/`>` 均安全 |
 | `load_template.py <template_id>` | 按 ID 加载指定模板大纲写入会话 |
 | `get_node_detail.py <node_id> [node_id2 ...]` | 查询节点完整信息（summarySuggestion、exec_sql、renderType 等） |
@@ -118,7 +118,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/build_outline_from_anchor.py L4_001
 
 输出 YAML 格式大纲，大纲同时写入会话状态并推送给前端。
 
-生成后，**立即通过一次 `modify_outline.py` 调用完成结构修剪**，不要等待用户指示：
+生成后，**立即通过一次 `modify_outline` 调用完成结构修剪**，不要等待用户指示：
 - 删除与用户需求无关的节点，或用 `keep_only_node` 保留关键分支
 - 无需修剪时可不调用
 
@@ -153,33 +153,31 @@ edit_node(node_id="L3_002", field="description", value="新描述")
 
 ---
 
-**结构调整（新增节点 / 删除节点 / 保留分支 / 修改属性）→ 用 `bash + modify_outline.py`**
-
-**引号规则（必须遵守）**：外层用**双引号**，内层所有 `"` 转义为 `\"`；**绝对不能**用单引号——Windows cmd.exe 不把单引号当字符串边界，且单引号内无法转义。
+**结构调整（新增节点 / 删除节点 / 保留分支 / 修改属性）→ 用 `modify_outline` 原生工具（直接调用，参数走 JSON、无需任何引号转义）**
 
 支持的 op 及示例：
 
-```bash
+```
 # 删除节点（注意：是 delete_node，不是 remove_node / remove / del）
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_003\"}]"
+modify_outline(ops=[{"op": "delete_node", "node_id": "L4_003"}])
 
 # 从知识图谱新增节点（node_id 必须来自 search_graph_tree 结果）
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"add_node\", \"node_id\": \"L4_013\", \"parent_id\": \"L3_002\", \"after_id\": \"L4_012\"}]"
+modify_outline(ops=[{"op": "add_node", "node_id": "L4_013", "parent_id": "L3_002", "after_id": "L4_012"}])
 
 # 保留指定节点，删除其所有同级兄弟
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"keep_only_node\", \"node_id\": \"L3_005\"}]"
+modify_outline(ops=[{"op": "keep_only_node", "node_id": "L3_005"}])
 
 # 修改节点名称（L5 节点改名后自动从 KB 同步 exec_sql 等字段）
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"modify_node_name\", \"node_id\": \"L4_007\", \"value\": \"新名称\"}]"
+modify_outline(ops=[{"op": "modify_node_name", "node_id": "L4_007", "value": "新名称"}])
 
 # 修改节点描述（仅限非 L5 节点）
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"modify_node_description\", \"node_id\": \"L3_002\", \"value\": \"新描述文字\"}]"
+modify_outline(ops=[{"op": "modify_node_description", "node_id": "L3_002", "value": "新描述文字"}])
 
 # 修改展示条件
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"modify_node_condition\", \"node_id\": \"L4_005\", \"value\": \"当前节点有数据时展示\"}]"
+modify_outline(ops=[{"op": "modify_node_condition", "node_id": "L4_005", "value": "当前节点有数据时展示"}])
 
 # 多个操作合并为一次调用
-python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delete_node\", \"node_id\": \"L4_001\"}, {\"op\": \"delete_node\", \"node_id\": \"L4_002\"}]"
+modify_outline(ops=[{"op": "delete_node", "node_id": "L4_001"}, {"op": "delete_node", "node_id": "L4_002"}])
 ```
 
 支持的 op 一览：
@@ -206,7 +204,7 @@ python3 $SKILLS_DIR/analyze-network/scripts/modify_outline.py "[{\"op\": \"delet
   ❌ 错误：`"parent_id":"L4_012"` → L4_013 会变成 L4_012 的子节点
 
 多个独立操作合并为**一次调用**；若后续 op 依赖前一个结果则分多次。  
-跳过的操作以 `# SKIPPED:` 开头输出——出现时**必须继续补救，不得告知用户已完成**。
+跳过的操作标注 `SKIPPED:` ——出现时**必须继续补救，不得告知用户已完成**。
 
 ### 加载模板大纲
 
@@ -257,6 +255,6 @@ python3 $SKILLS_DIR/analyze-network/scripts/get_report_data.py <node_id>
 - 回答用户关于"某个指标结果是多少"的具体问题
 
 **修改报告 = 修改大纲**，不存在直接编辑报告文本的途径：
-- 用户说「把某一节的指标换掉」「删掉某个章节」→ 一律通过 `modify_outline.py` 修改大纲，再触发生成
+- 用户说「把某一节的指标换掉」「删掉某个章节」→ 一律通过 `modify_outline` 修改大纲，再触发生成
 - 前端增量更新是自动的：未变动的指标数据和子树总结会被复用，无需重新查询；只有大纲中新增或修改的部分才重新执行
 - Agent 无需关心哪些内容需要重新生成，只需正确修改大纲并触发即可
