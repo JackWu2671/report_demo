@@ -2,8 +2,8 @@
 """
 parse_evaluation_item_xlsx.py — 将评估项.xlsx 转换为 评估项.json
 
-输入: expert_knowledge/评估项.xlsx
-输出: expert_knowledge/评估项.json
+输入: reference/评估项.xlsx
+输出: reference/评估项.json
 
 Excel 列说明:
   SCENEKEY          — 场景标识（备用，取 name 优先）
@@ -37,7 +37,7 @@ import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
-_KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
+_KB_DIR = os.path.join(_BACKEND_DIR, "reference")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 

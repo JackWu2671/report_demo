@@ -24,7 +24,7 @@ import os
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
-_KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
+_KB_DIR = os.path.join(_BACKEND_DIR, "reference")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 

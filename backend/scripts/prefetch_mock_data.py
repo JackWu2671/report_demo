@@ -23,8 +23,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("prefetch")
 
-INPUT_FILE  = os.path.join(_BACKEND, "expert_knowledge", "评估指标.json")
-OUTPUT_FILE = os.path.join(_BACKEND, "expert_knowledge", "评估指标_mock.json")
+INPUT_FILE  = os.path.join(_BACKEND, "reference", "评估指标.json")
+OUTPUT_FILE = os.path.join(_BACKEND, "reference", "评估指标_mock.json")
 MAX_WORKERS = 5
 FORCE       = False   # 改为 True 则忽略已有 mock_data，全量重跑
 

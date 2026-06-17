@@ -29,7 +29,7 @@
 | 共享库 | `skills/_lib/*`（retriever / patcher / outline_utils / loader…） | ❌ 不在 skill 目录内 |
 | 状态桥 | `/tmp/report_sessions/{id}.json` + `agent.py._detect_events` 检测变化 | ❌ 无此 agent 主循环 |
 | 渲染 | `trigger_report.py` 只写 `generate_report=True` 标记 → 前端 `/api/report` SSE 流 → React + ECharts 渲染 | ❌ 无前端、无 SSE |
-| 数据 | `expert_knowledge/*` + FAISS 索引 + SQL 执行 API | ❌ 不在 skill 内 |
+| 数据 | `reference/*` + FAISS 索引 + SQL 执行 API | ❌ 不在 skill 内 |
 
 **关键事实**：报告**根本不是 skill 直接生成的**。`trigger_report.py` 只是写一个信号位，由 `agent.py`（`agent.py:582`）检测到后向前端推 `start_report` 事件，前端再调 `report_executor.run_report()`（`services/report_executor.py:37`）通过 SSE 逐条推送指标和总结，最终由 React 组件渲染成带 ECharts 图表的页面。
 
@@ -361,7 +361,7 @@ skill 不打包重计算服务，仅通过 env 指向：
 
 `reference/lib/` 不应是手抄副本。三种维护策略：
 
-1. **构建脚本同步（推荐起步）**：写一个 `scripts/build_skill_package.py`，从 `backend/skills/_lib`、`backend/services`、`backend/expert_knowledge`、FAISS 索引**抽取**并改写 import，生成分发包。单一真源仍是 backend。
+1. **构建脚本同步（推荐起步）**：写一个 `scripts/build_skill_package.py`，从 `backend/skills/_lib`、`backend/services`、`backend/reference`、FAISS 索引**抽取**并改写 import，生成分发包。单一真源仍是 backend。
 2. **抽成独立 pip 包**：把可移植内核（retriever/patcher/outline_utils/services 客户端）发布为 `report-core`，skill 与 backend 都依赖它。最干净，工作量最大。
 3. **git subtree / submodule**：把 `_lib` 作为子树双向同步。中间方案。
 

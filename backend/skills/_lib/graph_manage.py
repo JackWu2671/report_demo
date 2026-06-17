@@ -24,8 +24,8 @@ if _BACKEND_DIR not in sys.path:
 
 logger = logging.getLogger(__name__)
 
-_NODE_PATH = os.path.join(_BACKEND_DIR, "expert_knowledge", "node.json")
-_RELATION_PATH = os.path.join(_BACKEND_DIR, "expert_knowledge", "relation.json")
+_NODE_PATH = os.path.join(_BACKEND_DIR, "reference", "node.json")
+_RELATION_PATH = os.path.join(_BACKEND_DIR, "reference", "relation.json")
 
 
 def _next_id(level: int, nodes: list[dict]) -> str:

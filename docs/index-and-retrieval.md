@@ -4,8 +4,8 @@
 
 | 组件 | 是什么 | 做什么 |
 |------|--------|--------|
-| `expert_knowledge/node.json` | 知识库节点数据 | 存储所有知识节点（L1~L5），每个节点有 id、name、keywords 等字段 |
-| `expert_knowledge/relation.json` | 知识库关系数据 | 存储节点之间的父子关系（parent → child） |
+| `reference/node.json` | 知识库节点数据 | 存储所有知识节点（L1~L5），每个节点有 id、name、keywords 等字段 |
+| `reference/relation.json` | 知识库关系数据 | 存储节点之间的父子关系（parent → child） |
 | `EmbeddingService` | 向量化服务客户端 | 把文本（节点名称）发给 Embedding 模型，换回一串数字（向量） |
 | `FAISSService` | 向量索引服务 | 存储和检索向量；给一个问题的向量，返回最相似的节点 |
 | `data/faiss.index` | 二进制索引文件 | FAISS 把所有节点向量压缩存在这里，加载后可极速检索 |
@@ -45,7 +45,7 @@ FAISS 是 Facebook 开源的向量相似度搜索库。
 ### 输入
 
 ```
-expert_knowledge/node.json
+reference/node.json
 [
   { "id": "L1_001", "name": "无线网络评估", "keywords": ["覆盖", "信号"], "level": 1 },
   { "id": "L2_003", "name": "AEC 覆盖能力", "keywords": ["AEC", "覆盖率"], "level": 2 },
@@ -268,8 +268,8 @@ path = " > ".join(chain)
 
 | 文件 | 职责 |
 |------|------|
-| `expert_knowledge/node.json` | 知识节点原始数据（索引的输入） |
-| `expert_knowledge/relation.json` | 节点父子关系（构建路径和树状结构用） |
+| `reference/node.json` | 知识节点原始数据（索引的输入） |
+| `reference/relation.json` | 节点父子关系（构建路径和树状结构用） |
 | `data/faiss.index` | FAISS 二进制索引（不提交 git，运行时自动生成） |
 | `data/faiss_id_map.json` | 索引位置 → 节点映射（不提交 git，运行时自动生成） |
 | `services/embedding_service.py` | Embedding HTTP 客户端，支持单条和批量 |

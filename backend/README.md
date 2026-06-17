@@ -310,7 +310,7 @@ backend/
 ├── services/                  # llm_service / report_executor / sql_executor / de_sql_execution_client
 ├── memory/store.py            # AgentMemory 基类
 ├── llm/                       # LLM 配置
-├── expert_knowledge/          # 知识库数据（node.json、评估指标_mock.json 等）
+├── reference/          # 知识库数据（node.json、评估指标_mock.json 等）
 ├── scripts/                   # 离线构建脚本（build_index、prefetch_mock_data、merge_… ）
 └── tests/                     # test_sql_query / test_outline_utils / tool_test
 ```
@@ -362,7 +362,7 @@ cd backend
 python scripts/build_index.py
 ```
 
-`expert_knowledge/node.json` 变更后需重建（首次启动若索引不存在也会自动构建）。
+`reference/node.json` 变更后需重建（首次启动若索引不存在也会自动构建）。
 
 ### 预取离线 mock 数据
 

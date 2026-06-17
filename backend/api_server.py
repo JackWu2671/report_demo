@@ -61,7 +61,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_KB_DIR = os.path.join(_DIR, "expert_knowledge")
+_KB_DIR = os.path.join(_DIR, "reference")
 _TEMPLATE_DIR = os.path.join(_DIR, "templates")
 
 import time

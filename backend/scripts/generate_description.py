@@ -2,7 +2,7 @@
 """
 generate_description.py — 批量为评估项.xlsx 生成 DESCRIPTION 列
 
-读取 expert_knowledge/评估项.xlsx，对每行 CONTENT.expandLogic 调用 LLM
+读取 reference/评估项.xlsx，对每行 CONTENT.expandLogic 调用 LLM
 生成 description，写入 DESCRIPTION 列（已有值的行跳过），覆盖前自动备份。
 
 用法（在 backend/ 目录下运行）：
@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
 _SCRIPT_DIR = Path(__file__).parent
 _BACKEND_DIR = _SCRIPT_DIR.parent
-_KB_DIR = _BACKEND_DIR / "expert_knowledge"
+_KB_DIR = _BACKEND_DIR / "reference"
 INPUT_FILE = _KB_DIR / "评估项.xlsx"
 PROMPT_FILE = _SCRIPT_DIR / "generate_description_prompt.txt"
 CONCURRENCY = 3       # 并发调用数，避免触发限流

@@ -23,7 +23,7 @@ from services.faiss_service import FAISSService
 logger = logging.getLogger(__name__)
 
 _DATA_DIR = os.path.join(_BACKEND_DIR, "data")
-_EXPERT_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
+_EXPERT_DIR = os.path.join(_BACKEND_DIR, "reference")
 
 
 async def _build_index_if_missing() -> None:
@@ -56,7 +56,7 @@ async def _build_index_if_missing() -> None:
 
 async def load_resources() -> tuple[FAISSService, dict, dict]:
     """
-    加载 FAISS 索引（data/faiss.index）和 JSON 知识图谱（expert_knowledge/）。
+    加载 FAISS 索引（data/faiss.index）和 JSON 知识图谱（reference/）。
     索引不存在时自动构建。
 
     Returns:

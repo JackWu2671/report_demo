@@ -6,7 +6,7 @@ merge_sample_questions.py — 合并 appSampleQuestion.json 和 sampleQuestion.j
   python3 merge_sample_questions.py
 
 输出:
-  expert_knowledge/评估指标.json
+  reference/评估指标.json
 
 字段顺序: nodeId, level, id, name, answer, domain, renderType, colX, colY
   nodeId  — 短编号 L5_001 / L5_002 ...（合并后按顺序生成）
@@ -22,7 +22,7 @@ import os
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
-_KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
+_KB_DIR = os.path.join(_BACKEND_DIR, "reference")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 

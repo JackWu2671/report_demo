@@ -58,10 +58,10 @@ L5 是知识库的叶子节点，直接驱动报告中的图表和表格渲染�
 
 ### 1.3 原始数据格式
 
-每一层对应一个 JSON 文件，存放在 `backend/expert_knowledge/` 目录：
+每一层对应一个 JSON 文件，存放在 `backend/reference/` 目录：
 
 ```
-expert_knowledge/
+reference/
   场景.json       → L1
   子场景.json     → L2
   评估维度.json   → L3
@@ -71,7 +71,7 @@ expert_knowledge/
 
 L5 原始文件中，SQL 等执行信息被打包在 `answer` 字段（JSON 字符串），`build_knowledge_nodes.py` 构建时会自动解包展开为 `exec_sql / apiName / extracted_table` 等独立字段。
 
-构建后的合并节点文件为 `expert_knowledge/node.json`，关系文件为 `expert_knowledge/relation.json`，运行时由 `loader.py` 加载。
+构建后的合并节点文件为 `reference/node.json`，关系文件为 `reference/relation.json`，运行时由 `loader.py` 加载。
 
 ### 1.4 构建流程
 
@@ -85,7 +85,7 @@ python scripts/build_knowledge_nodes.py
 ```
 
 读取五层 JSON，提取 `id / level / name / description / condition / exec_sql` 等字段，
-合并输出为 `expert_knowledge/knowledge_nodes.json`。
+合并输出为 `reference/knowledge_nodes.json`。
 
 **第二步：生成父子关系**
 
@@ -94,7 +94,7 @@ python scripts/build_knowledge_relations.py
 ```
 
 通过 UUID 匹配（L1→L4）和 name 匹配（L4→L5）推导父子关系，
-输出 `expert_knowledge/knowledge_relations.json`，格式为：
+输出 `reference/knowledge_relations.json`，格式为：
 
 ```json
 [{"parent": "L2_005", "child": "L3_016", "order": 0}, ...]

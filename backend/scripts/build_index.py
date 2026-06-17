@@ -1,7 +1,7 @@
 """
 build_index.py — 构建 FAISS 向量索引。
 
-从 expert_knowledge/node.json 读取知识节点，
+从 reference/node.json 读取知识节点，
 调用 Embedding 服务获取向量，构建 FAISS 索引并保存到 data/ 目录。
 
 使用方法:
@@ -31,7 +31,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_EXPERT_DIR = os.path.join(_BASE_DIR, "expert_knowledge")
+_EXPERT_DIR = os.path.join(_BASE_DIR, "reference")
 _DATA_DIR = os.path.join(_BASE_DIR, "data")
 
 

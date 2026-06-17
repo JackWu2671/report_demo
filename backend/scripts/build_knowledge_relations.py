@@ -14,7 +14,7 @@ build_knowledge_relations.py — 从各层级 JSON 自动生成 knowledge_relati
   python3 build_knowledge_relations.py
 
 输出:
-  expert_knowledge/knowledge_relations.json
+  reference/knowledge_relations.json
 """
 
 import json
@@ -24,7 +24,7 @@ import shutil
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
-_KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
+_KB_DIR = os.path.join(_BACKEND_DIR, "reference")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 

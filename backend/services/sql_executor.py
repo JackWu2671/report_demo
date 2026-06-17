@@ -2,7 +2,7 @@
 sql_executor.py — L5 指标名 → 执行 SQL → 返回结构化结果
 
 职责:
-  - 加载 expert_knowledge/node.json（过滤 level==5），按 name 建索引
+  - 加载 reference/node.json（过滤 level==5），按 name 建索引
   - 若存在 评估指标_mock.json，按 id 叠加 mock_data 字段
   - execute_metric(name)   → {rows, render_type, col_x, col_y}
   - get_scalar(name)       → 第一行第一列的数值（用于 condition 判断）
@@ -25,7 +25,7 @@ from services.de_sql_execution_client import DeApiClient
 
 logger = logging.getLogger(__name__)
 
-_KB_DIR            = os.path.join(_BACKEND_DIR, "expert_knowledge")
+_KB_DIR            = os.path.join(_BACKEND_DIR, "reference")
 _NODE_FILE         = os.path.join(_KB_DIR, "node.json")
 _METRICS_MOCK_FILE = os.path.join(_KB_DIR, "评估指标_mock.json")   # mock_data 来源，不变
 

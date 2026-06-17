@@ -9,7 +9,7 @@ build_knowledge_nodes.py — 将各层级 JSON 合并成统一的节点总表
   python3 build_knowledge_nodes.py
 
 输出:
-  expert_knowledge/knowledge_nodes.json
+  reference/knowledge_nodes.json
 
 特殊处理:
   评估指标 没有 description 字段，用 question 字段代替。
@@ -23,7 +23,7 @@ import shutil
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.path.dirname(_SCRIPT_DIR)
-_KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
+_KB_DIR = os.path.join(_BACKEND_DIR, "reference")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 

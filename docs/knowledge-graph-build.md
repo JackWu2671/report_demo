@@ -1,6 +1,6 @@
 # 知识图谱构建流程：node.json 与 relation.json 的生成
 
-本文档说明 `expert_knowledge/node.json` 和 `relation.json` 是如何一步一步生成的。
+本文档说明 `reference/node.json` 和 `relation.json` 是如何一步一步生成的。
 
 ---
 

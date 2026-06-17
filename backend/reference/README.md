@@ -1,4 +1,4 @@
-# expert_knowledge 目录说明
+# reference 目录说明
 
 本目录存放知识图谱和 query 节点的相关数据文件。
 

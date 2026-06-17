@@ -16,7 +16,7 @@ import sys
 
 _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 _BACKEND_DIR = os.environ.get("REPORT_BACKEND_DIR", "") or os.path.join(_SCRIPTS, "..", "..", "..", "..")
-_KB_DIR = os.path.join(_BACKEND_DIR, "expert_knowledge")
+_KB_DIR = os.path.join(_BACKEND_DIR, "reference")
 _NODE_FILE = (
     os.path.join(_KB_DIR, "node.json")
     if os.path.exists(os.path.join(_KB_DIR, "node.json"))

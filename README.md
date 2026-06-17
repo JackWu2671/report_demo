@@ -57,7 +57,7 @@ report_demo/
 │   ├── agent_with_skills/     # Agent 核心
 │   ├── skills/                # 技能包（SOP + 脚本）
 │   ├── services/              # 基础服务
-│   ├── expert_knowledge/      # 知识库数据
+│   ├── reference/      # 知识库数据
 │   ├── scripts/               # 离线构建脚本
 │   ├── tests/                 # 测试
 │   ├── .env.example           # 环境变量模板
@@ -199,12 +199,12 @@ services/
 
 ---
 
-### `expert_knowledge/`
+### `reference/`
 
 知识库静态数据，由 `scripts/` 下的构建脚本生成，提交到 git。
 
 ```
-expert_knowledge/
+reference/
 ├── node.json          # 知识节点列表（id、name、level、keywords 等）
 ├── relation.json      # 父子关系列表（parent、child、order）
 └── 评估指标_mock.json  # 指标 SQL 定义及离线 mock 数据
