@@ -5,7 +5,7 @@ temp_store.py — 将 session 状态持久化到 backend/temp/{session_id}/
   outline.json   大纲树（JSON）
   outline.md     大纲（Markdown，供人阅读）
   outline.yaml   大纲（YAML，LLM 上下文视图）
-  report.md      最终报告（Markdown，含数据表格 + LLM 总结）
+  report.md      最终报告（Markdown，含数据表格 + LLM 总结 + 标题序号）
   report.html    最终报告（HTML，含 ECharts 交互图表，需联网加载 CDN）
 """
 
@@ -21,8 +21,6 @@ logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = Path(__file__).parent.parent
 _TEMP_ROOT   = Path(os.environ.get("REPORT_TEMP_DIR", str(_BACKEND_DIR / "temp")))
-
-_LEVEL_HEADING = {1: "#", 2: "##", 3: "###", 4: "####"}
 
 
 def _session_dir(session_id: str) -> Path:
@@ -57,12 +55,10 @@ def write_report(
     """报告生成完成后调用，渲染并写 report.md 和 report.html。"""
     if not session_id or not outline_tree:
         return
-    summaries  = summaries or {}
-    collected  = collected or {}
+    summaries = summaries or {}
+    collected = collected or {}
     try:
         d = _session_dir(session_id)
-        d.mkdir(parents=True, exist_ok=True)
-
         md = _render_report_md(outline_tree, summaries, collected)
         (d / "report.md").write_text(md, encoding="utf-8")
 
@@ -74,25 +70,51 @@ def write_report(
         logger.warning("[temp_store] 写报告失败 session=%s: %s", session_id, e)
 
 
-# ── Markdown 渲染 ─────────────────────────────────────────────
+# ── 公共工具 ─────────────────────────────────────────────────
 
-def _rows_to_md_table(rows: List[dict]) -> str:
+def _find_min_structural_level(node: dict) -> int:
+    """找出树中最浅的非 L5 层级（与前端 buildSkeleton 的 minLevel 逻辑一致）。"""
+    lv = node.get("level", 0)
+    result = lv if (0 < lv < 5) else 999
+    for child in node.get("children", []):
+        result = min(result, _find_min_structural_level(child))
+    return result
+
+
+def _rows_to_md_table(rows: List) -> str:
     if not rows or not isinstance(rows[0], dict):
         return "_（暂无数据）_"
     headers = list(rows[0].keys())
-    lines = ["| " + " | ".join(str(h) for h in headers) + " |",
-             "| " + " | ".join("---" for _ in headers) + " |"]
+    lines = [
+        "| " + " | ".join(str(h) for h in headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ]
     for row in rows:
         lines.append("| " + " | ".join(str(row.get(h, "")) for h in headers) + " |")
     return "\n".join(lines)
 
+
+# ── Markdown 渲染 ─────────────────────────────────────────────
 
 def _render_report_md(
     outline_tree: dict,
     summaries: Dict[str, str],
     collected: Dict[str, List],
 ) -> str:
+    min_lv = _find_min_structural_level(outline_tree)
+    if min_lv == 999:
+        min_lv = 1
+
     lines: List[str] = []
+    _cnt: Dict[int, int] = {}   # level → 当前计数，用于自动序号
+
+    def _section_num(level: int) -> str:
+        """更新计数器并返回如 "1.2.3" 的序号字符串。"""
+        _cnt[level] = _cnt.get(level, 0) + 1
+        for lv in list(_cnt.keys()):
+            if lv > level:
+                del _cnt[lv]
+        return ".".join(str(_cnt[lv]) for lv in sorted(_cnt.keys()))
 
     def _walk(node: dict) -> None:
         node_id  = node.get("id", "")
@@ -106,22 +128,36 @@ def _render_report_md(
                 _walk(child)
             return
 
-        if level == 5:
-            lines.append(f"\n**{name}**\n")
-            rows = collected.get(name, [])
-            lines.append(_rows_to_md_table(rows))
-        else:
-            heading = _LEVEL_HEADING.get(level, "####")
-            lines.append(f"\n{heading} {name}\n")
-            if desc:
-                lines.append(f"{desc}\n")
-            if node_id in summaries:
-                # indent each summary line with blockquote marker
-                quoted = "\n".join(f"> {l}" for l in summaries[node_id].splitlines())
-                lines.append(f"{quoted}\n")
+        # 归一化 heading 深度（与前端 buildSkeleton 一致）
+        h = min(max(1, level - min_lv + 1), 6)
+        hashes = "#" * h
 
+        if level == 5:
+            # L5 指标节点：小标题 + 数据表格
+            rows = collected.get(name, [])
+            lines.append(f"\n{hashes} {name}\n")
+            lines.append(_rows_to_md_table(rows))
+            return
+
+        # 结构节点：标题（带序号）+ 描述
+        sec = _section_num(level)
+        lines.append(f"\n{hashes} {sec} {name}\n")
+        if desc:
+            lines.append(f"{desc}\n")
+
+        # 先渲染所有子节点
         for child in children:
             _walk(child)
+
+        # 再渲染当前节点的 summary（与前端 buildSkeleton 顺序一致）
+        if node_id in summaries:
+            quoted = "\n".join(f"> {ln}" for ln in summaries[node_id].splitlines())
+            lines.append(f"\n{quoted}\n")
+
+        # 叶子结构节点（子节点全为 L5 或无子节点）后加分隔线
+        has_structural_child = any(c.get("level", 5) != 5 for c in children)
+        if not has_structural_child and children:
+            lines.append("\n---\n")
 
     _walk(outline_tree)
     return "\n".join(lines).strip() + "\n"
@@ -138,24 +174,23 @@ def _build_chart_option(render_type: str, col_x: str, col_y: str, rows: List[dic
             "series":  [{"type": "pie", "radius": ["35%", "65%"], "data": data,
                          "label": {"formatter": "{b}\n{d}%"}}],
         }
-    else:
-        categories = [str(r.get(col_x, "")) for r in rows]
-        values     = [r.get(col_y, 0) for r in rows]
-        return {
-            "tooltip": {"trigger": "axis"},
-            "xAxis":   {"type": "category", "data": categories,
-                        "axisLabel": {"rotate": 30 if len(categories) > 6 else 0}},
-            "yAxis":   {"type": "value"},
-            "series":  [{"type": "line" if t == "LINE" else "bar",
-                         "data": values, "smooth": t == "LINE"}],
-        }
+    categories = [str(r.get(col_x, "")) for r in rows]
+    values     = [r.get(col_y, 0) for r in rows]
+    return {
+        "tooltip": {"trigger": "axis"},
+        "xAxis":   {"type": "category", "data": categories,
+                    "axisLabel": {"rotate": 30 if len(categories) > 6 else 0}},
+        "yAxis":   {"type": "value"},
+        "series":  [{"type": "line" if t == "LINE" else "bar",
+                     "data": values, "smooth": t == "LINE"}],
+    }
 
 
-def _rows_to_html_table(rows: List[dict]) -> str:
+def _rows_to_html_table(rows: List) -> str:
     if not rows or not isinstance(rows[0], dict):
         return '<p class="no-data">（暂无数据）</p>'
     headers = list(rows[0].keys())
-    th = "".join(f"<th>{html.escape(str(h))}</th>" for h in headers)
+    th  = "".join(f"<th>{html.escape(str(h))}</th>" for h in headers)
     trs = []
     for row in rows:
         td = "".join(f"<td>{html.escape(str(row.get(h, '')))}</td>" for h in headers)
@@ -164,11 +199,8 @@ def _rows_to_html_table(rows: List[dict]) -> str:
 
 
 def _summary_to_html(text: str) -> str:
-    """把 LLM 生成的 markdown-ish 总结转为安全 HTML。"""
     escaped = html.escape(text)
-    # **bold**
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
-    # 换行
     escaped = escaped.replace("\n\n", "</p><p>").replace("\n", "<br>")
     return f"<p>{escaped}</p>"
 
@@ -196,11 +228,12 @@ _HTML_TMPL = """\
     h1{{border-bottom:2px solid #e0e0e0;padding-bottom:8px;margin-bottom:16px}}
     h2{{color:#222;margin-top:40px;border-bottom:1px solid #eee;padding-bottom:4px}}
     h3{{color:#333;margin-top:28px}}
-    h4{{color:#555;margin-top:20px}}
+    h4,h5,h6{{color:#555;margin-top:20px}}
     p{{margin:8px 0}}
-    blockquote{{border-left:4px solid #4a9eff;margin:12px 0;padding:10px 16px;
+    blockquote{{border-left:4px solid #4a9eff;margin:16px 0;padding:10px 16px;
                 background:#f0f7ff;color:#333;border-radius:0 4px 4px 0}}
     blockquote p{{margin:4px 0}}
+    hr{{border:none;border-top:1px solid #e8e8e8;margin:24px 0}}
     .metric-chart{{width:100%;height:320px;margin:12px 0;
                    border:1px solid #f0f0f0;border-radius:4px}}
     table{{border-collapse:collapse;width:100%;margin:12px 0;font-size:.9em}}
@@ -226,9 +259,21 @@ def _render_report_html(
     summaries: Dict[str, str],
     collected: Dict[str, List],
 ) -> str:
+    min_lv = _find_min_structural_level(outline_tree)
+    if min_lv == 999:
+        min_lv = 1
+
     body_parts:    List[str] = []
     chart_scripts: List[str] = []
+    _cnt: Dict[int, int] = {}
     chart_counter = [0]
+
+    def _section_num(level: int) -> str:
+        _cnt[level] = _cnt.get(level, 0) + 1
+        for lv in list(_cnt.keys()):
+            if lv > level:
+                del _cnt[lv]
+        return ".".join(str(_cnt[lv]) for lv in sorted(_cnt.keys()))
 
     def _walk(node: dict) -> None:
         node_id  = node.get("id", "")
@@ -244,6 +289,9 @@ def _render_report_html(
             for child in children:
                 _walk(child)
             return
+
+        h = min(max(1, level - min_lv + 1), 6)
+        tag = f"h{h}"
 
         if level == 5:
             rows = collected.get(name, [])
@@ -263,18 +311,26 @@ def _render_report_html(
                 body_parts.append(_rows_to_html_table(rows))
             else:
                 body_parts.append('<p class="no-data">（暂无数据）</p>')
-        else:
-            tag = f"h{min(level, 4)}"
-            body_parts.append(f"<{tag}>{html.escape(name)}</{tag}>")
-            if desc:
-                body_parts.append(f"<p>{html.escape(desc)}</p>")
-            if node_id in summaries:
-                body_parts.append(
-                    f"<blockquote>{_summary_to_html(summaries[node_id])}</blockquote>"
-                )
+            return
+
+        sec = _section_num(level)
+        body_parts.append(
+            f"<{tag}>{sec}&nbsp;{html.escape(name)}</{tag}>"
+        )
+        if desc:
+            body_parts.append(f"<p>{html.escape(desc)}</p>")
 
         for child in children:
             _walk(child)
+
+        if node_id in summaries:
+            body_parts.append(
+                f"<blockquote>{_summary_to_html(summaries[node_id])}</blockquote>"
+            )
+
+        has_structural_child = any(c.get("level", 5) != 5 for c in children)
+        if not has_structural_child and children:
+            body_parts.append("<hr>")
 
     _walk(outline_tree)
 
