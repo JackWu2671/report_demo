@@ -31,8 +31,29 @@ def _session_dir(session_id: str) -> Path:
 
 # ── 公开写入接口 ──────────────────────────────────────────────
 
+def _cached_report_data(session_id: str) -> tuple[dict, dict] | None:
+    """从 /tmp/report_sessions/{session_id}.json 读取已缓存的报告数据。
+    返回 (collected, summaries)，或 None（文件不存在 / 无报告数据）。
+    """
+    session_dir = Path(os.environ.get("REPORT_SESSION_DIR", "/tmp/report_sessions"))
+    p = session_dir / f"{session_id}.json"
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        collected  = data.get("report_data", {})
+        summaries  = data.get("report_summaries", {})
+        if collected or summaries:
+            return collected, summaries
+    except Exception:
+        pass
+    return None
+
+
 def write_outline(session_id: str, outline_tree: dict, markdown: str, outline_yaml: str) -> None:
-    """大纲变更时调用，同步写三视图文件。"""
+    """大纲变更时调用，同步写三视图文件。
+    若报告已生成过（report.md 存在），用新大纲 + 缓存数据同步更新报告文件。
+    """
     if not session_id or not outline_tree:
         return
     try:
@@ -42,6 +63,12 @@ def write_outline(session_id: str, outline_tree: dict, markdown: str, outline_ya
         )
         (d / "outline.md").write_text(markdown or "", encoding="utf-8")
         (d / "outline.yaml").write_text(outline_yaml or "", encoding="utf-8")
+
+        # 如果之前已生成过报告，用新大纲重新渲染（保持报告与大纲同步）
+        if (d / "report.md").exists():
+            cached = _cached_report_data(session_id)
+            if cached:
+                write_report(session_id, outline_tree, cached[1], cached[0])
     except Exception as e:
         logger.warning("[temp_store] 写大纲失败 session=%s: %s", session_id, e)
 
