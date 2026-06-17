@@ -95,7 +95,7 @@ async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[d
                 logger.warning("[Step 9] add_node: 新增后发现重复节点 %s", duplicates)
                 skipped.append({**op, "_skip_reason": f"新增成功但产生了重复节点: {duplicates}，请用 delete_node 删除重复项"})
 
-        elif op_name in ("delete_node", "remove_node"):
+        elif op_name == "delete_node":
             removed = _delete_node(tree, node_id)
             if removed:
                 logger.info("[Step 9] delete_node: 已删除节点 %s | 原因: %s", node_id, reason)
