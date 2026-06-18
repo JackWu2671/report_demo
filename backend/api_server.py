@@ -310,52 +310,39 @@ async def _stream_report(session_id: str, outline_tree: dict, cached_names: set,
             break
         yield _sse(event)
 
-    # 若有节点被条件跳过，调 modify_outline.py 删除，保持脚本格式一致
+    # 若有节点被条件跳过，直接调 patcher 删除，更新大纲
     if skipped and session_id:
         try:
-            ops = json.dumps([{"op": "delete_node", "node_id": s["node_id"]} for s in skipped])
-            script = os.path.join(_DIR, "skills", "analyze-network", "scripts", "modify_outline.py")
-            env = {
-                **os.environ,
-                "REPORT_SESSION_ID":  session_id,
-                "REPORT_SESSION_DIR": os.environ.get("REPORT_SESSION_DIR", "/tmp/report_sessions"),
-                "REPORT_BACKEND_DIR": _DIR,
-            }
+            _SKILLS_LIB = os.path.join(_DIR, "skills", "_lib")
+            if _SKILLS_LIB not in sys.path:
+                sys.path.insert(0, _SKILLS_LIB)
+            from patcher import apply_patch
+            from outline_utils import to_clean_json, to_markdown, to_yaml
 
-            proc = await asyncio.to_thread(
-                subprocess.run,
-                [sys.executable, script, ops],
-                env=env, capture_output=True, text=True, timeout=30,
-            )
+            agent = _sessions.get(session_id)
+            outline_tree = (agent.memory.outline_tree if agent else None) or {}
+            ops = [{"op": "delete_node", "node_id": s["node_id"]} for s in skipped]
+            new_tree, _ = await apply_patch(outline_tree, ops)
+            updated_tree = to_clean_json(new_tree)
+            md       = to_markdown(updated_tree)
+            yaml_str = to_yaml(updated_tree)
 
-            if proc.returncode == 0:
-                session      = _read_session(session_id)
-                updated_tree = session.get("outline_tree", {})
-
-                # 同步 agent 内存（与 _detect_events 调用顺序一致）
-                agent = _sessions.get(session_id)
-                if agent:
-                    agent.memory.set_outline(
-                        updated_tree,
-                        session.get("markdown", ""),
-                        session.get("outline_yaml", ""),
-                    )
-                    from services.temp_store import write_outline as _write_temp_outline
-                    _write_temp_outline(session_id, updated_tree, session.get("markdown", ""), session.get("outline_yaml", ""))
-                    names = "、".join(f"「{s['node_name']}」" for s in skipped)
-                    agent.memory.add_message({
-                        "role": "assistant",
-                        "content": f"[系统通知] 报告生成过程中，以下章节因数据条件不满足，已自动从大纲删除：{names}。大纲已同步更新。",
-                    })
-
-                yield _sse({
-                    "type":         "outline",
-                    "markdown":     session.get("markdown", ""),
-                    "outline_yaml": session.get("outline_yaml", ""),
-                    "outline_tree": updated_tree,
+            if agent:
+                agent.memory.set_outline(updated_tree, md, yaml_str)
+                from services.temp_store import write_outline as _write_temp_outline
+                _write_temp_outline(session_id, updated_tree, md, yaml_str)
+                names = "、".join(f"「{s['node_name']}」" for s in skipped)
+                agent.memory.add_message({
+                    "role": "assistant",
+                    "content": f"[系统通知] 报告生成过程中，以下章节因数据条件不满足，已自动从大纲删除：{names}。大纲已同步更新。",
                 })
-            else:
-                logger.warning("[Report] modify_outline.py 删除跳过节点失败: %s", proc.stderr[:300])
+
+            yield _sse({
+                "type":         "outline",
+                "markdown":     md,
+                "outline_yaml": yaml_str,
+                "outline_tree": updated_tree,
+            })
         except Exception as e:
             logger.error("[Report] 更新大纲失败: %s", e)
 
