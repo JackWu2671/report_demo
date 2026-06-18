@@ -1,14 +1,17 @@
 """
 patcher.py — 将结构化操作列表应用到大纲树。
 
-支持的 patch 操作:
-  add_node                — 新增节点：node_id 在 KB 中存在时从知识图谱拉取完整子树；不在 KB 中时需传 name（和可选 description）创建自定义结构节点
-  delete_node             — 删除指定节点及其所有子节点
-  modify_node_name        — 修改节点的 name；对 L5 节点会自动从 KB 同步 exec_sql 等所有关联字段
-  modify_node_description — 修改节点的 description（L5 query 节点禁止，会被 skip）
-  modify_node_condition   — 设置或修改节点展示条件
-  modify_node_exec_sql    — 直接修改 L5 节点的 exec_sql（仅限 L5，用于定制查询逻辑）
-  keep_only_node          — 保留指定节点，删除同级兄弟节点
+【外部 op（modify_outline 工具传入）】
+  delete_node    — 删除指定节点及其所有子节点
+  add_node       — 新增节点：node_id 在 KB 中存在时拉取完整子树；否则需传 name（和可选 description）创建自定义节点
+  keep_only_node — 保留指定节点，删除同级兄弟节点
+  update_node    — 修改节点属性；由 field 路由到对应内部 op（见下）
+
+【内部 op（由 update_node 路由，也可直接传入）】
+  modify_node_name        — field="name"：改名；L5 节点自动从 KB 同步 exec_sql 等关联字段
+  modify_node_description — field="description"：改描述（L5 query 节点禁止）
+  modify_node_condition   — field="condition"：设置展示条件
+  modify_node_exec_sql    — field="exec_sql"：直接改 L5 节点查询逻辑
 """
 
 import copy
