@@ -13,13 +13,15 @@ import os
 import asyncio
 import json
 import argparse
+import logging
 
 sys.path.insert(0, os.environ.get("REPORT_BACKEND_DIR", ""))
 _SCRIPTS = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_SCRIPTS, "..", "..", "_lib"))
 
 from session import set_extraction
-from set_scene_metadata import set_scene_metadata
+
+logger = logging.getLogger(__name__)
 
 
 async def main():
@@ -31,29 +33,22 @@ async def main():
     args = parser.parse_args()
 
     keywords = [k.strip() for k in args.keywords.split(",") if k.strip()]
-    result = await set_scene_metadata(
-        scene_name=args.scene_name,
-        summary=args.summary,
-        keywords=keywords,
-        usage_conditions=args.usage_conditions,
-    )
 
-    if result["status"] == "success":
-        set_extraction({
-            "scene_name": result["scene_name"],
-            "summary": result["summary"],
-            "keywords": result["keywords"],
-            "usage_conditions": result["usage_conditions"],
-        })
-        print(json.dumps({
-            "scene_name": result["scene_name"],
-            "keywords": result["keywords"],
-            "summary": result["summary"],
-            "usage_conditions": result["usage_conditions"],
-        }, ensure_ascii=False, indent=2))
-    else:
-        print(json.dumps({"status": "error", "message": result["message"]}, ensure_ascii=False), file=sys.stderr)
-        sys.exit(1)
+    logger.info("[set_metadata] scene=%r keywords=%s", args.scene_name, keywords)
+
+    set_extraction({
+        "scene_name": args.scene_name,
+        "summary": args.summary,
+        "keywords": keywords,
+        "usage_conditions": args.usage_conditions,
+    })
+
+    print(json.dumps({
+        "scene_name": args.scene_name,
+        "keywords": keywords,
+        "summary": args.summary,
+        "usage_conditions": args.usage_conditions,
+    }, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
