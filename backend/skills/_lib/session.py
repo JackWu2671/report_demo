@@ -38,6 +38,16 @@ def set_outline(outline_tree: dict, outline_yaml: str, markdown: str) -> None:
     data["outline_yaml"] = outline_yaml
     data["markdown"] = markdown
     write(data)
+    # 同步写 temp 三视图文件，使大纲产物独立于 agent 框架
+    if SESSION_ID and BACKEND_DIR:
+        try:
+            import sys
+            if BACKEND_DIR not in sys.path:
+                sys.path.insert(0, BACKEND_DIR)
+            from services.temp_store import write_outline as _write_temp
+            _write_temp(SESSION_ID, outline_tree, markdown, outline_yaml)
+        except Exception:
+            pass
 
 
 def set_extraction(extraction: dict) -> None:
