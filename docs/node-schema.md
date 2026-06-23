@@ -172,6 +172,29 @@ summary（静态）/ summarySuggestion 生成的结尾段落
 }
 ```
 
+### api 叶子节点
+
+```json
+{
+  "id": "new_L5_001",
+  "name": "近 7 日告警趋势",
+  "type": "api",
+  "api_config": {
+    "endpoint": "/api/alert/trend",
+    "method": "GET",
+    "params": {
+      "days": 7,
+      "level": "critical"
+    }
+  },
+  "renderType": "LINE",
+  "colX": "日期",
+  "colY": "告警数",
+  "summarySuggestion": "分析告警高峰时段，说明是否有收敛趋势。",
+  "summary": ""
+}
+```
+
 ### narrative 叶子节点
 
 ```json
