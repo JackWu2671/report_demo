@@ -25,9 +25,6 @@
 | `content` | | 静态 Markdown 正文，直接渲染 |
 | `sql_config` | | SQL 数据源配置，有则执行查询 |
 | `api_config` | | API 数据源配置，有则调用接口 |
-| `renderType` | | 渲染类型：`BAR` / `LINE` / `PIE` / `TABLE`（sql / api 共用） |
-| `colX` | | 图表 X 轴对应的结果列名 |
-| `colY` | | 图表 Y 轴对应的结果列名 |
 | `summarySuggestion` | | prompt，LLM 看数据后生成收尾段落 |
 | `summary` | | 静态文本，渲染在数据之后（收尾） |
 | `condition` | | 展示条件表达式，求值为假则跳过该节点及其子树 |
@@ -40,6 +37,9 @@
 |------|------|------|
 | `sql_config.exec_sql` | ✅ | 执行的 SQL 语句 |
 | `sql_config.tables` | ✅ | SQL 涉及的表名列表，作为取数 API 的路由参数 |
+| `sql_config.renderType` | | 渲染类型：`BAR` / `LINE` / `PIE` / `TABLE` |
+| `sql_config.colX` | | 图表 X 轴对应的结果列名 |
+| `sql_config.colY` | | 图表 Y 轴对应的结果列名 |
 
 ### api_config 字段
 
@@ -47,6 +47,9 @@
 |------|------|------|
 | `api_config.api_name` | ✅ | API 名称 |
 | `api_config.api_param` | ✅ | API 调用参数 |
+| `api_config.renderType` | | 渲染类型：`BAR` / `LINE` / `PIE` / `TABLE` |
+| `api_config.colX` | | 图表 X 轴对应的结果列名 |
+| `api_config.colY` | | 图表 Y 轴对应的结果列名 |
 
 ---
 
@@ -112,11 +115,11 @@ summary（静态）/ summarySuggestion 生成内容           ← 永远在最�
   "name": "高价值企业 OTN 覆盖率",
   "sql_config": {
     "exec_sql": "SELECT 行政区, 覆盖率 FROM dwd_otn_site ...",
-    "tables": ["dwd_otn_site"]
+    "tables": ["dwd_otn_site"],
+    "renderType": "BAR",
+    "colX": "行政区",
+    "colY": "覆盖率"
   },
-  "renderType": "BAR",
-  "colX": "行政区",
-  "colY": "覆盖率",
   "summarySuggestion": "指出覆盖率最低的三个区域及差距。"
 }
 ```
@@ -132,11 +135,11 @@ summary（静态）/ summarySuggestion 生成内容           ← 永远在最�
     "api_param": {
       "days": 7,
       "level": "critical"
-    }
+    },
+    "renderType": "LINE",
+    "colX": "日期",
+    "colY": "告警数"
   },
-  "renderType": "LINE",
-  "colX": "日期",
-  "colY": "告警数",
   "summarySuggestion": "分析告警高峰时段，说明是否有收敛趋势。"
 }
 ```
@@ -160,9 +163,9 @@ summary（静态）/ summarySuggestion 生成内容           ← 永远在最�
   "descriptionSuggestion": "根据查询结果，概括本节异常站点的整体情况。",
   "sql_config": {
     "exec_sql": "SELECT 站点, 异常类型, 数量 FROM dwd_alarm ...",
-    "tables": ["dwd_alarm"]
+    "tables": ["dwd_alarm"],
+    "renderType": "TABLE"
   },
-  "renderType": "TABLE",
   "content": "### 处理建议\n\n- 优先处理持续超过 24 小时的告警\n- 联系属地工程师确认现场情况",
   "summarySuggestion": "总结各类异常的分布规律，给出优先级排序建议。",
   "children": []
