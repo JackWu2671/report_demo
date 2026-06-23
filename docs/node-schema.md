@@ -74,8 +74,9 @@ summary 为空 + summarySuggestion 为空     → 不渲染
 
 | 字段 | 必须 | 说明 |
 |------|------|------|
-| `exec_sql` | ✅ | 执行的 SQL 语句 |
-| `tables` | ✅ | SQL 涉及的表名列表，作为取数 API 的路由参数 |
+| `sql_config` | ✅ | SQL 数据源配置对象 |
+| `sql_config.exec_sql` | ✅ | 执行的 SQL 语句 |
+| `sql_config.tables` | ✅ | SQL 涉及的表名列表，作为取数 API 的路由参数 |
 | `renderType` | | 渲染类型：`BAR` / `LINE` / `PIE` / `TABLE` |
 | `colX` | | 图表 X 轴对应的结果列名 |
 | `colY` | | 图表 Y 轴对应的结果列名 |
@@ -162,8 +163,10 @@ summary（静态）/ summarySuggestion 生成的结尾段落
   "id": "L5_318",
   "name": "高价值企业 OTN 覆盖率",
   "type": "sql",
-  "exec_sql": "SELECT 行政区, 覆盖率 FROM dwd_otn_site ...",
-  "tables": ["dwd_otn_site"],
+  "sql_config": {
+    "exec_sql": "SELECT 行政区, 覆盖率 FROM dwd_otn_site ...",
+    "tables": ["dwd_otn_site"]
+  },
   "renderType": "BAR",
   "colX": "行政区",
   "colY": "覆盖率",
