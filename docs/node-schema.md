@@ -89,7 +89,9 @@ summary 为空 + summarySuggestion 为空     → 不渲染
 
 | 字段 | 必须 | 说明 |
 |------|------|------|
-| `api_config` | ✅ | API 调用配置（endpoint、参数等） |
+| `api_config` | ✅ | API 调用配置对象 |
+| `api_config.api_name` | ✅ | API 名称 |
+| `api_config.api_param` | | API 调用参数 |
 | `renderType` | | 渲染类型：`BAR` / `LINE` / `PIE` / `TABLE` |
 | `colX` | | 图表 X 轴对应的结果列名 |
 | `colY` | | 图表 Y 轴对应的结果列名 |
@@ -183,9 +185,8 @@ summary（静态）/ summarySuggestion 生成的结尾段落
   "name": "近 7 日告警趋势",
   "type": "api",
   "api_config": {
-    "endpoint": "/api/alert/trend",
-    "method": "GET",
-    "params": {
+    "api_name": "alert_trend",
+    "api_param": {
       "days": 7,
       "level": "critical"
     }
