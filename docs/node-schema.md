@@ -107,18 +107,32 @@ summary 为空 + summarySuggestion 为空     → 不渲染
 
 ---
 
-## 五、报告中的节点渲染顺序
+## 五、报告中的节点执行与渲染顺序
 
-一个节点完整的报告输出顺序：
+执行顺序和渲染（输出）顺序不同——`descriptionSuggestion` 需要看子节点数据，所以必须等数据收集完才能生成，但最终在报告里仍然出现在数据之前。
+
+**执行顺序（谁先跑）：**
+
+```
+① 收集所有子节点 / 叶子节点数据（SQL 查询、API 调用）
+  ↓
+② LLM 看数据生成 description（若有 descriptionSuggestion）
+  ↓
+③ LLM 看数据生成 summary（若有 summarySuggestion）
+  ↓
+④ 按渲染顺序输出报告
+```
+
+**渲染顺序（报告里的呈现位置）：**
 
 ```
 章节标题（name）
   ↓
-description / descriptionSuggestion 生成的开头段落
+description（静态）/ descriptionSuggestion 生成的开头段落
   ↓
 子节点内容（递归渲染）/ 叶子节点数据（图表、表格、narrative 文本）
   ↓
-summary / summarySuggestion 生成的结尾段落
+summary（静态）/ summarySuggestion 生成的结尾段落
 ```
 
 ---
