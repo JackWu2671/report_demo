@@ -26,7 +26,7 @@ Excel 列说明:
   condition_queries — 条件相关指标名列表（用于执行前判断是否展示本节）
   summarySuggestion — LLM 总结指令
   template          — expandLogic 原文（含 ${} 占位符，执行引擎渲染报告）
-  dimensions        — 关联的评估指标名列表
+  children          — 关联的评估指标名列表
 """
 
 import json
@@ -134,7 +134,7 @@ def convert_row(
         "condition_queries": condition_queries,
         "summarySuggestion": obj.get("summarySuggestion") or "",
         "template": expand_logic,
-        "dimensions": obj.get("metrics") or [],
+        "children": obj.get("metrics") or [],
     }
 
 

@@ -3,10 +3,10 @@
 build_knowledge_relations.py — 从各层级 JSON 自动生成 knowledge_relations.json
 
 父子关系推导规则：
-  场景      .dimensions[i].id (UUID) → 子场景.id       → 子场景.nodeId
-  子场景    .dimensions[i].id (UUID) → 评估维度.id     → 评估维度.nodeId
-  评估维度  .dimensions[i].id (UUID) → 评估项.id       → 评估项.nodeId
-  评估项    .dimensions[i] (name)    → 评估指标.name   → 评估指标.nodeId
+  场景      .children[i].id (UUID) → 子场景.id       → 子场景.nodeId
+  子场景    .children[i].id (UUID) → 评估维度.id     → 评估维度.nodeId
+  评估维度  .children[i].id (UUID) → 评估项.id       → 评估项.nodeId
+  评估项    .children[i] (name)    → 评估指标.name   → 评估指标.nodeId
 
 输出格式: [{parent: nodeId, child: nodeId, order: int}]
 
@@ -73,7 +73,7 @@ def main():
     for filename in UUID_LEVELS:
         for record in all_data.get(filename, []):
             parent_id = record.get("id", "")
-            dims = record.get("dimensions") or []
+            dims = record.get("children") or []
             for dim in dims:
                 child_uuid = dim.get("uuid", "")
                 child_id = uuid_to_id.get(child_uuid)
@@ -89,7 +89,7 @@ def main():
     # 评估项 → 评估指标（name 匹配）
     for record in all_data.get(NAME_LEVEL, []):
         parent_id = record.get("id", "")
-        dims = record.get("dimensions") or []   # list of str
+        dims = record.get("children") or []   # list of str
         for i, metric_name in enumerate(dims):
             child_id = name_to_id.get(metric_name)
             if not child_id:

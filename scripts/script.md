@@ -152,8 +152,8 @@ python3 scripts/build_knowledge_relations.py
 - `reference/relation.json`（同内容，副本）
 
 关系推导规则：
-- L1→L2、L2→L3、L3→L4：通过 `dimensions[i].uuid` 匹配子节点的 `uuid`
-- L4→L5：通过 `dimensions[i]`（字符串名称）匹配评估指标的 `name`
+- L1→L2、L2→L3、L3→L4：通过 `children[i].uuid` 匹配子节点的 `uuid`
+- L4→L5：通过 `children[i]`（字符串名称）匹配评估指标的 `name`
 
 ---
 

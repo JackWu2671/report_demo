@@ -15,7 +15,7 @@ parse_scene_xlsx.py — 将场景类 xlsx 转换为 JSON
   keywords    — 关键词列表（原字段名 keyWords）
   sampleIssue — 示例提问
   condition   — 触发条件（原数据无此字段，默认空字符串）
-  dimensions  — 子维度列表，每项只保留 id / name / rank
+  children    — 子维度列表，每项只保留 id / name / rank
 """
 
 import json
@@ -101,7 +101,7 @@ def convert_row(scene_key: str, content_str: str, level: str,
         "keywords": obj.get("keyWords", []),
         "sampleIssue": obj.get("sampleIssue", ""),
         "condition": "",
-        "dimensions": parse_dimensions(obj.get("dimensions", [])),
+        "children": parse_dimensions(obj.get("dimensions", [])),
     }
 
 
