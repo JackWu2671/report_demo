@@ -14,7 +14,7 @@ import sys
 
 from openai import OpenAI
 
-LLM_BASE_URL = "http://10.118.238.104:8003/v1"
+LLM_BASE_URL = "http://10.118.238.104:9003/v1"
 LLM_MODEL_NAME = "qwen3.6-27b"
 LLM_API_KEY = "EMPTY"
 LLM_TEMPERATURE = 0.1
