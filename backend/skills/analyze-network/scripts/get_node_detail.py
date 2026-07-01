@@ -24,7 +24,7 @@ _NODE_FILE = (
 )
 
 _DISPLAY_FIELDS = [
-    "id", "name", "level", "description", "content",
+    "id", "name", "level", "description", "descriptionSuggestion",
     "condition", "condition_queries", "summarySuggestion",
     "renderType", "colX", "colY",
     "apiName", "exec_sql", "extracted_table",
