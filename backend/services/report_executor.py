@@ -22,12 +22,17 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from services.de_sql_execution_client import DeApiClient
 from services.sql_executor import SqlExecutor
+
+_LIB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skills", "_lib")
+if _LIB_DIR not in sys.path:
+    sys.path.insert(0, _LIB_DIR)
 
 MAX_PARALLEL = 5  # 同时执行的 metric 查询数
 
@@ -58,7 +63,13 @@ def run_report(
 
     if session_id:
         _persist_report_data(session_id, collected, summaries)
+        from services.temp_store import write_outline as _write_temp_outline
         from services.temp_store import write_report as _write_temp_report
+        if summaries:
+            # 生成的总结已回填进 outline_tree 各节点的 summary 字段（见 _generate_summary），
+            # 这里把更新后的树重新落盘到 outline.json，避免只留在 report_sessions 的临时总结里
+            from outline_utils import to_markdown, to_yaml
+            _write_temp_outline(session_id, outline_tree, to_markdown(outline_tree), to_yaml(outline_tree))
         _write_temp_report(session_id, outline_tree, summaries, collected)
 
 
@@ -464,6 +475,7 @@ def _generate_summary(
     try:
         llm     = LLMService.from_env()
         summary = asyncio.run(llm.complete([{"role": "user", "content": prompt}]))
+        node["summary"] = summary.strip()  # 回填到大纲节点，供 outline.json 持久化
         on_event({"type": "report_summary", "node_id": node_id, "chunk": summary + "\n\n"})
         logger.info("[report] 总结完成: %r", node_name)
     except Exception as e:
