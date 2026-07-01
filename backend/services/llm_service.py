@@ -128,11 +128,18 @@ class LLMService:
         reasoning_content = ""
         answer_content = ""
         is_answering = False
+        finish_reason = None
+        usage = None
 
         async for chunk in stream:
+            if getattr(chunk, "usage", None):
+                usage = chunk.usage
             if not chunk.choices:
                 continue
-            delta = chunk.choices[0].delta
+            choice = chunk.choices[0]
+            if getattr(choice, "finish_reason", None):
+                finish_reason = choice.finish_reason
+            delta = choice.delta
 
             reasoning = getattr(delta, "reasoning_content", None)
             if reasoning:
@@ -149,9 +156,11 @@ class LLMService:
                     print(content, end="", flush=True)
 
         logger.info(
-            "[LLM Output] (%d字，reasoning=%d字):\n%s",
-            len(answer_content), len(reasoning_content), answer_content,
+            "[LLM Output] (%d字，reasoning=%d字，finish_reason=%s，usage=%s):\n%s",
+            len(answer_content), len(reasoning_content), finish_reason, usage, answer_content,
         )
+        if reasoning_content:
+            logger.info("[LLM reasoning_content 全文]\n%s", reasoning_content)
         if not answer_content and reasoning_content:
             logger.warning(
                 "[LLM] content 为空但 reasoning_content 有 %d 字——很可能是思考耗尽了 max_tokens，"
