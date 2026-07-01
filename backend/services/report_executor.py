@@ -68,6 +68,11 @@ def run_report(
         if summaries:
             # 生成的总结已回填进 outline_tree 各节点的 summary 字段（见 _generate_summary），
             # 这里把更新后的树重新落盘到 outline.json，避免只留在 report_sessions 的临时总结里
+            for _nid in summaries:
+                _found = _find_node_by_id(outline_tree, _nid)
+                logger.info("[report][DEBUG] 写盘前查找 node_id=%s found=%s object_id=%s summary_len=%d",
+                            _nid, bool(_found), id(_found) if _found else None,
+                            len((_found or {}).get("summary", "")))
             try:
                 from outline_utils import to_markdown, to_yaml
                 _write_temp_outline(session_id, outline_tree, to_markdown(outline_tree), to_yaml(outline_tree))
@@ -277,6 +282,17 @@ def _find_l5_by_names(node: Dict, names: set) -> List[Dict]:
     return result
 
 
+def _find_node_by_id(node: Dict, node_id: str) -> Optional[Dict]:
+    """按 id 递归查找节点（调试用）。"""
+    if node.get("id") == node_id:
+        return node
+    for child in node.get("children", []):
+        found = _find_node_by_id(child, node_id)
+        if found is not None:
+            return found
+    return None
+
+
 def _collect_node_data(node: Dict, collected: Dict[str, List]) -> Dict[str, List]:
     """
     递归收集节点子树下所有 L5 指标的查询结果。
@@ -482,6 +498,8 @@ def _generate_summary(
         node["summary"] = summary.strip()  # 回填到大纲节点，供 outline.json 持久化
         on_event({"type": "report_summary", "node_id": node_id, "chunk": summary + "\n\n"})
         logger.info("[report] 总结完成: %r", node_name)
+        logger.info("[report][DEBUG] 回填后 node id=%s object_id=%s summary_len=%d",
+                    node_id, id(node), len(node.get("summary", "")))
     except Exception as e:
         logger.error("[report] 总结生成失败 %r: %s", node_name, e)
         on_event({"type": "report_summary", "node_id": node_id, "chunk": "_（总结生成失败）_\n\n"})
