@@ -25,11 +25,12 @@ function buildSkeleton(tree) {
       } else {
         // 结构节点（任意非 L5 层级）：递归处理所有子节点
         lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
-        // 有静态 description 直接渲染；没有但有 descriptionSuggestion 时占位，等 LLM 生成
-        if (node.description) {
-          lines.push(node.description + '\n\n')
-        } else if (node.descriptionSuggestion) {
+        // descriptionSuggestion 存在时优先占位、等 LLM 重新生成覆盖旧的 description
+        // （跟后端 report_executor 的行为保持一致）；没有 Suggestion 才直接渲染静态 description
+        if (node.descriptionSuggestion) {
           lines.push('<span data-ph-description="' + node.id + '" class="ph-spin"></span>\n\n')
+        } else if (node.description) {
+          lines.push(node.description + '\n\n')
         }
         walk(node.children, depth + 1)
         if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
