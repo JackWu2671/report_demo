@@ -514,8 +514,10 @@ def _generate_description(
     跟 _generate_summary 的区别：
       - 数据输入只给单值型指标（_extract_scalar_data），不把分布类明细数据也塞进去——
         那些已经在数据区渲染过一遍，description 重复罗列没有意义。
-      - 输出必须是一段自然语言文本，只客观陈述数字本身，不做任何分析/判断/建议。
-    具体呈现格式由 descriptionSuggestion 文本本身给出，当作 prompt 里的格式规则。
+      - 输出必须是一段连贯的自然语言文本，只客观陈述数字本身，不做任何分析/判断/建议。
+    descriptionSuggestion 当作"内容要点/大纲"参考（历史遗留字段，文本里可能带
+    ${指标名} 这类占位符语法），不是要逐字照抄的最终文案模板——LLM 需要结合原有
+    的 description（章节说明）重新组织成一段人话，而不是把占位符原样输出。
     """
     from services.llm_service import LLMService
 
@@ -524,16 +526,20 @@ def _generate_description(
     scalars   = _extract_scalar_data(node_data)
     data_str  = "\n".join(f"{name}：{val}" for name, val in scalars.items()) or "（无可引用的单值数据）"
     description_suggestion = node["descriptionSuggestion"]
+    original_description   = node.get("description") or "（无）"
 
     prompt = (
+        f"【原有章节说明（写作基调参考，可结合下面的数字重新表达，不必逐字保留）】\n{original_description}\n\n"
+        f"【内容要点（大纲/提示，不是要照抄的文案；里面若出现 ${{指标名}} 这类写法，"
+        f"含义是\"在这里提一下这个指标\"，不要把 ${{...}} 原样写进输出）】\n{description_suggestion}\n\n"
         f"【可引用的关键数字】\n{data_str}\n\n"
-        f"【描述格式规则】\n{description_suggestion}\n\n"
-        "请只输出一段自然语言文本（不要用列表、表格、分点），"
-        "严格按描述格式规则给出的格式组织语言，用上方数字替换其中的占位符（如 XX）。\n"
-        "只能引用上面列出的数字，不要罗列明细分布，不要编造未给出的数据，"
-        "也不要添加任何分析、判断、建议或结论性的观点——这些数据下方已经单独渲染，"
-        "description 只负责简明陈述。\n"
-        "直接输出这段文本，不要解释步骤。"
+        "请综合以上信息，重新写一段连贯、有逻辑的自然语言描述：\n"
+        "1. 语句通顺自然，像人写的介绍性文字，绝不能出现 ${...} 占位符或裸的指标名；\n"
+        "2. 按内容要点提到的方面组织行文顺序，在合适的位置自然嵌入【可引用的关键数字】里的具体数值；\n"
+        "3. 只能引用上面给出的数字，不要罗列明细分布，不要编造未给出的数据；\n"
+        "4. 不做任何分析、判断、建议或结论性观点，只客观陈述现状——这些数据下方已经单独渲染表格/图表；\n"
+        "5. 只输出这一段文本，不要用列表、表格、分点，不要解释步骤。\n"
+        "直接输出最终文本。"
     )
 
     logger.info("[report] 生成描述: %r（可用数字指标数: %d/%d）", node_name, len(scalars), len(node_data))
