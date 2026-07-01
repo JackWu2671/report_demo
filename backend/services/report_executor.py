@@ -16,9 +16,11 @@ report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件�
   则依次调 LLM 生成描述与总结（描述先生成，对应渲染在数据之前；总结渲染在数据之后）。
 
 描述与总结的区别：
-  descriptionSuggestion → description：只呈现/概括数据本身，不做分析判断，格式由
-    descriptionSuggestion 文本本身给出（当作 prompt 里的格式规则）。
-  summarySuggestion → summary：在给定格式基础上，还要结合数据给出分析观点。
+  descriptionSuggestion → description：只用单值型指标（_extract_scalar_data 挑出的单行
+    数字），写成一段自然语言文本，只陈述数字，不做分析判断，也不重复罗列分布类明细
+    （那些数据下方会单独渲染）；具体行文格式由 descriptionSuggestion 文本本身给出。
+  summarySuggestion → summary：用子树下全部指标数据（含分布明细），在给定格式基础上
+    结合数据给出分析观点。
 
 生成范围：
   任意层级（L1~L5）节点均支持 summarySuggestion；descriptionSuggestion 仅结构节点
@@ -484,6 +486,24 @@ def _render_node_detail(node: Dict, node_data: Dict[str, List]) -> str:
     return "\n".join(detail_lines)
 
 
+def _extract_scalar_data(node_data: Dict[str, List]) -> Dict[str, str]:
+    """
+    只保留可当作单一数字看待的指标（单行结果），供 description 使用。
+    多行的分布类指标（如"XX分布""XX占比明细"）跳过——那些数据下方会以表格/图表
+    形式渲染，description 不重复展示，避免和数据区内容重复。
+    """
+    scalars: Dict[str, str] = {}
+    for name, rows in node_data.items():
+        if not rows or not isinstance(rows[0], dict) or len(rows) != 1:
+            continue
+        row = rows[0]
+        if len(row) == 1:
+            scalars[name] = str(next(iter(row.values())))
+        else:
+            scalars[name] = "，".join(f"{k}={v}" for k, v in row.items())
+    return scalars
+
+
 def _generate_description(
     node: Dict,
     node_data: Dict[str, List],
@@ -491,25 +511,32 @@ def _generate_description(
 ) -> None:
     """
     调 LLM 生成节点描述并推送 report_description 事件。
-    跟 _generate_summary 的区别：只呈现/概括数据本身，不做分析判断；
+    跟 _generate_summary 的区别：
+      - 数据输入只给单值型指标（_extract_scalar_data），不把分布类明细数据也塞进去——
+        那些已经在数据区渲染过一遍，description 重复罗列没有意义。
+      - 输出必须是一段自然语言文本，只客观陈述数字本身，不做任何分析/判断/建议。
     具体呈现格式由 descriptionSuggestion 文本本身给出，当作 prompt 里的格式规则。
     """
     from services.llm_service import LLMService
 
     node_id   = node.get("id", "")
     node_name = node.get("name", "")
-    detail    = _render_node_detail(node, node_data)
+    scalars   = _extract_scalar_data(node_data)
+    data_str  = "\n".join(f"{name}：{val}" for name, val in scalars.items()) or "（无可引用的单值数据）"
     description_suggestion = node["descriptionSuggestion"]
 
     prompt = (
-        f"【详细信息】\n{detail}\n\n"
+        f"【可引用的关键数字】\n{data_str}\n\n"
         f"【描述格式规则】\n{description_suggestion}\n\n"
-        "请严格按照描述格式规则给出的格式，用上方真实数据中的具体数字替换其中的占位符（如 XX）。\n"
-        "只客观呈现/概括数据本身，不要添加任何分析、判断、建议或结论性的观点。\n"
-        "直接输出内容，不要解释步骤。"
+        "请只输出一段自然语言文本（不要用列表、表格、分点），"
+        "严格按描述格式规则给出的格式组织语言，用上方数字替换其中的占位符（如 XX）。\n"
+        "只能引用上面列出的数字，不要罗列明细分布，不要编造未给出的数据，"
+        "也不要添加任何分析、判断、建议或结论性的观点——这些数据下方已经单独渲染，"
+        "description 只负责简明陈述。\n"
+        "直接输出这段文本，不要解释步骤。"
     )
 
-    logger.info("[report] 生成描述: %r（数据指标数: %d）", node_name, len(node_data))
+    logger.info("[report] 生成描述: %r（可用数字指标数: %d/%d）", node_name, len(scalars), len(node_data))
     try:
         llm         = LLMService.from_env()
         description = asyncio.run(llm.complete([{"role": "user", "content": prompt}]))
