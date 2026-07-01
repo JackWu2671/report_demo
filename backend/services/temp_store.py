@@ -21,7 +21,7 @@ from typing import Dict, List
 logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
-_DATA_ROOT   = Path(os.environ.get("REPORT_DATA_DIR", str(_BACKEND_DIR / "data")))
+_DATA_ROOT   = Path(os.environ.get("REPORT_DATA_DIR") or str(_BACKEND_DIR / "data"))
 _REPORT_ROOT = _DATA_ROOT / "report"
 
 logger.info("[temp_store] 会话产物根目录: %s", _REPORT_ROOT)

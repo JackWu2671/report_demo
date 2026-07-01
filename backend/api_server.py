@@ -140,7 +140,7 @@ def get_templates():
 
 # —— Session 产物读取（供轮询） ————————————————————————————————————
 
-_DATA_ROOT   = os.environ.get("REPORT_DATA_DIR", os.path.join(_DIR, "data"))
+_DATA_ROOT   = os.environ.get("REPORT_DATA_DIR") or os.path.join(_DIR, "data")
 _REPORT_ROOT = os.path.join(_DATA_ROOT, "report")
 
 
