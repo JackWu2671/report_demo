@@ -5,7 +5,7 @@ patcher.py — 将结构化操作列表应用到大纲树。
   delete_node    — 删除指定节点及其所有子节点
   add_node       — 新增节点：node_id 在 KB 中存在时拉取完整子树；否则需传 name（和可选 description）创建自定义节点
   keep_only_node — 保留指定节点，删除同级兄弟节点
-  update_node    — 修改节点属性：field=name/description/condition/exec_sql
+  update_node    — 修改节点属性：field=name/description/condition/exec_sql（写入 sql_config.exec_sql）
 """
 
 import copy
@@ -152,18 +152,13 @@ async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[d
                     )
                     if kb_node:
                         _update_node_fields(tree, node_id, {
-                            "id":              kb_node.get("id", node_id),
-                            "exec_sql":        kb_node.get("exec_sql", ""),
-                            "renderType":      kb_node.get("renderType", ""),
-                            "colX":            kb_node.get("colX", ""),
-                            "colY":            kb_node.get("colY", ""),
-                            "apiName":         kb_node.get("apiName", ""),
-                            "extracted_table": kb_node.get("extracted_table") or [],
+                            "id":         kb_node.get("id", node_id),
+                            "sql_config": kb_node.get("sql_config") or {},
                         })
                         logger.info("[Step 9] modify_node_name: L5 节点 %s → %r，已从 KB 同步字段 (new_id=%s)",
                                     node_id, new_name, kb_node.get("id"))
                     else:
-                        logger.warning("[Step 9] modify_node_name: 新名称 %r 在 KB 中不存在，exec_sql 等字段未同步",
+                        logger.warning("[Step 9] modify_node_name: 新名称 %r 在 KB 中不存在，sql_config 未同步",
                                        new_name)
                 logger.info("[Step 9] modify_node_name: 节点 %s → %r | 原因: %s", node_id, new_name, reason)
             else:
@@ -202,7 +197,7 @@ async def apply_patch(outline_tree: dict, ops: list[dict]) -> tuple[dict, list[d
                 logger.warning("[Step 9] modify_node_exec_sql: %s", msg)
                 skipped.append({**op, "_skip_reason": msg})
             else:
-                found = _modify_field(tree, node_id, "exec_sql", op.get("value", ""))
+                found = _modify_sql_config_field(tree, node_id, "exec_sql", op.get("value", ""))
                 if found:
                     logger.info("[Step 9] modify_node_exec_sql: 节点 %s | 原因: %s", node_id, reason)
                 else:
@@ -291,12 +286,7 @@ def _build_kb_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dic
         ],
     }
     if node.get("level") == 5:
-        entry["renderType"]       = node.get("renderType", "")
-        entry["colX"]             = node.get("colX", "")
-        entry["colY"]             = node.get("colY", "")
-        entry["apiName"]          = node.get("apiName", "")
-        entry["exec_sql"]         = node.get("exec_sql", "")
-        entry["extracted_table"]  = node.get("extracted_table") or []
+        entry["sql_config"] = node.get("sql_config") or {}
     return entry
 
 
@@ -361,6 +351,19 @@ def _modify_field(tree: dict, node_id: str, field: str, value: str) -> bool:
         return True
     for child in tree.get("children", []):
         if _modify_field(child, node_id, field, value):
+            return True
+    return False
+
+
+def _modify_sql_config_field(tree: dict, node_id: str, key: str, value: str) -> bool:
+    """修改 node_id 节点 sql_config 字典中的指定 key，返回是否找到目标节点。"""
+    if tree["id"] == node_id:
+        sql_config = dict(tree.get("sql_config") or {})
+        sql_config[key] = value
+        tree["sql_config"] = sql_config
+        return True
+    for child in tree.get("children", []):
+        if _modify_sql_config_field(child, node_id, key, value):
             return True
     return False
 

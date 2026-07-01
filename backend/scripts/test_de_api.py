@@ -83,9 +83,9 @@ def run_metric_test(metric_name: str) -> None:
         logger.error("未找到指标 %r\n前10个指标名: %s", metric_name, names)
         sys.exit(1)
 
-    answer = json.loads(matched.get("answer", "{}"))
-    exec_sql = answer.get("exec_sql", "")
-    tables   = json.loads(answer.get("extracted_table", "[]"))
+    sql_config = matched.get("sql_config") or {}
+    exec_sql = sql_config.get("exec_sql", "")
+    tables   = sql_config.get("tables") or []
     table    = tables[0] if tables else ""
 
     logger.info("=== 指标测试 ===")

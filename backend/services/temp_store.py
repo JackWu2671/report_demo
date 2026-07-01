@@ -313,9 +313,10 @@ def _render_report_html(
         name     = node.get("name", "")
         level    = node.get("level", 0)
         desc     = node.get("description", "")
-        rt       = (node.get("renderType") or "").upper()
-        col_x    = node.get("colX", "")
-        col_y    = node.get("colY", "")
+        sql_config = node.get("sql_config") or {}
+        rt       = (sql_config.get("renderType") or "").upper()
+        col_x    = sql_config.get("colX", "")
+        col_y    = sql_config.get("colY", "")
         children = node.get("children", [])
 
         if node_id == "__root__":

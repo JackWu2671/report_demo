@@ -325,16 +325,17 @@ def _run_metric(
 ) -> Optional[Dict]:
     """
     在独立线程中执行单条指标查询并推送结果。每次创建自己的 DeApiClient。
-    直接使用节点自身的 exec_sql 执行查询，mock_data 按节点 id 回落。
+    直接使用节点自身的 sql_config.exec_sql 执行查询，mock_data 按节点 id 回落。
     返回 {"name": ..., "rows": [...]} 供 collected 收集，失败返回 None。
     """
+    sql_config  = l5.get("sql_config") or {}
     metric_name = l5.get("name", "")
     node_id     = l5.get("id", "")
-    exec_sql    = l5.get("exec_sql") or ""
-    tables      = l5.get("extracted_table") or []
-    render_type = (l5.get("renderType") or "").upper()
-    col_x       = l5.get("colX") or ""
-    col_y       = l5.get("colY") or ""
+    exec_sql    = sql_config.get("exec_sql") or ""
+    tables      = sql_config.get("tables") or []
+    render_type = (sql_config.get("renderType") or "").upper()
+    col_x       = sql_config.get("colX") or ""
+    col_y       = sql_config.get("colY") or ""
 
     logger.info("[report] 查询: %r", metric_name)
 

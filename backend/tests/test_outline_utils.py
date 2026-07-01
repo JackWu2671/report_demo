@@ -72,8 +72,10 @@ MOCK_TREE = {
                     "name": "流量峰值分析",
                     "level": 5,
                     "description": "",
-                    "exec_sql": "SELECT * FROM traffic",
-                    "apiName": "getTraffic",
+                    "sql_config": {
+                        "exec_sql": "SELECT * FROM traffic",
+                        "tables": ["traffic"],
+                    },
                     "children": [],
                 },
             ],
@@ -112,7 +114,7 @@ def test_to_yaml():
     # level 和 SQL 字段不应出现
     assert "level:" not in result, "level 不应出现在 YAML 视图"
     assert "exec_sql" not in result, "exec_sql 不应出现在 YAML 视图"
-    assert "apiName" not in result, "apiName 不应出现在 YAML 视图"
+    assert "sql_config" not in result, "sql_config 不应出现在 YAML 视图"
     # 空 description 不应出现
     assert "区域覆盖分析" in result
     # condition 和 condition_queries 应出现

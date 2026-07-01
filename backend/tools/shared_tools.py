@@ -53,8 +53,8 @@ MODIFY_OUTLINE_TOOL: dict = {
             "node_id 在知识图谱中存在时自动拉取完整子树；不在 KB 中时需额外传 name（和可选 description）创建自定义结构节点"
             "\n- keep_only_node 保留该节点，删除同级所有其他节点。必填：node_id"
             "\n- update_node    修改节点属性值。必填：node_id, field, value。"
-            "field 可选：name / description（L5 禁止）/ condition / exec_sql（仅 L5）/ renderType / colX / colY / summarySuggestion / condition_queries。"
-            "name 改名后 L5 节点自动从 KB 同步 exec_sql 等关联字段。"
+            "field 可选：name / description（L5 禁止）/ condition / exec_sql（仅 L5，写入 sql_config.exec_sql）/ summarySuggestion / condition_queries。"
+            "name 改名后 L5 节点自动从 KB 同步 sql_config 等关联字段。"
             "exec_sql 只能在原始 SQL 基础上做局部改动，禁止引入原 SQL 中不存在的字段或枚举值，修改前必须先用 get_node_detail.py 查看当前值。"
             "\n\n多个独立操作可合并为一次调用。"
             "跳过的操作会在返回内容中以 SKIPPED 标注——出现时必须继续补救，不得告知用户已完成。"
@@ -102,7 +102,7 @@ SET_OUTLINE_TOOL: dict = {
             "\n4. L5 query 节点必须是叶子(无 children)，其 id 须引用 search_graph_tree 返回的知识库已有 id，禁止新建 query 节点"
             "\n5. 新建结构节点 id 必须按 new_L<层级>_<序号> 命名，显式编码层级：根用 new_L1_xxx，其下依次 new_L2_xxx / new_L3_xxx / new_L4_xxx（结构节点只能 L1~L4，绝不能 L5）"
             "\n6. 新建节点必须填写 description(50~100 字)"
-            "\n7. 只写 id/name/description/children(及按需 condition/condition_queries)，不要写 level/exec_sql 等字段"
+            "\n7. 只写 id/name/description/children(及按需 condition/condition_queries)，不要写 level/sql_config 等字段"
             "\n\n成功时工具会回显写入后的大纲；返回'写入失败'或未回显即为失败，须修正重试，不得告知用户已生成。"
         ),
         "parameters": {

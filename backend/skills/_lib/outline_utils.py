@@ -65,8 +65,8 @@ def _md_node(node: dict, heading_level: int) -> list[str]:
 # ── YAML（LLM 上下文视图）────────────────────────────────────────
 
 _YAML_OMIT = {
-    "level", "exec_sql", "apiName", "extracted_table",
-    "renderType", "colX", "colY", "summarySuggestion", "keywords", "score",
+    "level", "sql_config", "api_config",
+    "summarySuggestion", "keywords", "score",
 }
 
 
@@ -170,11 +170,11 @@ def to_clean_json(tree: dict) -> dict:
     将大纲树导出为干净 JSON，去除检索/内部字段（keywords、score 等）。
 
     保留字段：id, name, level, description, condition, condition_queries, summarySuggestion,
-             renderType, colX, colY, apiName, exec_sql, extracted_table（L5）, children
+             sql_config, api_config（L5）, children
     缺失的通用字段补默认值，确保所有层级的节点结构一致。
     """
     _KEEP = {"id", "name", "level", "description", "condition", "condition_queries", "summarySuggestion",
-             "renderType", "colX", "colY", "apiName", "exec_sql", "extracted_table"}
+             "sql_config", "api_config"}
     node = {k: v for k, v in tree.items() if k in _KEEP}
     # 补默认值：保证任意层级的节点都有这三个字段
     node.setdefault("condition", "")

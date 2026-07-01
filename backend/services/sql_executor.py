@@ -36,14 +36,8 @@ def _normalize_sql(sql: str) -> str:
 
 
 def _sql_from_mock_record(rec: dict) -> str:
-    """从 mock 记录里取生成它时所用的 exec_sql：优先顶层字段，否则解析 answer JSON 串。"""
-    if rec.get("exec_sql"):
-        return rec["exec_sql"]
-    try:
-        answer = json.loads(rec.get("answer", "{}"))
-        return answer.get("exec_sql", "") or ""
-    except (json.JSONDecodeError, TypeError):
-        return ""
+    """从 mock 记录里取生成它时所用的 exec_sql（来自 sql_config）。"""
+    return (rec.get("sql_config") or {}).get("exec_sql", "") or ""
 
 
 class SqlExecutor:
@@ -80,19 +74,21 @@ class SqlExecutor:
             logger.warning("[SqlExecutor] 未找到指标: %r", name)
             return None
 
+        sql_config = record.get("sql_config") or {}
+
         def _wrap(rows):
             return {
                 "rows":        rows,
-                "render_type": record.get("renderType"),
-                "col_x":       record.get("colX"),
-                "col_y":       record.get("colY"),
+                "render_type": sql_config.get("renderType"),
+                "col_x":       sql_config.get("colX"),
+                "col_y":       sql_config.get("colY"),
             }
 
         force_mock = os.environ.get("FORCE_MOCK", "").lower() in ("1", "true", "yes")
 
         if not force_mock:
-            sql    = record.get("exec_sql", "")
-            tables = record.get("extracted_table") or []
+            sql    = sql_config.get("exec_sql", "")
+            tables = sql_config.get("tables") or []
             table  = tables[0] if tables else ""
             if sql:
                 rows = client.execute_sql_query(sql, table)

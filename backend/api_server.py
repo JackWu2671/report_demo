@@ -117,7 +117,7 @@ def get_kb():
         with open(p, encoding="utf-8") as f:
             return json.load(f) or []
 
-    # node.json 是本地构建产物（gitignore），L5 节点已内含 exec_sql 等字段
+    # node.json 是本地构建产物（gitignore），L5 节点已内含 sql_config 等字段
     nodes     = _load("node.json") or _load("knowledge_nodes.json")
     relations = _load("relation.json") or _load("knowledge_relations.json")
 
