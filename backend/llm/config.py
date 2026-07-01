@@ -12,7 +12,7 @@ class LLMConfig:
     model: str = ""
     temperature: float | None = None
     top_p: float | None = None
-    max_tokens: int = 4096
+    max_tokens: int | None = None   # None = 使用 LLMService 的默认值（LLM_MAX_TOKENS）
     timeout: int = 0          # 0 = 使用 LLMService 默认值
     max_retry: int = 2
     extra_payload: dict = field(default_factory=dict)

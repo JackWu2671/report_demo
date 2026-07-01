@@ -40,6 +40,7 @@ class LLMService:
         top_p: float = 1.0,
         timeout: int = 120,
         enable_thinking: bool = False,
+        max_tokens: int = 4096,
     ):
         self._client = AsyncOpenAI(
             api_key=api_key or "EMPTY",
@@ -52,6 +53,7 @@ class LLMService:
         self._top_p = top_p
         self._timeout = timeout
         self.enable_thinking = enable_thinking
+        self._max_tokens = max_tokens
 
     @classmethod
     def from_env(cls) -> "LLMService":
@@ -64,6 +66,7 @@ class LLMService:
             top_p=float(os.getenv("LLM_TOP_P", 1.0)),
             timeout=int(os.getenv("LLM_TIMEOUT", 120)),
             enable_thinking=os.getenv("LLM_ENABLE_THINKING", "false").lower() == "true",
+            max_tokens=int(os.getenv("LLM_MAX_TOKENS", 4096)),
         )
 
     # ─── 公开接口 ───────────────────────────────────────────────
@@ -98,10 +101,11 @@ class LLMService:
         cfg = config or LLMConfig()
         model = cfg.model or self.default_model
         temperature = cfg.temperature if cfg.temperature is not None else self._temperature
+        max_tokens = cfg.max_tokens if cfg.max_tokens is not None else self._max_tokens
 
         logger.info(
-            "[LLM] 调用 model=%s temperature=%.2f messages=%d条",
-            model, temperature, len(messages),
+            "[LLM] 调用 model=%s temperature=%.2f max_tokens=%d messages=%d条",
+            model, temperature, max_tokens, len(messages),
         )
         for m in messages:
             content = m.get("content")
@@ -115,7 +119,7 @@ class LLMService:
             messages=messages,
             temperature=temperature,
             top_p=cfg.top_p if cfg.top_p is not None else self._top_p,
-            max_tokens=cfg.max_tokens,
+            max_tokens=max_tokens,
             stream=True,
             stream_options={"include_usage": True},
             extra_body={"chat_template_kwargs": {"enable_thinking": self.enable_thinking}},
