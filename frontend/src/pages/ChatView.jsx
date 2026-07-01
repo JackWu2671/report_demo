@@ -520,6 +520,15 @@ case 'saved':
           <div>
             <div className="chat-panel__title">看网分析</div>
             <div className="chat-panel__subtitle">分析传送网络现状，覆盖评估、容量分析、部署规划等</div>
+            {activeSession && (
+              <div
+                className="chat-panel__session-id"
+                title={`点击复制完整 session_id: ${activeSession}`}
+                onClick={() => navigator.clipboard?.writeText(activeSession)}
+              >
+                session: {activeSession.slice(0, 8)}
+              </div>
+            )}
           </div>
           {messages.length > 0 && sessionIdRef.current && (
             <button
