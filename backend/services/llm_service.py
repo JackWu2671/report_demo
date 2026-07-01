@@ -161,12 +161,25 @@ class LLMService:
         )
         if reasoning_content:
             logger.info("[LLM reasoning_content 全文]\n%s", reasoning_content)
+
         if not answer_content and reasoning_content:
-            logger.warning(
-                "[LLM] content 为空但 reasoning_content 有 %d 字——很可能是思考耗尽了 max_tokens，"
-                "正式回答被截断；可尝试调大 max_tokens 或设置 LLM_ENABLE_THINKING=false",
-                len(reasoning_content),
-            )
+            if finish_reason == "length":
+                logger.warning(
+                    "[LLM] content 为空、reasoning_content 有 %d 字，finish_reason=length——"
+                    "输出被截断，可调大 LLM_MAX_TOKENS",
+                    len(reasoning_content),
+                )
+            else:
+                # 部分部署未正确遵守 enable_thinking=false，把完整回答整段写进了
+                # reasoning_content、content 从未被填充。finish_reason 正常结束时，
+                # 兜底把 reasoning_content 当作回答返回，而不是丢弃整个结果。
+                logger.warning(
+                    "[LLM] content 为空但 reasoning_content 有 %d 字（finish_reason=%s，非截断），"
+                    "服务端可能未遵守 LLM_ENABLE_THINKING=false——回退使用 reasoning_content 作为回答",
+                    len(reasoning_content), finish_reason,
+                )
+                answer_content = reasoning_content
+
         return answer_content
 
     @staticmethod
