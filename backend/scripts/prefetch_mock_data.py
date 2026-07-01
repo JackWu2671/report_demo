@@ -30,14 +30,11 @@ FORCE       = False   # 改为 True 则忽略已有 mock_data，全量重跑
 
 
 def _parse_record(record: dict) -> tuple[str, str]:
-    try:
-        answer = json.loads(record.get("answer", "{}"))
-        sql = answer.get("exec_sql", "")
-        tables = json.loads(answer.get("extracted_table", "[]"))
-        table = tables[0] if tables else ""
-        return sql, table
-    except (json.JSONDecodeError, TypeError):
-        return "", ""
+    sql_config = record.get("sql_config") or {}
+    sql = sql_config.get("exec_sql", "")
+    tables = sql_config.get("tables") or []
+    table = tables[0] if tables else ""
+    return sql, table
 
 
 def fetch_one(record: dict) -> dict:
