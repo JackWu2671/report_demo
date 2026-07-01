@@ -145,9 +145,15 @@ class LLMService:
                     print(content, end="", flush=True)
 
         logger.info(
-            "[LLM Output] (%d字):\n%s",
-            len(answer_content), answer_content,
+            "[LLM Output] (%d字，reasoning=%d字):\n%s",
+            len(answer_content), len(reasoning_content), answer_content,
         )
+        if not answer_content and reasoning_content:
+            logger.warning(
+                "[LLM] content 为空但 reasoning_content 有 %d 字——很可能是思考耗尽了 max_tokens，"
+                "正式回答被截断；可尝试调大 max_tokens 或设置 LLM_ENABLE_THINKING=false",
+                len(reasoning_content),
+            )
         return answer_content
 
     @staticmethod
