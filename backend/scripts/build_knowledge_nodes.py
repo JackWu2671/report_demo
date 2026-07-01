@@ -51,6 +51,7 @@ def extract_node(record: dict, desc_field: str | None) -> dict:
         "condition": record.get("condition", ""),
         "condition_queries": record.get("condition_queries", []),
         "summarySuggestion": record.get("summarySuggestion", ""),
+        "summary": record.get("summary", ""),
     }
     # L5 指标节点附带 SQL 数据源配置
     if record.get("sql_config"):

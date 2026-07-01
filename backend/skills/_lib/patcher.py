@@ -279,6 +279,7 @@ def _build_kb_subtree(node_id: str, nodes_dict: dict, children_map: dict) -> dic
         "condition":         node.get("condition", ""),
         "condition_queries": node.get("condition_queries") or [],
         "summarySuggestion": node.get("summarySuggestion", ""),
+        "summary":           node.get("summary", ""),
         "children": [
             child
             for child_id in children_map.get(node_id, [])
