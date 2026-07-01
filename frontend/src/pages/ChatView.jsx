@@ -25,7 +25,12 @@ function buildSkeleton(tree) {
       } else {
         // 结构节点（任意非 L5 层级）：递归处理所有子节点
         lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
-        if (node.description) lines.push(node.description + '\n\n')
+        // 有静态 description 直接渲染；没有但有 descriptionSuggestion 时占位，等 LLM 生成
+        if (node.description) {
+          lines.push(node.description + '\n\n')
+        } else if (node.descriptionSuggestion) {
+          lines.push('<span data-ph-description="' + node.id + '" class="ph-spin"></span>\n\n')
+        }
         walk(node.children, depth + 1)
         if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
         // 只在叶子结构节点（子节点全为 L5 或无子节点）后加分隔线
@@ -57,8 +62,9 @@ export default function ChatView() {
   const [tableData, setTableData] = useState({}) // name → rows[]
   const [conversations, setConversations] = useState([]) // 历史会话列表
   const [activeSession, setActiveSession] = useState(null) // 当前会话 id（仅用于列表高亮）
-  const metricCacheRef = useRef({})   // name → { sig, value }，跨次生成缓存；sig 变化则失效
-  const summaryCacheRef = useRef({})  // node_id → { key, chunk }，subtree 不变时复用
+  const metricCacheRef = useRef({})      // name → { sig, value }，跨次生成缓存；sig 变化则失效
+  const summaryCacheRef = useRef({})     // node_id → { key, chunk }，subtree 不变时复用
+  const descriptionCacheRef = useRef({}) // node_id → { key, chunk }，subtree 不变时复用
   const outlineJsonRef = useRef(null) // 同步镜像 outlineJson state，供事件回调同帧读取
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
@@ -80,6 +86,7 @@ export default function ChatView() {
     setReportTab('view')
     metricCacheRef.current = {}
     summaryCacheRef.current = {}
+    descriptionCacheRef.current = {}
     setChartData({})
     setTableData({})
   }
@@ -225,10 +232,11 @@ export default function ChatView() {
     await sendText(text)
   }
 
-  function collectSummaryNodes(nodes, acc = []) {
+  // 收集所有需要 LLM 生成描述和/或总结的节点（descriptionSuggestion / summarySuggestion 任一存在）
+  function collectContentNodes(nodes, acc = []) {
     for (const node of nodes || []) {
-      if (node.summarySuggestion) acc.push(node)
-      collectSummaryNodes(node.children, acc)
+      if (node.descriptionSuggestion || node.summarySuggestion) acc.push(node)
+      collectContentNodes(node.children, acc)
     }
     return acc
   }
@@ -269,7 +277,13 @@ export default function ChatView() {
     return str.replace(ph, replacement)
   }
 
-  // 把 metric 缓存和 summary 缓存回填进 skeleton，返回已预填的报告字符串
+  function applyDescriptionChunk(str, nodeId, chunk) {
+    const ph = '<span data-ph-description="' + nodeId + '" class="ph-spin"></span>'
+    if (!str.includes(ph)) return str
+    return str.replace(ph, chunk.trim() + '\n')
+  }
+
+  // 把 metric / description / summary 缓存回填进 skeleton，返回已预填的报告字符串
   function replayCaches(sk, tree) {
     let out = sk
     const cache = metricCacheRef.current
@@ -280,8 +294,14 @@ export default function ChatView() {
       const ph = `<span data-ph="${name}" class="ph-spin"></span>`
       if (out.includes(ph)) out = out.replace(ph, entry.value)
     }
+    for (const [nodeId, cached] of Object.entries(descriptionCacheRef.current)) {
+      const node = findNodeById(treeChildren, nodeId)
+      if (node && cached?.key === JSON.stringify(node)) {
+        out = applyDescriptionChunk(out, nodeId, cached.chunk)
+      }
+    }
     for (const [nodeId, cached] of Object.entries(summaryCacheRef.current)) {
-      const node = findNodeById((tree || outlineJson)?.children || [], nodeId)
+      const node = findNodeById(treeChildren, nodeId)
       if (node && cached?.key === JSON.stringify(node)) {
         out = applySummaryChunk(out, nodeId, cached.chunk)
       }
@@ -307,12 +327,16 @@ export default function ChatView() {
       return entry !== undefined && entry.sig === metricSig(findNodeByName(tree.children || [], n))
     })
 
-    // 预填 summary 缓存：子树 JSON 未变则直接填充，无需 LLM 重新生成
-    const summaryNodes = collectSummaryNodes(tree.children || [])
+    // 预填 description/summary 缓存：子树 JSON 未变则直接填充，无需 LLM 重新生成。
+    // 后端用同一个 cached_summary_ids 判断"是否需要重新生成"，覆盖 description 和 summary
+    // 两者，所以节点上存在的 Suggestion 字段必须全部命中缓存才算这个节点整体可复用。
+    const contentNodes = collectContentNodes(tree.children || [])
     const cachedSummaryIds = []
-    for (const node of summaryNodes) {
-      const cached = summaryCacheRef.current[node.id]
-      if (cached?.key === JSON.stringify(node)) {
+    for (const node of contentNodes) {
+      const key = JSON.stringify(node)
+      const descriptionOk = !node.descriptionSuggestion || descriptionCacheRef.current[node.id]?.key === key
+      const summaryOk = !node.summarySuggestion || summaryCacheRef.current[node.id]?.key === key
+      if (descriptionOk && summaryOk) {
         cachedSummaryIds.push(node.id)
       }
     }
@@ -372,6 +396,13 @@ export default function ChatView() {
                 metricCacheRef.current[evt.name] = { sig, value: chunk }
                 setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk) : prev)
               }
+            } else if (evt.type === 'report_description') {
+              const ph = '<span data-ph-description="' + evt.node_id + '" class="ph-spin"></span>'
+              const chunk = (evt.chunk ?? '').trim()
+              setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk + '\n') : prev)
+              // 以当前大纲该节点的子树 JSON 为 key 写入缓存
+              const dNode = findNodeById(outlineJson.children || [], evt.node_id)
+              if (dNode) descriptionCacheRef.current[evt.node_id] = { key: JSON.stringify(dNode), chunk: evt.chunk ?? '' }
             } else if (evt.type === 'report_summary') {
               const span = '<span data-ph-summary="' + evt.node_id + '" class="ph-spin"></span>'
               const ph = '> ' + span  // span lives on a '> ' line inside the blockquote

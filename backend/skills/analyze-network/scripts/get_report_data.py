@@ -54,7 +54,7 @@ def _rows_to_md(rows: list) -> list[str]:
     return lines
 
 
-def _render(node: dict, report_data: dict, report_summaries: dict, depth: int = 0) -> list[str]:
+def _render(node: dict, report_data: dict, report_descriptions: dict, report_summaries: dict, depth: int = 0) -> list[str]:
     lines = []
     level  = node.get("level", 0)
     name   = node.get("name", "")
@@ -69,8 +69,11 @@ def _render(node: dict, report_data: dict, report_summaries: dict, depth: int = 
         if depth > 0:
             heading = "#" * min(depth, 4)
             lines.append(f"\n{indent}{heading} {name} ({nid})")
+        description = report_descriptions.get(nid)
+        if description:
+            lines.append(f"{indent}**节描述**：{description.strip()}")
         for child in node.get("children", []):
-            lines.extend(_render(child, report_data, report_summaries, depth + 1))
+            lines.extend(_render(child, report_data, report_descriptions, report_summaries, depth + 1))
         summary = report_summaries.get(nid)
         if summary:
             lines.append(f"\n{indent}**节总结**")
@@ -85,12 +88,13 @@ def main():
         print("用法: python3 get_report_data.py <node_id>", file=sys.stderr)
         sys.exit(1)
 
-    session          = _read_session()
-    outline_tree     = session.get("outline_tree", {})
-    report_data      = session.get("report_data", {})
-    report_summaries = session.get("report_summaries", {})
+    session             = _read_session()
+    outline_tree        = session.get("outline_tree", {})
+    report_data         = session.get("report_data", {})
+    report_descriptions = session.get("report_descriptions", {})
+    report_summaries    = session.get("report_summaries", {})
 
-    if not report_data and not report_summaries:
+    if not report_data and not report_descriptions and not report_summaries:
         print("（报告尚未生成，暂无数据）")
         sys.exit(0)
 
@@ -101,8 +105,11 @@ def main():
 
     node_name = target.get("name", node_id)
     lines = [f"=== {node_name} ({node_id}) ==="]
+    top_description = report_descriptions.get(node_id)
+    if top_description:
+        lines.append(f"**节描述**：{top_description.strip()}")
     for child in target.get("children", []):
-        lines.extend(_render(child, report_data, report_summaries, depth=1))
+        lines.extend(_render(child, report_data, report_descriptions, report_summaries, depth=1))
 
     top_summary = report_summaries.get(node_id)
     if top_summary:

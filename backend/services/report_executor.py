@@ -5,17 +5,25 @@ report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件�
 本模块只负责执行查询并推送每条指标的数据，不再推送标题文本。
 
 事件格式：
-  {"type": "report_metric",  "name": str, "chunk": str}         — 单条指标数据
-  {"type": "report_summary", "node_id": str, "chunk": str}      — 节点总结（LLM 生成）
+  {"type": "report_metric",      "name": str, "chunk": str}      — 单条指标数据
+  {"type": "report_description", "node_id": str, "chunk": str}   — 节点描述（LLM 生成，呈现数据不做分析）
+  {"type": "report_summary",     "node_id": str, "chunk": str}   — 节点总结（LLM 生成，含分析观点）
 
 并行策略：
   condition 检查仍串行（共享单一 client）；
   metric 查询用线程池并行，每个 worker 独立创建 DeApiClient；
-  某节点的所有后代 metric 都完成后，若该节点有 summarySuggestion 则调 LLM 生成总结。
+  某节点的所有后代 metric 都完成后，若该节点有 descriptionSuggestion / summarySuggestion
+  则依次调 LLM 生成描述与总结（描述先生成，对应渲染在数据之前；总结渲染在数据之后）。
 
-总结范围：
-  任意层级（L1~L5）节点均支持。_collect_node_data() 递归收集该节点
-  子树下所有 L5 指标的查询结果，作为总结的数据输入。
+描述与总结的区别：
+  descriptionSuggestion → description：只呈现/概括数据本身，不做分析判断，格式由
+    descriptionSuggestion 文本本身给出（当作 prompt 里的格式规则）。
+  summarySuggestion → summary：在给定格式基础上，还要结合数据给出分析观点。
+
+生成范围：
+  任意层级（L1~L5）节点均支持 summarySuggestion；descriptionSuggestion 仅结构节点
+  （L1~L4）有意义，L5 指标节点的 description 按 SOP 约定永远为空。
+  _collect_node_data() 递归收集该节点子树下所有 L5 指标的查询结果，作为生成的数据输入。
 """
 
 import asyncio
@@ -51,10 +59,14 @@ def run_report(
     executor = SqlExecutor()
     # collected 贯穿全局，所有 metric 的 rows 都写入这里
     collected: Dict[str, List] = {}
+    descriptions: Dict[str, str] = {}
     summaries: Dict[str, str] = {}
 
     def _capturing_on_event(event: dict) -> None:
-        if event.get("type") == "report_summary":
+        etype = event.get("type")
+        if etype == "report_description":
+            descriptions[event.get("node_id", "")] = event.get("chunk", "").rstrip("\n")
+        elif etype == "report_summary":
             summaries[event.get("node_id", "")] = event.get("chunk", "").rstrip("\n")
         on_event(event)
 
@@ -62,36 +74,40 @@ def run_report(
         _walk(outline_tree.get("children", []), client, executor, _capturing_on_event, cached_names, cached_summary_ids, collected)
 
     if session_id:
-        _persist_report_data(session_id, collected, summaries)
+        _persist_report_data(session_id, collected, descriptions, summaries)
         from services.temp_store import write_outline as _write_temp_outline
         from services.temp_store import write_report as _write_temp_report
-        if summaries:
-            # 生成的总结已回填进 outline_tree 各节点的 summary 字段（见 _generate_summary），
-            # 这里把更新后的树重新落盘到 outline.json，避免只留在 report_sessions 的临时总结里
-            for _nid in summaries:
-                _found = _find_node_by_id(outline_tree, _nid)
-                logger.info("[report][DEBUG] 写盘前查找 node_id=%s found=%s object_id=%s summary_len=%d",
-                            _nid, bool(_found), id(_found) if _found else None,
-                            len((_found or {}).get("summary", "")))
+        if descriptions or summaries:
+            # 生成的描述/总结已回填进 outline_tree 各节点的 description/summary 字段
+            # （见 _generate_description/_generate_summary），这里把更新后的树重新落盘到
+            # outline.json，避免只留在 report_sessions 的临时数据里
             try:
                 from outline_utils import to_markdown, to_yaml
                 _write_temp_outline(session_id, outline_tree, to_markdown(outline_tree), to_yaml(outline_tree))
-                logger.info("[report] summary 已回填 outline.json（session=%s, 节点数=%d）", session_id, len(summaries))
+                logger.info("[report] description/summary 已回填 outline.json（session=%s, 描述数=%d, 总结数=%d）",
+                            session_id, len(descriptions), len(summaries))
             except Exception as e:
-                logger.error("[report] summary 回填 outline.json 失败: %s", e, exc_info=True)
+                logger.error("[report] description/summary 回填 outline.json 失败: %s", e, exc_info=True)
         _write_temp_report(session_id, outline_tree, summaries, collected)
 
 
-def _persist_report_data(session_id: str, collected: Dict[str, List], summaries: Dict[str, str]) -> None:
-    """将指标查询结果（最多 10 行）和节点总结持久化到 session 文件，供 agent 按需查询。"""
+def _persist_report_data(
+    session_id: str,
+    collected: Dict[str, List],
+    descriptions: Dict[str, str],
+    summaries: Dict[str, str],
+) -> None:
+    """将指标查询结果（最多 10 行）、节点描述与总结持久化到 session 文件，供 agent 按需查询。"""
     _session_dir = Path(os.environ.get("REPORT_SESSION_DIR", "/tmp/report_sessions"))
     p = _session_dir / f"{session_id}.json"
     try:
         data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
         data["report_data"] = {name: rows[:10] for name, rows in collected.items()}
+        data["report_descriptions"] = descriptions
         data["report_summaries"] = summaries
         p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        logger.info("[report] 报告数据已写入会话 (metrics=%d, summaries=%d)", len(collected), len(summaries))
+        logger.info("[report] 报告数据已写入会话 (metrics=%d, descriptions=%d, summaries=%d)",
+                    len(collected), len(descriptions), len(summaries))
     except Exception as e:
         logger.warning("[report] 写入会话文件失败: %s", e)
 
@@ -205,12 +221,17 @@ def _process_structural(
             on_event({"type": "report_skip", "node_id": node.get("id", ""), "node_name": node.get("name", "")})
             return
 
-    needs_fresh_summary = bool(node.get("summarySuggestion")) and node.get("id") not in cached_summary_ids
+    # descriptionSuggestion / summarySuggestion 共用同一个"是否需要重新生成"的判定：
+    # 只要节点未变化（不在 cached_summary_ids 里），子树数据就得重新收集一遍，
+    # 有哪个 Suggestion 字段就生成哪个内容。
+    needs_fresh_content = (
+        bool(node.get("descriptionSuggestion")) or bool(node.get("summarySuggestion"))
+    ) and node.get("id") not in cached_summary_ids
 
     # Step 3: 查普通直属 L5 指标
-    # 若本节点总结需重新生成，已缓存的指标也要静默查询以填充 collected
+    # 若本节点描述/总结需重新生成，已缓存的指标也要静默查询以填充 collected
     regular_l5 = [n for n in l5_children if n.get("name") not in condition_queries]
-    if needs_fresh_summary:
+    if needs_fresh_content:
         silent = {n.get("name") for n in regular_l5 if n.get("name") in cached_names}
         _run_batch(regular_l5, cached_names, executor, on_event, collected, silent_names=silent)
     else:
@@ -219,11 +240,15 @@ def _process_structural(
     # Step 4: 递归处理结构子节点
     _walk(structural_children, client, executor, on_event, cached_names, cached_summary_ids, collected)
 
-    # Step 5: 总结
-    if needs_fresh_summary:
+    # Step 5: 描述与总结（描述先生成，对应渲染在数据之前；总结渲染在数据之后）
+    if needs_fresh_content:
         # structural_children 的深层 L5 若也被缓存跳过，先静默补查
         _backfill_cached_for_summary(node, cached_names, executor, collected)
-        _generate_summary(node, _collect_node_data(node, collected), on_event)
+        node_data = _collect_node_data(node, collected)
+        if node.get("descriptionSuggestion"):
+            _generate_description(node, node_data, on_event)
+        if node.get("summarySuggestion"):
+            _generate_summary(node, node_data, on_event)
 
 
 def _eval_condition_llm(node: Dict, cond_data: Dict[str, List]) -> bool:
@@ -280,17 +305,6 @@ def _find_l5_by_names(node: Dict, names: set) -> List[Dict]:
         else:
             result.extend(_find_l5_by_names(child, names))
     return result
-
-
-def _find_node_by_id(node: Dict, node_id: str) -> Optional[Dict]:
-    """按 id 递归查找节点（调试用）。"""
-    if node.get("id") == node_id:
-        return node
-    for child in node.get("children", []):
-        found = _find_node_by_id(child, node_id)
-        if found is not None:
-            return found
-    return None
 
 
 def _collect_node_data(node: Dict, collected: Dict[str, List]) -> Dict[str, List]:
@@ -430,21 +444,11 @@ def _run_metric(
     return {"name": metric_name, "rows": dict_rows or rows}
 
 
-def _generate_summary(
-    node: Dict,
-    node_data: Dict[str, List],
-    on_event: Callable[[dict], None],
-) -> None:
+def _render_node_detail(node: Dict, node_data: Dict[str, List]) -> str:
     """
-    调 LLM 生成节点总结并推送 report_summary 事件。
+    拼接节点子树的详细数据描述文本，供 _generate_description / _generate_summary 共用。
     node_data 是 _collect_node_data() 返回的该节点子树所有 L5 查询结果。
     """
-    from services.llm_service import LLMService
-
-    node_id   = node.get("id", "")
-    node_name = node.get("name", "")
-
-    # ── 拼接详细信息（按大纲 JSON 中的子节点顺序展示）────────────
     def _render_node(n: Dict, depth: int = 0) -> List[str]:
         lines = []
         indent = "  " * depth
@@ -471,14 +475,66 @@ def _generate_summary(
                 lines.extend(_render_node(child, depth + 1))
         return lines
 
-    detail_lines = [f"章节名称：{node_name}"]
+    detail_lines = [f"章节名称：{node.get('name', '')}"]
     if node.get("description"):
         detail_lines.append(f"章节说明：{node['description']}")
     detail_lines.append("\n指标查询结果：")
     for child in node.get("children", []):
         detail_lines.extend(_render_node(child, depth=1))
+    return "\n".join(detail_lines)
 
-    detail            = "\n".join(detail_lines)
+
+def _generate_description(
+    node: Dict,
+    node_data: Dict[str, List],
+    on_event: Callable[[dict], None],
+) -> None:
+    """
+    调 LLM 生成节点描述并推送 report_description 事件。
+    跟 _generate_summary 的区别：只呈现/概括数据本身，不做分析判断；
+    具体呈现格式由 descriptionSuggestion 文本本身给出，当作 prompt 里的格式规则。
+    """
+    from services.llm_service import LLMService
+
+    node_id   = node.get("id", "")
+    node_name = node.get("name", "")
+    detail    = _render_node_detail(node, node_data)
+    description_suggestion = node["descriptionSuggestion"]
+
+    prompt = (
+        f"【详细信息】\n{detail}\n\n"
+        f"【描述格式规则】\n{description_suggestion}\n\n"
+        "请严格按照描述格式规则给出的格式，用上方真实数据中的具体数字替换其中的占位符（如 XX）。\n"
+        "只客观呈现/概括数据本身，不要添加任何分析、判断、建议或结论性的观点。\n"
+        "直接输出内容，不要解释步骤。"
+    )
+
+    logger.info("[report] 生成描述: %r（数据指标数: %d）", node_name, len(node_data))
+    try:
+        llm         = LLMService.from_env()
+        description = asyncio.run(llm.complete([{"role": "user", "content": prompt}]))
+        node["description"] = description.strip()  # 回填到大纲节点，供 outline.json 持久化
+        on_event({"type": "report_description", "node_id": node_id, "chunk": description + "\n\n"})
+        logger.info("[report] 描述完成: %r", node_name)
+    except Exception as e:
+        logger.error("[report] 描述生成失败 %r: %s", node_name, e)
+        on_event({"type": "report_description", "node_id": node_id, "chunk": "_（描述生成失败）_\n\n"})
+
+
+def _generate_summary(
+    node: Dict,
+    node_data: Dict[str, List],
+    on_event: Callable[[dict], None],
+) -> None:
+    """
+    调 LLM 生成节点总结并推送 report_summary 事件。
+    node_data 是 _collect_node_data() 返回的该节点子树所有 L5 查询结果。
+    """
+    from services.llm_service import LLMService
+
+    node_id   = node.get("id", "")
+    node_name = node.get("name", "")
+    detail    = _render_node_detail(node, node_data)
     summary_suggestion = node["summarySuggestion"]
 
     prompt = (
@@ -498,8 +554,6 @@ def _generate_summary(
         node["summary"] = summary.strip()  # 回填到大纲节点，供 outline.json 持久化
         on_event({"type": "report_summary", "node_id": node_id, "chunk": summary + "\n\n"})
         logger.info("[report] 总结完成: %r", node_name)
-        logger.info("[report][DEBUG] 回填后 node id=%s object_id=%s summary_len=%d",
-                    node_id, id(node), len(node.get("summary", "")))
     except Exception as e:
         logger.error("[report] 总结生成失败 %r: %s", node_name, e)
         on_event({"type": "report_summary", "node_id": node_id, "chunk": "_（总结生成失败）_\n\n"})
