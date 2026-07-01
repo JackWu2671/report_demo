@@ -25,7 +25,7 @@ Excel 列说明:
   condition         — 整体展示条件表达式
   condition_queries — 条件相关指标名列表（用于执行前判断是否展示本节）
   summarySuggestion — LLM 总结指令
-  template          — expandLogic 原文（含 ${} 占位符，执行引擎渲染报告）
+  descriptionSuggestion — expandLogic 原文（含 ${} 占位符，执行引擎渲染报告）
   children          — 关联的评估指标名列表
 """
 
@@ -133,7 +133,7 @@ def convert_row(
         "condition": condition,
         "condition_queries": condition_queries,
         "summarySuggestion": obj.get("summarySuggestion") or "",
-        "template": expand_logic,
+        "descriptionSuggestion": expand_logic,
         "children": obj.get("metrics") or [],
     }
 
