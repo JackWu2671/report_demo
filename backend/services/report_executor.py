@@ -68,8 +68,12 @@ def run_report(
         if summaries:
             # 生成的总结已回填进 outline_tree 各节点的 summary 字段（见 _generate_summary），
             # 这里把更新后的树重新落盘到 outline.json，避免只留在 report_sessions 的临时总结里
-            from outline_utils import to_markdown, to_yaml
-            _write_temp_outline(session_id, outline_tree, to_markdown(outline_tree), to_yaml(outline_tree))
+            try:
+                from outline_utils import to_markdown, to_yaml
+                _write_temp_outline(session_id, outline_tree, to_markdown(outline_tree), to_yaml(outline_tree))
+                logger.info("[report] summary 已回填 outline.json（session=%s, 节点数=%d）", session_id, len(summaries))
+            except Exception as e:
+                logger.error("[report] summary 回填 outline.json 失败: %s", e, exc_info=True)
         _write_temp_report(session_id, outline_tree, summaries, collected)
 
 
