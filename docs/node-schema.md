@@ -10,7 +10,7 @@
 
 `children` 字段独立存在，任何节点都可以有子节点。
 
-**数据源约定**：`sql_config` / `api_config` / `content` 正常情况下三选一，代表节点的数据来源类型。技术上可共存，但属于边界场景，不建议作为常规用法。
+**数据源约定**：`sql_config` / `api_config` 正常情况下二选一，代表节点的数据来源类型。技术上可共存，但属于边界场景，不建议作为常规用法。
 
 ---
 
@@ -22,7 +22,6 @@
 | `name` | ✅ | 节点名称，渲染为章节标题 |
 | `description` | | 静态文本，渲染在数据之前（开篇） |
 | `descriptionSuggestion` | | prompt，LLM 看数据后生成开篇段落 |
-| `content` | | 静态 Markdown 正文，直接渲染 |
 | `sql_config` | | SQL 数据源配置，有则执行查询 |
 | `api_config` | | API 数据源配置，有则调用接口 |
 | `summarySuggestion` | | prompt，LLM 看数据后生成收尾段落 |
@@ -74,7 +73,6 @@ heading（name）
 description（静态）/ descriptionSuggestion 生成内容   ← 永远在最前
 sql_config 查询结果
 api_config 调用结果
-content（静态 Markdown）
 children（递归渲染）
 summary（静态）/ summarySuggestion 生成内容           ← 永远在最后
 ```
@@ -150,11 +148,11 @@ summary（静态）/ summarySuggestion 生成内容           ← 永远在最�
 {
   "id": "new_L4_001",
   "name": "排查步骤",
-  "content": "## 排查步骤\n\n1. 检查连接池配置\n```bash\nkubectl describe cm db-config\n```\n2. 查看慢查询日志..."
+  "description": "## 排查步骤\n\n1. 检查连接池配置\n```bash\nkubectl describe cm db-config\n```\n2. 查看慢查询日志..."
 }
 ```
 
-### 混合节点（SQL 数据 + 静态说明同时存在）
+### 混合节点（SQL 数据 + 静态收尾说明同时存在）
 
 ```json
 {
@@ -166,8 +164,7 @@ summary（静态）/ summarySuggestion 生成内容           ← 永远在最�
     "tables": ["dwd_alarm"],
     "renderType": "TABLE"
   },
-  "content": "### 处理建议\n\n- 优先处理持续超过 24 小时的告警\n- 联系属地工程师确认现场情况",
-  "summarySuggestion": "总结各类异常的分布规律，给出优先级排序建议。",
+  "summary": "### 处理建议\n\n- 优先处理持续超过 24 小时的告警\n- 联系属地工程师确认现场情况",
   "children": []
 }
 ```
