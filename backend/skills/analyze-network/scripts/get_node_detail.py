@@ -5,7 +5,7 @@
 用法:
   python3 get_node_detail.py <node_id> [node_id2 ...]
 
-输出节点的全量字段，包括 summarySuggestion、exec_sql、renderType 等
+输出节点的全量字段，包括 summarySuggestion、sql_config、api_config 等
 在大纲 YAML 视图中被省略的字段。可同时查询多个节点。
 
 失败时（节点不存在）输出 {"error": "..."}。
@@ -26,8 +26,7 @@ _NODE_FILE = (
 _DISPLAY_FIELDS = [
     "id", "name", "level", "description", "descriptionSuggestion",
     "condition", "condition_queries", "summarySuggestion",
-    "renderType", "colX", "colY",
-    "apiName", "exec_sql", "extracted_table",
+    "sql_config", "api_config",
 ]
 
 
