@@ -140,13 +140,14 @@ def get_templates():
 
 # —— Session 产物读取（供轮询） ————————————————————————————————————
 
-_TEMP_ROOT = os.path.join(_DIR, "temp")
+_DATA_ROOT   = os.environ.get("REPORT_DATA_DIR", os.path.join(_DIR, "data"))
+_REPORT_ROOT = os.path.join(_DATA_ROOT, "report")
 
 
 @app.get("/api/session/{session_id}/outline")
 def get_session_outline(session_id: str):
     """返回最新大纲三视图（JSON / Markdown / YAML）。"""
-    d = os.path.join(_TEMP_ROOT, session_id)
+    d = os.path.join(_REPORT_ROOT, session_id)
     def _read(name):
         p = os.path.join(d, name)
         return open(p, encoding="utf-8").read() if os.path.exists(p) else ""
@@ -164,7 +165,7 @@ def get_session_outline(session_id: str):
 @app.get("/api/session/{session_id}/report")
 def get_session_report(session_id: str, fmt: str = "html"):
     """返回最新报告内容。fmt=html（默认）或 md。"""
-    d = os.path.join(_TEMP_ROOT, session_id)
+    d = os.path.join(_REPORT_ROOT, session_id)
     filename = "report.html" if fmt == "html" else "report.md"
     p = os.path.join(d, filename)
     if not os.path.exists(p):

@@ -1,5 +1,5 @@
 """
-temp_store.py — 将 session 状态持久化到 backend/temp/{session_id}/
+temp_store.py — 将 session 状态持久化到 backend/data/report/{session_id}/
 
 每个 session 目录包含：
   outline.json      大纲树（JSON）
@@ -21,12 +21,13 @@ from typing import Dict, List
 logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = Path(__file__).parent.parent
-_TEMP_ROOT   = Path(os.environ.get("REPORT_TEMP_DIR", str(_BACKEND_DIR / "temp")))
+_DATA_ROOT   = Path(os.environ.get("REPORT_DATA_DIR", str(_BACKEND_DIR / "data")))
+_REPORT_ROOT = _DATA_ROOT / "report"
 
 
 
 def _session_dir(session_id: str) -> Path:
-    d = _TEMP_ROOT / session_id
+    d = _REPORT_ROOT / session_id
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -36,22 +37,22 @@ def _session_dir(session_id: str) -> Path:
 def _cached_report_data(session_id: str) -> tuple[dict, dict] | None:
     """读取已缓存的报告数据，返回 (collected, summaries) 或 None。
 
-    优先从 temp/{session_id}/report_data.json 读取 collected（最多 500 行/指标），
+    优先从 data/report/{session_id}/report_data.json 读取 collected（最多 500 行/指标），
     再从 session JSON 读取 summaries（文本，体积小）。
     这样大纲变更后重渲染时能拿到比 session JSON 里 10 行更完整的数据。
     """
     collected: dict = {}
     summaries: dict = {}
 
-    # 1. 从 temp 目录读 collected（更完整）
-    temp_data_path = _TEMP_ROOT / session_id / "report_data.json"
-    if temp_data_path.exists():
+    # 1. 从 data/report 目录读 collected（更完整）
+    report_data_path = _REPORT_ROOT / session_id / "report_data.json"
+    if report_data_path.exists():
         try:
-            collected = json.loads(temp_data_path.read_text(encoding="utf-8"))
+            collected = json.loads(report_data_path.read_text(encoding="utf-8"))
         except Exception:
             collected = {}
 
-    # 2. 从 session JSON 读 summaries；若 temp 没有 collected 则也从这里回退
+    # 2. 从 session JSON 读 summaries；若 data/report 没有 collected 则也从这里回退
     session_dir = Path(os.environ.get("REPORT_SESSION_DIR", "/tmp/report_sessions"))
     p = session_dir / f"{session_id}.json"
     if p.exists():
