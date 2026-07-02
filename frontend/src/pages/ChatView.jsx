@@ -263,11 +263,13 @@ export default function ChatView() {
   // metric 缓存签名：决定数据/渲染的字段，任一变化即缓存失效（如 exec_sql 改了）
   function metricSig(node) {
     if (!node) return ''
+    const cfg = node.sql_config || node.api_config || {}
     return JSON.stringify({
-      sql: node.exec_sql || '',
-      rt:  node.renderType || '',
-      x:   node.colX || '',
-      y:   node.colY || '',
+      sql:    cfg.exec_sql || cfg.api_name || '',
+      params: cfg.api_param || null,
+      rt:     cfg.renderType || '',
+      x:      cfg.colX || '',
+      y:      cfg.colY || '',
     })
   }
 
