@@ -2,12 +2,18 @@
 temp_store.py — 将 session 状态持久化到 backend/data/report/{session_id}/
 
 每个 session 目录包含：
-  outline.json      大纲树（JSON）
+  outline.json      大纲树（JSON，纯业务数据，不含报告生成专属的装饰节点/缓存签名）
   outline.md        大纲（Markdown，供人阅读）
   outline.yaml      大纲（YAML，LLM 上下文视图）
-  report_data.json  指标原始数据（供重新渲染用，全量）
+  report_data.json  指标原始数据（供重新渲染/签名缓存复用，全量）
   report.md         最终报告（Markdown，含数据表格 + LLM 总结 + 标题序号）
   report.html       最终报告（HTML，含 ECharts 交互图表，需联网加载 CDN）
+  _gen_cache.json   report_executor 用的生成缓存签名（metric_sig/content_sig，按节点 id 索引），
+                    内部实现细节，不属于业务大纲，前端 /api/session/{id}/outline 不会返回这个文件
+
+这个目录是报告和大纲的唯一权威数据源：report_executor.py 生成报告时只信任这里持久化的
+outline.json/report_data.json，前端也只通过 /api/session/{id}/outline 和
+/api/session/{id}/report 读取这里的内容，不再自己在内存里拼装/缓存展示状态。
 """
 
 import html
@@ -122,6 +128,72 @@ def write_report(
         logger.info("[temp_store] report.md / report.html 已写入 session=%s", session_id)
     except Exception as e:
         logger.warning("[temp_store] 写报告失败 session=%s: %s", session_id, e)
+
+
+def read_outline_views(session_id: str) -> dict | None:
+    """读取当前持久化的大纲三视图（JSON/Markdown/YAML）；大纲还没生成过则返回 None。
+
+    这是唯一权威的大纲读取入口——/api/session/{id}/outline 和 /api/report 都应该
+    调用这个函数，而不是各自拼路径读文件。
+    """
+    if not session_id:
+        return None
+    d = _REPORT_ROOT / session_id
+    p = d / "outline.json"
+    if not p.exists():
+        return None
+    try:
+        outline_tree = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    def _read(name: str) -> str:
+        fp = d / name
+        return fp.read_text(encoding="utf-8") if fp.exists() else ""
+
+    return {
+        "outline_tree": outline_tree,
+        "markdown":     _read("outline.md"),
+        "outline_yaml": _read("outline.yaml"),
+    }
+
+
+def read_collected(session_id: str) -> Dict[str, List]:
+    """读取上次持久化的指标原始数据（report_data.json），供 report_executor 按签名判断
+    是否需要重新查询——签名没变的指标直接复用这里的行数据，不用重查。"""
+    if not session_id:
+        return {}
+    p = _REPORT_ROOT / session_id / "report_data.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def read_gen_cache(session_id: str) -> dict:
+    """读取上次的生成缓存签名（metric_sig/content_sig，按节点 id 索引）。
+    这是 report_executor 的内部实现细节，不属于业务大纲，故不放进 outline.json。"""
+    if not session_id:
+        return {}
+    p = _REPORT_ROOT / session_id / "_gen_cache.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def write_gen_cache(session_id: str, cache: dict) -> None:
+    if not session_id:
+        return
+    try:
+        d = _session_dir(session_id)
+        (d / "_gen_cache.json").write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        logger.warning("[temp_store] 写生成缓存失败 session=%s: %s", session_id, e)
 
 
 # ── 公共工具 ─────────────────────────────────────────────────

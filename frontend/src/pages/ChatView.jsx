@@ -4,76 +4,6 @@ import ReportView from '../components/ReportView'
 import ChatMessage from '../components/ChatMessage'
 import QueryInput from '../components/QueryInput'
 
-// 「看网逻辑分析」：系统自动注入的固定节点，永远排在报告第一位，概括整份报告的分析
-// 思路。业务模板不需要在大纲里配置它——不管大纲长什么样，前端都会补这个节点。
-// id 需要跟后端 report_executor.py 里的 VIEW_LOGIC_NODE_ID 保持一致。
-const VIEW_LOGIC_NODE_ID = '__view_logic__'
-const VIEW_LOGIC_NODE = Object.freeze({
-  id: VIEW_LOGIC_NODE_ID,
-  name: '看网逻辑分析',
-  level: 1,
-  description: '',
-  // 只是让 buildSkeleton / collectContentNodes 认为它"有描述可生成"的占位标记，
-  // 真正的生成 prompt 由后端 report_view_logic_prompt.txt 决定，跟这段文字无关
-  descriptionSuggestion: '系统自动生成：概括整份报告的分析思路（先……再……）',
-})
-
-// 大纲树里没有看网逻辑分析节点时自动补一个在最前面；已存在则原样返回，避免重复插入。
-// 每次从后端拿到新的大纲树（打开历史会话、报告生成中途大纲更新、对话中 set_outline）
-// 都要过一遍这个函数，保证前端手里的树始终带着这个节点。
-function ensureViewLogicNode(tree) {
-  if (!tree) return tree
-  const children = tree.children || []
-  if (children[0]?.id === VIEW_LOGIC_NODE_ID) return tree
-  return { ...tree, children: [VIEW_LOGIC_NODE, ...children] }
-}
-
-// description/summary 缓存 key：看网逻辑分析节点本身是静态常量、没有子树数据，
-// 内容其实依赖"整棵大纲树"，所以用整棵树的 JSON 做签名；其余节点仍按自己的子树判断。
-function contentCacheKey(nodeId, node, tree) {
-  return nodeId === VIEW_LOGIC_NODE_ID ? JSON.stringify(tree) : JSON.stringify(node)
-}
-
-// 从大纲树生成带占位符的报告骨架
-// 占位符格式：<!--PH:指标名-->_加载中…_
-// ChatView 收到 report_metric 事件后，用实际数据替换对应占位符
-// heading 层级由节点在树中的深度决定（depth=1 → h1），与节点的 level 字段无关，
-// 保证同级兄弟节点无论 Lx 编号是否一致都渲染为相同 heading 层级。
-function buildSkeleton(tree) {
-  if (!tree) return ''
-
-  const lines = []
-  function walk(nodes, depth) {
-    for (const node of nodes || []) {
-      const lv = node.level || 1
-      const h = Math.min(Math.max(1, depth), 6)
-      if (lv === 5) {
-        // L5 = 查询叶子节点，只渲染占位符
-        lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
-        lines.push('<span data-ph="' + node.name + '" class="ph-spin"></span>\n\n')
-        if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
-      } else {
-        // 结构节点（任意非 L5 层级）：递归处理所有子节点
-        lines.push('#'.repeat(h) + ' ' + node.name + '\n\n')
-        // descriptionSuggestion 存在时优先占位、等 LLM 重新生成覆盖旧的 description
-        // （跟后端 report_executor 的行为保持一致）；没有 Suggestion 才直接渲染静态 description
-        if (node.descriptionSuggestion) {
-          lines.push('<span data-ph-description="' + node.id + '" class="ph-spin"></span>\n\n')
-        } else if (node.description) {
-          lines.push(node.description + '\n\n')
-        }
-        walk(node.children, depth + 1)
-        if (node.summarySuggestion) lines.push('> 总结\n> \n> <span data-ph-summary="' + node.id + '" class="ph-spin"></span>\n\n')
-        // 只在叶子结构节点（子节点全为 L5 或无子节点）后加分隔线
-        const hasStructuralChild = (node.children || []).some(c => (c.level || 1) !== 5)
-        if (!hasStructuralChild) lines.push('---\n\n')
-      }
-    }
-  }
-  walk(tree.children || [], 1)
-  return lines.join('')
-}
-
 export default function ChatView() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -86,17 +16,13 @@ export default function ChatView() {
   const [outlineTab, setOutlineTab] = useState('md')  // 'md' | 'llm' | 'json'
   const [sceneMeta, setSceneMeta] = useState(null)   // {scene_name, summary, keywords, usage_conditions}
   const [rightTab, setRightTab] = useState('outline') // 'outline' | 'report'
-  const [report, setReport] = useState('')
+  const [report, setReport] = useState('')           // 报告 Markdown 原文（fmt=md），只用于「Markdown」原文 tab
+  const [reportReady, setReportReady] = useState(false) // 这个 session 是否已经生成过报告
+  const [reportKey, setReportKey] = useState(0)       // 每次生成完 +1，强制报告 iframe 重新加载
   const [reportTab, setReportTab] = useState('view') // 'view' | 'md'
   const [generatingReport, setGeneratingReport] = useState(false)
-  const [chartData, setChartData] = useState({}) // name → {render_type, col_x, col_y, rows}
-  const [tableData, setTableData] = useState({}) // name → rows[]
   const [conversations, setConversations] = useState([]) // 历史会话列表
   const [activeSession, setActiveSession] = useState(null) // 当前会话 id（仅用于列表高亮）
-  const metricCacheRef = useRef({})      // name → { sig, value }，跨次生成缓存；sig 变化则失效
-  const summaryCacheRef = useRef({})     // node_id → { key, chunk }，subtree 不变时复用
-  const descriptionCacheRef = useRef({}) // node_id → { key, chunk }，subtree 不变时复用
-  const outlineJsonRef = useRef(null) // 同步镜像 outlineJson state，供事件回调同帧读取
   const sessionIdRef = useRef(null)
   const messagesEndRef = useRef(null)
   const assistantMsgIdxRef = useRef(-1)
@@ -108,18 +34,13 @@ export default function ChatView() {
     setOutlineMd('')
     setOutlineLlm('')
     setOutlineJson(null)
-    outlineJsonRef.current = null
     setOutlineTab('md')
     setSceneMeta(null)
     setQuickReplies([])
     setRightTab('outline')
     setReport('')
+    setReportReady(false)
     setReportTab('view')
-    metricCacheRef.current = {}
-    summaryCacheRef.current = {}
-    descriptionCacheRef.current = {}
-    setChartData({})
-    setTableData({})
   }
 
   function refreshConversations() {
@@ -145,7 +66,7 @@ export default function ChatView() {
       .catch(e => console.error('[ChatView] 创建 session 失败', e))
   }
 
-  // 打开历史会话：恢复消息与大纲
+  // 打开历史会话：恢复消息、大纲，以及（如果生成过）报告
   async function openConversation(id) {
     if (streaming || id === activeSession) return
     try {
@@ -157,13 +78,20 @@ export default function ChatView() {
       setActiveSession(d.session_id)
       setMessages(d.messages || [])
       if (d.outline_tree && Object.keys(d.outline_tree).length) {
-        const tree = ensureViewLogicNode(d.outline_tree)
-        outlineJsonRef.current = tree
-        setOutlineJson(tree)
+        setOutlineJson(d.outline_tree)
         setOutlineMd(d.markdown || '')
         setOutlineLlm(d.outline_yaml || '')
       }
       if (d.extraction && d.extraction.scene_name) setSceneMeta(d.extraction)
+
+      // 报告是否生成过，直接看 backend/data/report/{id}/ 里有没有 report.md——
+      // 不在前端另外维护一份"是否已生成"的状态
+      const reportRes = await fetch(`/api/session/${d.session_id}/report?fmt=md`)
+      if (reportRes.ok) {
+        setReport(await reportRes.text())
+        setReportReady(true)
+        setReportKey(k => k + 1)
+      }
     } catch (e) {
       console.error('[ChatView] 打开历史会话失败', e)
     }
@@ -264,210 +192,57 @@ export default function ChatView() {
     await sendText(text)
   }
 
-  // 收集所有需要 LLM 生成描述和/或总结的节点（descriptionSuggestion / summarySuggestion 任一存在）
-  function collectContentNodes(nodes, acc = []) {
-    for (const node of nodes || []) {
-      if (node.descriptionSuggestion || node.summarySuggestion) acc.push(node)
-      collectContentNodes(node.children, acc)
+  // 重新从 backend/data/report/{id}/ 拉取当前大纲——报告生成、条件跳过删节点等
+  // 操作都会改这份文件，拉一次保证大纲面板跟刚生成的报告一致
+  async function refreshOutline() {
+    if (!sessionIdRef.current) return
+    try {
+      const res = await fetch(`/api/session/${sessionIdRef.current}/outline`)
+      if (!res.ok) return
+      const d = await res.json()
+      setOutlineJson(d.outline_tree)
+      setOutlineMd(d.markdown || '')
+      setOutlineLlm(d.outline_yaml || '')
+    } catch (e) {
+      console.error('[ChatView] 刷新大纲失败', e)
     }
-    return acc
   }
 
-  function findNodeById(nodes, id) {
-    for (const node of nodes || []) {
-      if (node.id === id) return node
-      const found = findNodeById(node.children, id)
-      if (found) return found
-    }
-    return null
-  }
-
-  function findNodeByName(nodes, name) {
-    for (const node of nodes || []) {
-      if (node.name === name) return node
-      const found = findNodeByName(node.children, name)
-      if (found) return found
-    }
-    return null
-  }
-
-  // metric 缓存签名：决定数据/渲染的字段，任一变化即缓存失效（如 exec_sql 改了）
-  function metricSig(node) {
-    if (!node) return ''
-    const cfg = node.sql_config || node.api_config || {}
-    return JSON.stringify({
-      sql:    cfg.exec_sql || cfg.api_name || '',
-      params: cfg.api_param || null,
-      rt:     cfg.renderType || '',
-      x:      cfg.colX || '',
-      y:      cfg.colY || '',
-    })
-  }
-
-  function applySummaryChunk(str, nodeId, chunk) {
-    const ph = '> <span data-ph-summary="' + nodeId + '" class="ph-spin"></span>'
-    if (!str.includes(ph)) return str
-    const replacement = chunk.trim().split('\n').map(l => '> ' + l).join('\n') + '\n'
-    return str.replace(ph, replacement)
-  }
-
-  function applyDescriptionChunk(str, nodeId, chunk) {
-    const ph = '<span data-ph-description="' + nodeId + '" class="ph-spin"></span>'
-    if (!str.includes(ph)) return str
-    return str.replace(ph, chunk.trim() + '\n')
-  }
-
-  // 把 metric / description / summary 缓存回填进 skeleton，返回已预填的报告字符串
-  function replayCaches(sk, tree) {
-    let out = sk
-    const cache = metricCacheRef.current
-    const effectiveTree = tree || outlineJson
-    const treeChildren = effectiveTree?.children || []
-    for (const [name, entry] of Object.entries(cache)) {
-      // SQL 等签名变化时缓存失效，保留占位符让后端重新查询
-      if (entry.sig !== metricSig(findNodeByName(treeChildren, name))) continue
-      const ph = `<span data-ph="${name}" class="ph-spin"></span>`
-      if (out.includes(ph)) out = out.replace(ph, entry.value)
-    }
-    for (const [nodeId, cached] of Object.entries(descriptionCacheRef.current)) {
-      const node = findNodeById(treeChildren, nodeId)
-      if (node && cached?.key === contentCacheKey(nodeId, node, effectiveTree)) {
-        out = applyDescriptionChunk(out, nodeId, cached.chunk)
-      }
-    }
-    for (const [nodeId, cached] of Object.entries(summaryCacheRef.current)) {
-      const node = findNodeById(treeChildren, nodeId)
-      if (node && cached?.key === contentCacheKey(nodeId, node, effectiveTree)) {
-        out = applySummaryChunk(out, nodeId, cached.chunk)
-      }
-    }
-    return out
-  }
-
+  // 生成报告：只传 session_id，大纲从 backend/data/report/{id}/outline.json 读，
+  // 生成什么、要不要重新生成完全由后端自己判断。生成完之前不做任何本地拼装/展示，
+  // 结束后直接去 /api/session/{id}/report 取最终结果——backend/data/report/ 才是
+  // 唯一权威数据源。
   async function generateReport() {
-    // 读 ref 而非 state：当 start_report 与 outline 事件在同一 SSE 批次内触发时，
-    // React state 尚未刷新，但 ref 已同步更新
-    const tree = outlineJsonRef.current
-    if (!tree || generatingReport) return
+    if (!sessionIdRef.current || generatingReport) return
     setGeneratingReport(true)
-    const sk = buildSkeleton(tree)
     setReportTab('view')
     setRightTab('report')
-
-    // 预填指标缓存：仅当签名（exec_sql 等）与当前节点一致才算命中，否则需重查
-    const cache = metricCacheRef.current
-    const allNames = [...sk.matchAll(/data-ph="([^"]+)"/g)].map(m => m[1])
-    const cachedNames = allNames.filter(n => {
-      const entry = cache[n]
-      return entry !== undefined && entry.sig === metricSig(findNodeByName(tree.children || [], n))
-    })
-
-    // 预填 description/summary 缓存：子树 JSON 未变则直接填充，无需 LLM 重新生成。
-    // 后端用同一个 cached_summary_ids 判断"是否需要重新生成"，覆盖 description 和 summary
-    // 两者，所以节点上存在的 Suggestion 字段必须全部命中缓存才算这个节点整体可复用。
-    const contentNodes = collectContentNodes(tree.children || [])
-    const cachedSummaryIds = []
-    for (const node of contentNodes) {
-      const key = contentCacheKey(node.id, node, tree)
-      const descriptionOk = !node.descriptionSuggestion || descriptionCacheRef.current[node.id]?.key === key
-      const summaryOk = !node.summarySuggestion || summaryCacheRef.current[node.id]?.key === key
-      if (descriptionOk && summaryOk) {
-        cachedSummaryIds.push(node.id)
-      }
-    }
-
-    setReport(replayCaches(sk, tree))
 
     try {
       const res = await fetch('/api/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionIdRef.current,
-          outline_tree: tree,
-          cached_names: cachedNames,
-          cached_summary_ids: cachedSummaryIds,
-        }),
+        body: JSON.stringify({ session_id: sessionIdRef.current }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
-        setReport(`**错误：** ${err.detail}`)
+        appendMsg({ role: 'error', content: `报告生成失败：${err.detail}` })
         return
       }
-
-      const reader  = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop()
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const raw = line.slice(6)
-          if (raw === '[DONE]') break
-          try {
-            const evt = JSON.parse(raw)
-            if (evt.type === 'report_metric') {
-              const ph = '<span data-ph="' + evt.name + '" class="ph-spin"></span>'
-              const sig = metricSig(findNodeByName(outlineJsonRef.current?.children || [], evt.name))
-              const CHART = new Set(['BAR', 'LINE', 'PIE'])
-              if (CHART.has(evt.render_type) && evt.rows?.length) {
-                const info = { render_type: evt.render_type, col_x: evt.col_x, col_y: evt.col_y, rows: evt.rows }
-                setChartData(prev => ({ ...prev, [evt.name]: info }))
-                const placeholder = `<div data-echart="${evt.name}"></div>\n\n`
-                metricCacheRef.current[evt.name] = { sig, value: placeholder }
-                setReport(prev => prev.includes(ph) ? prev.replace(ph, placeholder) : prev)
-              } else if (evt.render_type === 'TABLE' && evt.rows?.length) {
-                setTableData(prev => ({ ...prev, [evt.name]: evt.rows }))
-                const placeholder = `<div data-table="${evt.name}"></div>\n\n`
-                metricCacheRef.current[evt.name] = { sig, value: placeholder }
-                setReport(prev => prev.includes(ph) ? prev.replace(ph, placeholder) : prev)
-              } else {
-                const chunk = evt.chunk ?? ''
-                metricCacheRef.current[evt.name] = { sig, value: chunk }
-                setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk) : prev)
-              }
-            } else if (evt.type === 'report_description') {
-              const ph = '<span data-ph-description="' + evt.node_id + '" class="ph-spin"></span>'
-              const chunk = (evt.chunk ?? '').trim()
-              setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk + '\n') : prev)
-              // 用发起本次生成时的 tree（而非可能已变化的 outlineJson state）算缓存 key，
-              // 保证 key 反映的是"生成这份内容时实际用的大纲"
-              const dNode = findNodeById(tree.children || [], evt.node_id)
-              if (dNode) descriptionCacheRef.current[evt.node_id] = { key: contentCacheKey(evt.node_id, dNode, tree), chunk: evt.chunk ?? '' }
-            } else if (evt.type === 'report_summary') {
-              const span = '<span data-ph-summary="' + evt.node_id + '" class="ph-spin"></span>'
-              const ph = '> ' + span  // span lives on a '> ' line inside the blockquote
-              const chunk = (evt.chunk ?? '').trim()
-              const replacement = chunk.split('\n').map(l => '> ' + l).join('\n') + '\n'
-              setReport(prev => prev.includes(ph) ? prev.replace(ph, replacement) : prev)
-              const node = findNodeById(tree.children || [], evt.node_id)
-              if (node) summaryCacheRef.current[evt.node_id] = { key: contentCacheKey(evt.node_id, node, tree), chunk: evt.chunk ?? '' }
-            } else if (evt.type === 'report_skip') {
-              appendMsg({ role: 'info', content: `「${evt.node_name}」不符合展示条件，已从报告中跳过。` })
-            } else if (evt.type === 'outline') {
-              // 条件跳过后，后端同步推送更新后的大纲，前端重建所有视图。
-              // 后端这里返回的是 agent 内存里的"真实业务大纲"，不含看网逻辑分析这个
-              // 前端自动注入的节点，要重新补上，否则这个板块会从报告里消失
-              const newTree = ensureViewLogicNode(evt.outline_tree)
-              outlineJsonRef.current = newTree
-              setOutlineJson(newTree)
-              setOutlineMd(evt.markdown || '')
-              setOutlineLlm(evt.outline_yaml || '')
-              const newSk = buildSkeleton(newTree)
-              setReport(replayCaches(newSk, newTree))
-            } else if (evt.type === 'report_done') {
-              appendMsg({ role: 'success', content: '报告已生成完成，请查看右侧报告面板。' })
-            }
-          } catch (err) { console.warn('[SSE] 解析/处理报告事件失败:', err, 'raw=', raw) }
-        }
+      const result = await res.json()
+      if (result.skipped?.length) {
+        const names = result.skipped.map(s => `「${s.node_name}」`).join('、')
+        appendMsg({ role: 'info', content: `${names} 不符合展示条件，已从大纲中删除。` })
       }
+
+      await refreshOutline()
+      const mdRes = await fetch(`/api/session/${sessionIdRef.current}/report?fmt=md`)
+      setReport(mdRes.ok ? await mdRes.text() : '')
+      setReportReady(true)
+      setReportKey(k => k + 1)
+      appendMsg({ role: 'success', content: '报告已生成完成，请查看右侧报告面板。' })
     } catch (e) {
-      setReport(`**错误：** ${e.message}`)
+      appendMsg({ role: 'error', content: `报告生成失败：${e.message}` })
     } finally {
       setGeneratingReport(false)
     }
@@ -509,21 +284,12 @@ export default function ChatView() {
         setOutline(md)
         setOutlineMd(md)
         if (evt.outline_yaml) setOutlineLlm(evt.outline_yaml)
-        if (evt.outline_tree) {
-          const tree = ensureViewLogicNode(evt.outline_tree)
-          outlineJsonRef.current = tree
-          setOutlineJson(tree)
-        }
+        if (evt.outline_tree) setOutlineJson(evt.outline_tree)
         break
       }
 
       case 'confirm':
         setQuickReplies(evt.options || [])
-        break
-
-      case 'report':
-        setReport(prev => prev + (evt.chunk ?? evt.content ?? ''))
-        setRightTab('report')
         break
 
       case 'start_report':
@@ -689,7 +455,7 @@ case 'saved':
               onClick={() => setRightTab(t.key)}
             >
               {t.label}
-              {t.key === 'report' && report && (
+              {t.key === 'report' && reportReady && (
                 <span className="right-panel-tab__dot" />
               )}
             </button>
@@ -775,7 +541,7 @@ case 'saved':
           <>
             <div className="outline-panel__header">
               <span className="outline-panel__title">报告预览</span>
-              {report && (
+              {reportReady && (
                 <div className="outline-tabs">
                   {[
                     { key: 'view', label: '报告' },
@@ -794,7 +560,12 @@ case 'saved':
             </div>
             <div className="outline-panel__body">
               {reportTab === 'view' && (
-                <ReportView markdown={report} generating={generatingReport} chartData={chartData} tableData={tableData} />
+                <ReportView
+                  sessionId={sessionIdRef.current}
+                  reportKey={reportKey}
+                  ready={reportReady}
+                  generating={generatingReport}
+                />
               )}
               {reportTab === 'md' && (
                 <pre className="outline-raw">{report || '（暂无数据）'}</pre>

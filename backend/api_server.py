@@ -147,19 +147,11 @@ _REPORT_ROOT = os.path.join(_DATA_ROOT, "report")
 @app.get("/api/session/{session_id}/outline")
 def get_session_outline(session_id: str):
     """返回最新大纲三视图（JSON / Markdown / YAML）。"""
-    d = os.path.join(_REPORT_ROOT, session_id)
-    def _read(name):
-        p = os.path.join(d, name)
-        return open(p, encoding="utf-8").read() if os.path.exists(p) else ""
-
-    tree_raw = _read("outline.json")
-    if not tree_raw:
+    from services import temp_store
+    view = temp_store.read_outline_views(session_id)
+    if view is None:
         raise HTTPException(status_code=404, detail="大纲尚未生成")
-    return {
-        "outline_tree": json.loads(tree_raw),
-        "markdown":     _read("outline.md"),
-        "outline_yaml": _read("outline.yaml"),
-    }
+    return view
 
 
 @app.get("/api/session/{session_id}/report")
@@ -201,20 +193,32 @@ def list_conversations():
 @app.post("/api/conversations/{session_id}/open")
 def open_conversation(session_id: str):
     """把历史会话恢复到内存并返回供前端渲染的消息与大纲。"""
+    from services import temp_store
+
     data = conversation_store.load_conversation(session_id)
     if data is None:
         raise HTTPException(status_code=404, detail="历史会话不存在")
+
+    # backend/data/report/{id}/ 是大纲的权威数据源——报告生成和对话里的
+    # set_outline/modify_outline 等操作都会实时写到这里，比 conversation_store
+    # 里的大纲快照更新（快照只在每轮对话结束时保存一次）。存在就优先用它，
+    # 避免出现"重开历史会话看到的大纲是生成报告之前的旧版本"。
+    outline_view = temp_store.read_outline_views(session_id)
+    if outline_view is not None:
+        outline_tree, markdown, outline_yaml = (
+            outline_view["outline_tree"], outline_view["markdown"], outline_view["outline_yaml"],
+        )
+    else:
+        outline_tree = data.get("outline_tree", {}) or {}
+        markdown     = data.get("markdown", "") or ""
+        outline_yaml = data.get("outline_yaml", "") or ""
 
     # 重建 agent 内存状态（已在内存则直接复用）
     agent = _sessions.get(session_id)
     if agent is None:
         agent = AgentWithSkills(session_id=session_id)
         agent.memory._history = data.get("history", [])
-        agent.memory.set_outline(
-            data.get("outline_tree", {}) or {},
-            data.get("markdown", "") or "",
-            data.get("outline_yaml", "") or "",
-        )
+        agent.memory.set_outline(outline_tree, markdown, outline_yaml)
         if hasattr(agent.memory, "set_extraction") and data.get("extraction"):
             agent.memory.set_extraction(data["extraction"])
         _sessions[session_id] = agent
@@ -231,9 +235,9 @@ def open_conversation(session_id: str):
     return {
         "session_id":   session_id,
         "messages":     conversation_store.chat_messages(data.get("history", [])),
-        "outline_tree": data.get("outline_tree", {}) or {},
-        "outline_yaml": data.get("outline_yaml", "") or "",
-        "markdown":     data.get("markdown", "") or "",
+        "outline_tree": outline_tree,
+        "outline_yaml": outline_yaml,
+        "markdown":     markdown,
         "extraction":   data.get("extraction", {}) or {},
     }
 
@@ -301,54 +305,47 @@ async def chat(req: ChatRequest):
     )
 
 
-# —— 报告生成 SSE 流式接口 ————————————————————————————————————————————
+# —— 报告生成 ————————————————————————————————————————————————————
+#
+# backend/data/report/{session_id}/ 是唯一权威数据源：大纲从这里读，生成结果也写回
+# 这里；前端不再传大纲 JSON 或缓存提示，只传 session_id，生成完直接去
+# /api/session/{id}/report 取最终 report.md/report.html。
 
 import asyncio
-import threading
 
 class ReportRequest(BaseModel):
-    session_id: str = ""
-    outline_tree: dict
-    cached_names: list[str] = []
-    cached_summary_ids: list[str] = []
+    session_id: str
 
 
-async def _stream_report(session_id: str, outline_tree: dict, cached_names: set, cached_summary_ids: set):
+@app.post("/api/report")
+async def generate_report(req: ReportRequest):
+    from services import temp_store
     from services.report_executor import run_report
-    from agent_with_skills.agent import _read_session
 
-    loop  = asyncio.get_event_loop()
-    queue: asyncio.Queue = asyncio.Queue()
-    skipped: list[dict] = []   # {node_id, node_name}
+    if not req.session_id:
+        raise HTTPException(status_code=400, detail="缺少 session_id")
+    _touch_session(req.session_id)
 
-    def on_event(event: dict):
+    view = temp_store.read_outline_views(req.session_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="大纲尚未生成，无法生成报告")
+
+    skipped: list[dict] = []   # {node_id, node_name}，因 condition 不满足被跳过的节点
+
+    def on_event(event: dict) -> None:
         if event.get("type") == "report_skip":
-            skipped.append({"node_id": event["node_id"], "node_name": event["node_name"]})
-        loop.call_soon_threadsafe(queue.put_nowait, event)
+            skipped.append({"node_id": event.get("node_id", ""), "node_name": event.get("node_name", "")})
 
-    def worker():
-        try:
-            run_report(outline_tree, on_event, cached_names, cached_summary_ids, session_id=session_id)
-        except Exception as e:
-            logger.error("[Report] 生成异常: %s", e, exc_info=True)
-            loop.call_soon_threadsafe(
-                queue.put_nowait,
-                {"type": "report_metric", "name": "__error__", "chunk": f"\n\n**[错误]** {e}\n\n"}
-            )
-        finally:
-            loop.call_soon_threadsafe(queue.put_nowait, None)
+    try:
+        await asyncio.to_thread(run_report, view["outline_tree"], on_event, session_id=req.session_id)
+    except Exception as e:
+        logger.error("[Report] 生成异常 session=%s: %s", req.session_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"报告生成失败: {e}")
 
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
+    final_view = temp_store.read_outline_views(req.session_id) or view
 
-    while True:
-        event = await queue.get()
-        if event is None:
-            break
-        yield _sse(event)
-
-    # 若有节点被条件跳过，直接调 patcher 删除，更新大纲
-    if skipped and session_id:
+    # 若有节点因 condition 不满足被跳过，从大纲里删除并重新落盘（连带重渲染报告）
+    if skipped:
         try:
             _SKILLS_LIB = os.path.join(_DIR, "skills", "_lib")
             if _SKILLS_LIB not in sys.path:
@@ -356,42 +353,27 @@ async def _stream_report(session_id: str, outline_tree: dict, cached_names: set,
             from patcher import apply_patch
             from outline_utils import to_clean_json, to_markdown, to_yaml
 
-            agent = _sessions.get(session_id)
-            outline_tree = (agent.memory.outline_tree if agent else None) or {}
             ops = [{"op": "delete_node", "node_id": s["node_id"]} for s in skipped]
-            new_tree, _ = await apply_patch(outline_tree, ops)
+            new_tree, _ = await apply_patch(final_view["outline_tree"], ops)
             updated_tree = to_clean_json(new_tree)
-            md       = to_markdown(updated_tree)
-            yaml_str = to_yaml(updated_tree)
-
-            if agent:
-                agent.memory.set_outline(updated_tree, md, yaml_str)
-                from services.temp_store import write_outline as _write_temp_outline
-                _write_temp_outline(session_id, updated_tree, md, yaml_str)
-                names = "、".join(f"「{s['node_name']}」" for s in skipped)
-                agent.memory.add_message({
-                    "role": "assistant",
-                    "content": f"[系统通知] 报告生成过程中，以下章节因数据条件不满足，已自动从大纲删除：{names}。大纲已同步更新。",
-                })
-
-            yield _sse({
-                "type":         "outline",
-                "markdown":     md,
-                "outline_yaml": yaml_str,
-                "outline_tree": updated_tree,
-            })
+            md, yaml_str = to_markdown(updated_tree), to_yaml(updated_tree)
+            temp_store.write_outline(req.session_id, updated_tree, md, yaml_str)
+            final_view = {"outline_tree": updated_tree, "markdown": md, "outline_yaml": yaml_str}
         except Exception as e:
-            logger.error("[Report] 更新大纲失败: %s", e)
+            logger.error("[Report] 处理条件跳过节点失败 session=%s: %s", req.session_id, e)
 
-    yield _sse({"type": "report_done"})
-    yield "data: [DONE]\n\n"
+    # 把生成结果（description/summary 回填、条件跳过的删除）同步回 agent 内存 + 历史会话
+    # 快照，这是之前"前端和后端沉淀内容不一致"问题的根源——之前这里没有回写，
+    # conversation_store 存的一直是生成之前的旧大纲
+    agent = _sessions.get(req.session_id)
+    if agent is not None:
+        agent.memory.set_outline(final_view["outline_tree"], final_view["markdown"], final_view["outline_yaml"])
+        if skipped:
+            names = "、".join(f"「{s['node_name']}」" for s in skipped)
+            agent.memory.add_message({
+                "role": "assistant",
+                "content": f"[系统通知] 报告生成过程中，以下章节因数据条件不满足，已自动从大纲删除：{names}。大纲已同步更新。",
+            })
+        conversation_store.save_conversation(agent)
 
-
-@app.post("/api/report")
-async def generate_report(req: ReportRequest):
-    if req.session_id:
-        _touch_session(req.session_id)
-    return StreamingResponse(
-        _stream_report(req.session_id, req.outline_tree, set(req.cached_names), set(req.cached_summary_ids)),
-        media_type="text/event-stream",
-    )
+    return {"ok": True, "skipped": skipped}

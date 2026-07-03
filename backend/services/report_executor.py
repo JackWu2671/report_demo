@@ -1,19 +1,10 @@
 """
-report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件推送结果。
+report_executor.py — 遍历 outline_tree，执行 SQL，生成描述/总结，落盘到
+backend/data/report/{session_id}/（唯一权威数据源，见 temp_store.py）。
 
-前端用 buildSkeleton() 生成包含占位符的骨架作为报告初始状态，
-本模块只负责执行查询并推送每条指标的数据，不再推送标题文本。
-
-事件格式：
-  {"type": "report_metric",      "name": str, "chunk": str}      — 单条指标数据
-  {"type": "report_description", "node_id": str, "chunk": str}   — 节点描述（LLM 生成，呈现数据不做分析）
-  {"type": "report_summary",     "node_id": str, "chunk": str}   — 节点总结（LLM 生成，含分析观点）
-
-并行策略：
-  condition 检查仍串行（共享单一 client）；
-  metric 查询用线程池并行，每个 worker 独立创建 DeApiClient；
-  某节点的所有后代 metric 都完成后，若该节点有 descriptionSuggestion / summarySuggestion
-  则依次调 LLM 生成描述与总结（描述先生成，对应渲染在数据之前；总结渲染在数据之后）。
+on_event 回调仅供内部串联描述/总结生成结果（见 run_report 里的 _capturing_on_event），
+不再是前端展示的数据来源——前端只通过 /api/session/{id}/report 读取生成完成后的
+report.md/report.html。
 
 描述与总结的区别：
   descriptionSuggestion → description：只用单值型指标（_extract_scalar_data 挑出的单行
@@ -28,16 +19,25 @@ report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件�
   _collect_node_data() 递归收集该节点子树下所有 L5 指标的查询结果，作为生成的数据输入。
 
 看网逻辑分析（固定注入节点，id 恒为 VIEW_LOGIC_NODE_ID）：
-  前端自动把这个节点插到 outline_tree.children[0]，不需要业务模板显式配置。它总结的
-  是"整份报告的分析思路"（先从哪个角度、再从哪个角度……），依赖的是其余章节的结构、
-  descriptionSuggestion（大纲设计时写的内容要点，往往本身就是成体系的看网逻辑）和
-  已生成的 description/summary，而不是自己的子树数据（它没有子树）——所以必须等其余
-  节点都处理完之后才能生成，跟其余节点各自独立生成的时机不同，复用 report_description
-  事件类型上报（chunk 渲染成平铺文字，不是 blockquote 总结）。
+  run_report() 自己把这个节点插到 outline_tree.children[0]（不需要业务模板显式配置，
+  也不需要前端参与注入）。它总结的是"整份报告的分析思路"（先从哪个角度、再从哪个
+  角度……），依赖的是其余章节的结构、descriptionSuggestion（大纲设计时写的内容要点，
+  往往本身就是成体系的看网逻辑）和已生成的 description/summary，而不是自己的子树
+  数据（它没有子树）——所以必须等其余节点都处理完之后才能生成。落盘 outline.json 时
+  会剔除这个节点（它是报告生成专属的装饰节点，不属于业务大纲本身），但落盘
+  report.md/report.html 时会保留（那是最终报告，理应包含这一节）。
+
+生成缓存（避免大纲没变时重复重查 SQL / 重新调 LLM）：
+  完全由后端自己判断，不再依赖前端传入 cached_names/cached_summary_ids。做法是给
+  每个节点算一个"稳定签名"（_node_sig：节点自身 + 全部后代，但排除 description/
+  summary 等生成结果字段），跟上次生成时记录的签名比较，不一致才重新生成；
+  L5 指标另外按 sql_config 算 _metric_sig，签名不一致才重新查询，命中缓存的行数据
+  从上次持久化的 report_data.json 里直接复用。签名记录在 _gen_cache.json 里，
+  是内部实现细节，不写进 outline.json（temp_store.read_gen_cache/write_gen_cache）。
 """
 
 import asyncio
-import functools
+import hashlib
 import json
 import logging
 import os
@@ -60,31 +60,82 @@ _DESCRIPTION_PROMPT_FILE = _PROMPTS_DIR / "report_description_prompt.txt"
 _SUMMARY_PROMPT_FILE = _PROMPTS_DIR / "report_summary_prompt.txt"
 _VIEW_LOGIC_PROMPT_FILE = _PROMPTS_DIR / "report_view_logic_prompt.txt"
 
-VIEW_LOGIC_NODE_ID = "__view_logic__"  # 前端自动注入的固定节点 id，跟 ChatView.jsx 保持一致
+VIEW_LOGIC_NODE_ID = "__view_logic__"
 
 logger = logging.getLogger(__name__)
 
 
-@functools.lru_cache(maxsize=None)
 def _load_prompt_template(path: Path) -> str:
-    """读取 prompt 模板文件并缓存（文件内容在进程生命周期内不变）。"""
     return path.read_text(encoding="utf-8")
+
+
+# ── 生成缓存签名 ─────────────────────────────────────────────
+
+_VOLATILE_KEYS = {"description", "summary"}  # 生成结果字段，不能算进签名（否则会有自引用问题）
+
+
+def _stable_repr(node: Dict) -> Dict:
+    """去掉生成结果字段，只保留决定"生成什么"的输入字段，递归处理 children。"""
+    out = {k: v for k, v in node.items() if k not in _VOLATILE_KEYS and k != "children"}
+    out["children"] = [_stable_repr(c) for c in node.get("children") or []]
+    return out
+
+
+def _node_sig(node: Dict) -> str:
+    """节点自身 + 全部后代（不含生成结果字段）的稳定签名，用于判断内容是否需要重新生成。"""
+    payload = json.dumps(_stable_repr(node), sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _metric_sig(node: Dict) -> str:
+    """L5 指标节点的查询签名，只看决定查询结果的字段。"""
+    cfg = node.get("sql_config") or {}
+    payload = json.dumps({
+        "sql": cfg.get("exec_sql") or "",
+        "rt":  (cfg.get("renderType") or "").upper(),
+        "x":   cfg.get("colX") or "",
+        "y":   cfg.get("colY") or "",
+    }, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _ensure_view_logic_node(outline_tree: Dict) -> Dict:
+    """大纲 children[0] 不是看网逻辑分析节点时自动补一个；已存在则原样返回。"""
+    children = outline_tree.get("children", [])
+    if children and children[0].get("id") == VIEW_LOGIC_NODE_ID:
+        return outline_tree
+    view_logic_node = {
+        "id": VIEW_LOGIC_NODE_ID,
+        "name": "看网逻辑分析",
+        "level": 1,
+        "description": "",
+        "descriptionSuggestion": "系统自动生成：概括整份报告的分析思路（先……再……）",
+    }
+    return {**outline_tree, "children": [view_logic_node, *children]}
 
 
 def run_report(
     outline_tree: Dict,
     on_event: Callable[[dict], None],
-    cached_names: set = None,
-    cached_summary_ids: set = None,
     session_id: str = "",
 ) -> None:
-    cached_names = cached_names or set()
-    cached_summary_ids = cached_summary_ids or set()
+    """
+    outline_tree 应该是从 backend/data/report/{session_id}/outline.json 读出来的当前
+    业务大纲（唯一权威来源，见 api_server.py 的 /api/report）。是否需要重新查询/重新
+    生成完全由本函数自己按签名判断，调用方不需要也不应该传入任何缓存提示。
+    """
+    from services.temp_store import read_collected, read_gen_cache, write_gen_cache
+
+    outline_tree = _ensure_view_logic_node(outline_tree)
     executor = SqlExecutor()
-    # collected 贯穿全局，所有 metric 的 rows 都写入这里
-    collected: Dict[str, List] = {}
+    # collected 用上次持久化的指标数据预填：签名没变的指标直接复用，不用重查
+    collected: Dict[str, List] = dict(read_collected(session_id)) if session_id else {}
     descriptions: Dict[str, str] = {}
     summaries: Dict[str, str] = {}
+
+    gen_cache = read_gen_cache(session_id) if session_id else {}
+    metric_sigs: Dict[str, str] = dict(gen_cache.get("metric_sig") or {})
+    content_sigs: Dict[str, str] = dict(gen_cache.get("content_sig") or {})
 
     def _capturing_on_event(event: dict) -> None:
         etype = event.get("type")
@@ -95,17 +146,22 @@ def run_report(
         on_event(event)
 
     children = outline_tree.get("children", [])
-    view_logic_node = children[0] if children and children[0].get("id") == VIEW_LOGIC_NODE_ID else None
-    rest_children = children[1:] if view_logic_node is not None else children
+    view_logic_node = children[0]
+    rest_children = children[1:]
 
     with DeApiClient() as client:
-        _walk(rest_children, client, executor, _capturing_on_event, cached_names, cached_summary_ids, collected)
+        _walk(rest_children, client, executor, _capturing_on_event, collected, metric_sigs, content_sigs)
 
-    # 看网逻辑分析依赖其余所有章节已生成的内容，必须放在 _walk() 之后单独处理
-    if view_logic_node is not None and view_logic_node.get("id") not in cached_summary_ids:
-        _generate_view_logic(view_logic_node, outline_tree, _capturing_on_event)
+    # 看网逻辑分析依赖其余所有章节已生成的内容，必须放在 _walk() 之后单独处理；
+    # 它自己没有子树，签名要用"其余章节整体"来算，不能用它自己的节点签名（那样永远不变）
+    view_logic_id = view_logic_node.get("id", "")
+    rest_sig = _node_sig({"children": rest_children})
+    if content_sigs.get(view_logic_id) != rest_sig:
+        _generate_view_logic(view_logic_node, rest_children, _capturing_on_event)
+        content_sigs[view_logic_id] = rest_sig
 
     if session_id:
+        write_gen_cache(session_id, {"metric_sig": metric_sigs, "content_sig": content_sigs})
         _persist_report_data(session_id, collected, descriptions, summaries)
         from services.temp_store import write_outline as _write_temp_outline
         from services.temp_store import write_report as _write_temp_report
@@ -115,12 +171,10 @@ def run_report(
             # outline.json，避免只留在 report_sessions 的临时数据里
             try:
                 from outline_utils import to_markdown, to_yaml
-                # 看网逻辑分析是前端注入的报告专属装饰节点，不属于业务大纲本身，
-                # 落盘 outline.json 时要剔除，避免污染 modify_outline/set_outline 等
+                # 看网逻辑分析是报告生成专属的装饰节点，不属于业务大纲本身，落盘
+                # outline.json 时要剔除，避免污染 modify_outline/set_outline 等
                 # 后续会读写这份"真实业务大纲"的流程
-                persisted_tree = outline_tree
-                if view_logic_node is not None:
-                    persisted_tree = {**outline_tree, "children": rest_children}
+                persisted_tree = {**outline_tree, "children": rest_children}
                 _write_temp_outline(session_id, persisted_tree, to_markdown(persisted_tree), to_yaml(persisted_tree))
                 logger.info("[report] description/summary 已回填 outline.json（session=%s, 描述数=%d, 总结数=%d）",
                             session_id, len(descriptions), len(summaries))
@@ -152,38 +206,37 @@ def _persist_report_data(
 
 def _run_batch(
     nodes: List[Dict],
-    cached_names: set,
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
     collected: Dict[str, List],
+    metric_sigs: Dict[str, str],
     *,
-    silent_names: set | None = None,
+    force: bool = False,
 ) -> None:
-    """并行执行一批 L5 指标查询，结果写入 collected。
+    """并行执行一批 L5 指标查询，结果写入 collected，查询签名写入 metric_sigs。
 
-    silent_names: 这些指标即使在 cached_names 里也会被查询，但不推 SSE 事件。
-    用于总结需要重新生成时，静默补全 collected 里的缓存指标数据。
+    force=True 用于 condition 指标：条件判断必须看当前真实结果，永远重查，不做签名缓存。
+    其余情况下，签名跟上次一致的指标直接跳过——collected 已经在 run_report() 里用
+    上次持久化的 report_data.json 预填过，跳过的指标数据本来就在里面。
     """
-    silent_names = silent_names or set()
-    to_query = [n for n in nodes if n.get("name") not in cached_names or n.get("name") in silent_names]
+    to_query = nodes if force else [n for n in nodes if metric_sigs.get(n.get("id", "")) != _metric_sig(n)]
     if not to_query:
         return
 
-    def _emit(event: dict) -> None:
-        if event.get("name") not in silent_names:
-            on_event(event)
-
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
-        futures = {pool.submit(_run_metric, n, executor, _emit): n for n in to_query}
+        futures = {pool.submit(_run_metric, n, executor, on_event): n for n in to_query}
         for future in as_completed(futures):
+            n = futures[future]
             try:
                 result = future.result()
                 if result and result.get("rows"):
                     collected[result["name"]] = result["rows"]
             except Exception as e:
-                n = futures[future]
                 logger.error("[report] 查询异常 %r: %s", n.get("name", ""), e)
-                _emit({"type": "report_metric", "name": n.get("name", ""), "chunk": "_（查询异常）_\n\n"})
+                on_event({"type": "report_metric", "name": n.get("name", ""), "chunk": "_（查询异常）_\n\n"})
+            # 无论查到、查空还是异常，都记录本次签名——跟前端旧缓存逻辑一致：只要
+            # 查询配置没变就不重查，配置变了（哪怕之前失败过）才会因签名不同再查一次
+            metric_sigs[n.get("id", "")] = _metric_sig(n)
 
 
 def _walk(
@@ -191,9 +244,9 @@ def _walk(
     client: DeApiClient,
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
-    cached_names: set,
-    cached_summary_ids: set,
     collected: Dict[str, List],
+    metric_sigs: Dict[str, str],
+    content_sigs: Dict[str, str],
 ) -> None:
     """递归遍历节点列表。L5 是查询叶子，其他任意层级均视为结构节点。"""
     metric_nodes = []
@@ -201,20 +254,18 @@ def _walk(
         if node.get("level") == 5:
             metric_nodes.append(node)
         else:
-            _process_structural(node, client, executor, on_event, cached_names, cached_summary_ids, collected)
+            _process_structural(node, client, executor, on_event, collected, metric_sigs, content_sigs)
 
     # 处理当前层级的孤立 L5 节点（无结构父节点直接挂在这一层）
     if metric_nodes:
-        # 若某 L5 节点总结需重新生成，该节点即使被缓存也需静默查询
-        summary_needed = {
-            n.get("name") for n in metric_nodes
-            if n.get("summarySuggestion") and n.get("id") not in cached_summary_ids
-        }
-        silent = summary_needed & cached_names
-        _run_batch(metric_nodes, cached_names, executor, on_event, collected, silent_names=silent)
+        _run_batch(metric_nodes, executor, on_event, collected, metric_sigs)
         for node in metric_nodes:
-            if node.get("summarySuggestion") and node.get("id") not in cached_summary_ids:
+            if not node.get("summarySuggestion"):
+                continue
+            node_id, sig = node.get("id", ""), _node_sig(node)
+            if content_sigs.get(node_id) != sig:
                 _generate_summary(node, {node["name"]: collected.get(node["name"], [])}, on_event)
+                content_sigs[node_id] = sig
 
 
 def _process_structural(
@@ -222,9 +273,9 @@ def _process_structural(
     client: DeApiClient,
     executor: SqlExecutor,
     on_event: Callable[[dict], None],
-    cached_names: set,
-    cached_summary_ids: set,
     collected: Dict[str, List],
+    metric_sigs: Dict[str, str],
+    content_sigs: Dict[str, str],
 ) -> None:
     """
     处理任意非 L5 结构节点（L1~L4 或用户自定义层级）。
@@ -247,9 +298,8 @@ def _process_structural(
     cond_deep   = _find_l5_by_names({"children": structural_children},
                                      condition_queries - {n.get("name") for n in cond_direct})
 
-    # Step 1: 查 condition 指标（不走缓存——collected 每次报告都是全新的，
-    # 若被 cached_names 跳过则 collected 里没有数据，条件判断会误判为 False）
-    _run_batch(cond_direct + cond_deep, set(), executor, on_event, collected)
+    # Step 1: 查 condition 指标（永远重查——条件判断必须看当前真实结果，不能拿旧数据判断）
+    _run_batch(cond_direct + cond_deep, executor, on_event, collected, metric_sigs, force=True)
 
     # Step 2: condition 判断
     if condition:
@@ -260,33 +310,27 @@ def _process_structural(
             return
 
     # descriptionSuggestion / summarySuggestion 共用同一个"是否需要重新生成"的判定：
-    # 只要节点未变化（不在 cached_summary_ids 里），子树数据就得重新收集一遍，
-    # 有哪个 Suggestion 字段就生成哪个内容。
+    # 节点自身 + 全部后代的签名（_node_sig）跟上次记录的不一致，才需要重新生成。
+    node_id, node_sig = node.get("id", ""), _node_sig(node)
     needs_fresh_content = (
         bool(node.get("descriptionSuggestion")) or bool(node.get("summarySuggestion"))
-    ) and node.get("id") not in cached_summary_ids
+    ) and content_sigs.get(node_id) != node_sig
 
-    # Step 3: 查普通直属 L5 指标
-    # 若本节点描述/总结需重新生成，已缓存的指标也要静默查询以填充 collected
+    # Step 3: 查普通直属 L5 指标（签名没变的直接跳过，collected 里已有上次持久化的数据）
     regular_l5 = [n for n in l5_children if n.get("name") not in condition_queries]
-    if needs_fresh_content:
-        silent = {n.get("name") for n in regular_l5 if n.get("name") in cached_names}
-        _run_batch(regular_l5, cached_names, executor, on_event, collected, silent_names=silent)
-    else:
-        _run_batch(regular_l5, cached_names, executor, on_event, collected)
+    _run_batch(regular_l5, executor, on_event, collected, metric_sigs)
 
     # Step 4: 递归处理结构子节点
-    _walk(structural_children, client, executor, on_event, cached_names, cached_summary_ids, collected)
+    _walk(structural_children, client, executor, on_event, collected, metric_sigs, content_sigs)
 
     # Step 5: 描述与总结（描述先生成，对应渲染在数据之前；总结渲染在数据之后）
     if needs_fresh_content:
-        # structural_children 的深层 L5 若也被缓存跳过，先静默补查
-        _backfill_cached_for_summary(node, cached_names, executor, collected)
         node_data = _collect_node_data(node, collected)
         if node.get("descriptionSuggestion"):
             _generate_description(node, node_data, on_event)
         if node.get("summarySuggestion"):
             _generate_summary(node, node_data, on_event)
+        content_sigs[node_id] = node_sig
 
 
 def _eval_condition_llm(node: Dict, cond_data: Dict[str, List]) -> bool:
@@ -359,43 +403,6 @@ def _collect_node_data(node: Dict, collected: Dict[str, List]) -> Dict[str, List
         else:
             data.update(_collect_node_data(child, collected))
     return data
-
-
-def _backfill_cached_for_summary(
-    node: Dict,
-    cached_names: set,
-    executor: SqlExecutor,
-    collected: Dict[str, List],
-) -> None:
-    """
-    对 node 子树中所有"已被前端缓存但 collected 里仍缺失"的 L5 指标，静默补查。
-    用于 structural_children 经 _walk 处理后仍有缺口的情况。
-    """
-    missing: List[Dict] = []
-
-    def _find(n: Dict) -> None:
-        for child in n.get("children", []):
-            if child.get("level") == 5:
-                name = child.get("name", "")
-                if name in cached_names and name not in collected:
-                    missing.append(child)
-            else:
-                _find(child)
-
-    _find(node)
-    if not missing:
-        return
-
-    logger.info("[report] 总结补查 %d 条缓存指标（静默）", len(missing))
-    with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
-        futures = {pool.submit(_run_metric, n, executor, lambda _: None): n for n in missing}
-        for future in as_completed(futures):
-            try:
-                result = future.result()
-                if result and result.get("rows"):
-                    collected[result["name"]] = result["rows"]
-            except Exception as e:
-                logger.warning("[report] 补查异常: %s", e)
 
 
 _CHART_TYPES = {"BAR", "LINE", "PIE"}
@@ -650,20 +657,19 @@ def _collect_outline_summary_text(nodes: List[Dict], depth: int = 1) -> List[str
 
 def _generate_view_logic(
     node: Dict,
-    outline_tree: Dict,
+    sibling_children: List[Dict],
     on_event: Callable[[dict], None],
 ) -> None:
     """
     调 LLM 生成"看网逻辑分析"节点内容，复用 report_description 事件上报（平铺文字，
     非 blockquote 总结）。跟其余节点的 description/summary 不同：这里的内容依赖整份
-    报告的章节结构和其余节点已生成的内容，而不是自己的子树数据（这个节点没有子树），
-    所以调用方必须保证其余节点都已处理完（见 run_report）。
+    报告的章节结构和其余节点（sibling_children）已生成的内容，而不是自己的子树数据
+    （这个节点没有子树），所以调用方必须保证其余节点都已处理完（见 run_report）。
     """
     from services.llm_service import LLMService
 
     node_id = node.get("id", "")
-    rest_children = [c for c in outline_tree.get("children", []) if c.get("id") != node_id]
-    outline_text = "\n".join(_collect_outline_summary_text(rest_children)) or "（暂无章节内容）"
+    outline_text = "\n".join(_collect_outline_summary_text(sibling_children)) or "（暂无章节内容）"
 
     prompt = _load_prompt_template(_VIEW_LOGIC_PROMPT_FILE).replace("{outline_text}", outline_text)
 
