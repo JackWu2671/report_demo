@@ -12,6 +12,7 @@ const VIEW_LOGIC_NODE = Object.freeze({
   id: VIEW_LOGIC_NODE_ID,
   name: '看网逻辑分析',
   level: 1,
+  description: '',
   // 只是让 buildSkeleton / collectContentNodes 认为它"有描述可生成"的占位标记，
   // 真正的生成 prompt 由后端 report_view_logic_prompt.txt 决定，跟这段文字无关
   descriptionSuggestion: '系统自动生成：概括整份报告的分析思路（先……再……）',
