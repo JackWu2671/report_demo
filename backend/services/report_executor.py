@@ -29,7 +29,8 @@ report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件�
 
 看网逻辑分析（固定注入节点，id 恒为 VIEW_LOGIC_NODE_ID）：
   前端自动把这个节点插到 outline_tree.children[0]，不需要业务模板显式配置。它总结的
-  是"整份报告的分析思路"（先从哪个角度、再从哪个角度……），依赖的是其余章节的结构和
+  是"整份报告的分析思路"（先从哪个角度、再从哪个角度……），依赖的是其余章节的结构、
+  descriptionSuggestion（大纲设计时写的内容要点，往往本身就是成体系的看网逻辑）和
   已生成的 description/summary，而不是自己的子树数据（它没有子树）——所以必须等其余
   节点都处理完之后才能生成，跟其余节点各自独立生成的时机不同，复用 report_description
   事件类型上报（chunk 渲染成平铺文字，不是 blockquote 总结）。
@@ -623,9 +624,13 @@ def _generate_summary(
 
 def _collect_outline_summary_text(nodes: List[Dict], depth: int = 1) -> List[str]:
     """
-    递归收集章节结构 + 已生成的 description/summary，供 _generate_view_logic 使用。
-    只关心结构节点（章节），跳过 L5 指标叶子——看网逻辑分析讲的是"怎么组织分析"，
-    不是具体指标明细。
+    递归收集章节结构 + descriptionSuggestion + 已生成的 description/summary，
+    供 _generate_view_logic 使用。只关心结构节点（章节），跳过 L5 指标叶子——
+    看网逻辑分析讲的是"怎么组织分析"，不是具体指标明细。
+
+    descriptionSuggestion 是大纲设计时写的内容要点，很多时候本身就包含成体系的
+    看网逻辑（先看什么、再看什么、怎么判断），比生成后的 description/summary
+    更接近"分析思路"本身，所以即使还没生成 description，也要把它带上。
     """
     lines: List[str] = []
     for node in nodes:
@@ -633,6 +638,8 @@ def _collect_outline_summary_text(nodes: List[Dict], depth: int = 1) -> List[str
             continue
         indent = "  " * (depth - 1)
         lines.append(f"{indent}{'#' * depth} {node.get('name', '')}")
+        if node.get("descriptionSuggestion"):
+            lines.append(f"{indent}内容要点：{node['descriptionSuggestion']}")
         if node.get("description"):
             lines.append(f"{indent}说明：{node['description']}")
         if node.get("summary"):
