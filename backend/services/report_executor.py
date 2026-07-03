@@ -29,6 +29,7 @@ report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件�
 """
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -46,7 +47,17 @@ if _LIB_DIR not in sys.path:
 
 MAX_PARALLEL = 5  # 同时执行的 metric 查询数
 
+_PROMPTS_DIR = Path(__file__).parent
+_DESCRIPTION_PROMPT_FILE = _PROMPTS_DIR / "report_description_prompt.txt"
+_SUMMARY_PROMPT_FILE = _PROMPTS_DIR / "report_summary_prompt.txt"
+
 logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache(maxsize=None)
+def _load_prompt_template(path: Path) -> str:
+    """读取 prompt 模板文件并缓存（文件内容在进程生命周期内不变）。"""
+    return path.read_text(encoding="utf-8")
 
 
 def run_report(
@@ -534,25 +545,10 @@ def _generate_description(
     original_description   = node.get("description") or "（无）"
 
     prompt = (
-        f"【原有章节说明（仅供参考写作基调/行文风格，不是数据来源——它可能是上一次生成时写的旧文本，"
-        f"其中提到的指标、数值或结论，只要没有出现在下面【可引用的关键数字】里，就说明对应数据已被删除或调整，"
-        f"绝不能沿用、复述或换个说法影射，必须当作不存在）】\n{original_description}\n\n"
-        f"【内容要点（大纲设计时写的旧建议，仅供表达角度/语气参考，不是必须覆盖的清单——"
-        f"大纲结构后续可能增删过指标或章节，要点里提到的方面不一定还对应得上当前数据，"
-        f"当前数据里也可能有要点没预料到的新内容；里面若出现 ${{指标名}} 这类写法，"
-        f"含义是\"在这里提一下这个指标\"，不要把 ${{...}} 原样写进输出）】\n{description_suggestion}\n\n"
-        f"【可引用的关键数字（这是当前唯一、完整的数据全貌，一切以此为准）】\n{data_str}\n\n"
-        "请综合以上信息，重新写一段连贯、有逻辑的自然语言描述：\n"
-        "1. 语句通顺自然，像人写的介绍性文字，绝不能出现 ${...} 占位符或裸的指标名；\n"
-        "2. 最终写什么、写多少，完全以【可引用的关键数字】实际给出的数据为准："
-        "内容要点提到、但当前数据没有对应体现的方面，视为已不适用，直接跳过，不要勉强凑话或暗示其存在；"
-        "当前数据里有、但内容要点没提到的新指标，也必须写进去，不能因为要点没覆盖就漏掉；"
-        "内容要点仅在某个方面确实有对应数据时，才用来参考怎么表达、以什么顺序组织；\n"
-        "3. 只能引用【可引用的关键数字】里给出的数字，不要罗列明细分布，不要编造未给出的数据，"
-        "也不要引用【原有章节说明】中未被当前数字覆盖的任何指标、数值或说法；\n"
-        "4. 不做任何分析、判断、建议或结论性观点，只客观陈述现状——这些数据下方已经单独渲染表格/图表；\n"
-        "5. 只输出这一段文本，不要用列表、表格、分点，不要解释步骤。\n"
-        "直接输出最终文本。"
+        _load_prompt_template(_DESCRIPTION_PROMPT_FILE)
+        .replace("{original_description}", original_description)
+        .replace("{description_suggestion}", description_suggestion)
+        .replace("{data_str}", data_str)
     )
 
     logger.info("[report] 生成描述: %r（可用数字指标数: %d/%d）", node_name, len(scalars), len(node_data))
@@ -584,15 +580,9 @@ def _generate_summary(
     summary_suggestion = node["summarySuggestion"]
 
     prompt = (
-        f"【详细信息（这是当前唯一、完整的数据全貌，其中子节点说明文字也已按当前数据重新生成）】\n{detail}\n\n"
-        f"【总结建议规则】\n{summary_suggestion}\n\n"
-        "请分两步输出：\n"
-        "1. 严格按照总结建议规则的格式，用上方真实数据中的具体数字替换其中的 XX；\n"
-        "2. 在规则内容之后，结合数据自由补充 1-2 句分析观点，"
-        "指出值得关注的趋势、异常或改进方向，语言简练专业。\n"
-        "只依据【详细信息】里出现的内容作答，不要引用、假设或保留任何这里没有列出的历史数据、指标或结论——"
-        "如果之前的总结提到过而这里没有的内容，说明已被删除，不得再提。\n"
-        "直接输出内容，不要解释步骤。"
+        _load_prompt_template(_SUMMARY_PROMPT_FILE)
+        .replace("{detail}", detail)
+        .replace("{summary_suggestion}", summary_suggestion)
     )
 
     logger.info("[report] 生成总结: %r（数据指标数: %d）", node_name, len(node_data))
