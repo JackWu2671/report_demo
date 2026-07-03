@@ -4,6 +4,35 @@ import ReportView from '../components/ReportView'
 import ChatMessage from '../components/ChatMessage'
 import QueryInput from '../components/QueryInput'
 
+// 「看网逻辑分析」：系统自动注入的固定节点，永远排在报告第一位，概括整份报告的分析
+// 思路。业务模板不需要在大纲里配置它——不管大纲长什么样，前端都会补这个节点。
+// id 需要跟后端 report_executor.py 里的 VIEW_LOGIC_NODE_ID 保持一致。
+const VIEW_LOGIC_NODE_ID = '__view_logic__'
+const VIEW_LOGIC_NODE = Object.freeze({
+  id: VIEW_LOGIC_NODE_ID,
+  name: '看网逻辑分析',
+  level: 1,
+  // 只是让 buildSkeleton / collectContentNodes 认为它"有描述可生成"的占位标记，
+  // 真正的生成 prompt 由后端 report_view_logic_prompt.txt 决定，跟这段文字无关
+  descriptionSuggestion: '系统自动生成：概括整份报告的分析思路（先……再……）',
+})
+
+// 大纲树里没有看网逻辑分析节点时自动补一个在最前面；已存在则原样返回，避免重复插入。
+// 每次从后端拿到新的大纲树（打开历史会话、报告生成中途大纲更新、对话中 set_outline）
+// 都要过一遍这个函数，保证前端手里的树始终带着这个节点。
+function ensureViewLogicNode(tree) {
+  if (!tree) return tree
+  const children = tree.children || []
+  if (children[0]?.id === VIEW_LOGIC_NODE_ID) return tree
+  return { ...tree, children: [VIEW_LOGIC_NODE, ...children] }
+}
+
+// description/summary 缓存 key：看网逻辑分析节点本身是静态常量、没有子树数据，
+// 内容其实依赖"整棵大纲树"，所以用整棵树的 JSON 做签名；其余节点仍按自己的子树判断。
+function contentCacheKey(nodeId, node, tree) {
+  return nodeId === VIEW_LOGIC_NODE_ID ? JSON.stringify(tree) : JSON.stringify(node)
+}
+
 // 从大纲树生成带占位符的报告骨架
 // 占位符格式：<!--PH:指标名-->_加载中…_
 // ChatView 收到 report_metric 事件后，用实际数据替换对应占位符
@@ -127,8 +156,9 @@ export default function ChatView() {
       setActiveSession(d.session_id)
       setMessages(d.messages || [])
       if (d.outline_tree && Object.keys(d.outline_tree).length) {
-        outlineJsonRef.current = d.outline_tree
-        setOutlineJson(d.outline_tree)
+        const tree = ensureViewLogicNode(d.outline_tree)
+        outlineJsonRef.current = tree
+        setOutlineJson(tree)
         setOutlineMd(d.markdown || '')
         setOutlineLlm(d.outline_yaml || '')
       }
@@ -290,7 +320,8 @@ export default function ChatView() {
   function replayCaches(sk, tree) {
     let out = sk
     const cache = metricCacheRef.current
-    const treeChildren = (tree || outlineJson)?.children || []
+    const effectiveTree = tree || outlineJson
+    const treeChildren = effectiveTree?.children || []
     for (const [name, entry] of Object.entries(cache)) {
       // SQL 等签名变化时缓存失效，保留占位符让后端重新查询
       if (entry.sig !== metricSig(findNodeByName(treeChildren, name))) continue
@@ -299,13 +330,13 @@ export default function ChatView() {
     }
     for (const [nodeId, cached] of Object.entries(descriptionCacheRef.current)) {
       const node = findNodeById(treeChildren, nodeId)
-      if (node && cached?.key === JSON.stringify(node)) {
+      if (node && cached?.key === contentCacheKey(nodeId, node, effectiveTree)) {
         out = applyDescriptionChunk(out, nodeId, cached.chunk)
       }
     }
     for (const [nodeId, cached] of Object.entries(summaryCacheRef.current)) {
       const node = findNodeById(treeChildren, nodeId)
-      if (node && cached?.key === JSON.stringify(node)) {
+      if (node && cached?.key === contentCacheKey(nodeId, node, effectiveTree)) {
         out = applySummaryChunk(out, nodeId, cached.chunk)
       }
     }
@@ -336,7 +367,7 @@ export default function ChatView() {
     const contentNodes = collectContentNodes(tree.children || [])
     const cachedSummaryIds = []
     for (const node of contentNodes) {
-      const key = JSON.stringify(node)
+      const key = contentCacheKey(node.id, node, tree)
       const descriptionOk = !node.descriptionSuggestion || descriptionCacheRef.current[node.id]?.key === key
       const summaryOk = !node.summarySuggestion || summaryCacheRef.current[node.id]?.key === key
       if (descriptionOk && summaryOk) {
@@ -403,23 +434,25 @@ export default function ChatView() {
               const ph = '<span data-ph-description="' + evt.node_id + '" class="ph-spin"></span>'
               const chunk = (evt.chunk ?? '').trim()
               setReport(prev => prev.includes(ph) ? prev.replace(ph, chunk + '\n') : prev)
-              // 以当前大纲该节点的子树 JSON 为 key 写入缓存
-              const dNode = findNodeById(outlineJson.children || [], evt.node_id)
-              if (dNode) descriptionCacheRef.current[evt.node_id] = { key: JSON.stringify(dNode), chunk: evt.chunk ?? '' }
+              // 用发起本次生成时的 tree（而非可能已变化的 outlineJson state）算缓存 key，
+              // 保证 key 反映的是"生成这份内容时实际用的大纲"
+              const dNode = findNodeById(tree.children || [], evt.node_id)
+              if (dNode) descriptionCacheRef.current[evt.node_id] = { key: contentCacheKey(evt.node_id, dNode, tree), chunk: evt.chunk ?? '' }
             } else if (evt.type === 'report_summary') {
               const span = '<span data-ph-summary="' + evt.node_id + '" class="ph-spin"></span>'
               const ph = '> ' + span  // span lives on a '> ' line inside the blockquote
               const chunk = (evt.chunk ?? '').trim()
               const replacement = chunk.split('\n').map(l => '> ' + l).join('\n') + '\n'
               setReport(prev => prev.includes(ph) ? prev.replace(ph, replacement) : prev)
-              // 以当前大纲该节点的子树 JSON 为 key 写入缓存
-              const node = findNodeById(outlineJson.children || [], evt.node_id)
-              if (node) summaryCacheRef.current[evt.node_id] = { key: JSON.stringify(node), chunk: evt.chunk ?? '' }
+              const node = findNodeById(tree.children || [], evt.node_id)
+              if (node) summaryCacheRef.current[evt.node_id] = { key: contentCacheKey(evt.node_id, node, tree), chunk: evt.chunk ?? '' }
             } else if (evt.type === 'report_skip') {
               appendMsg({ role: 'info', content: `「${evt.node_name}」不符合展示条件，已从报告中跳过。` })
             } else if (evt.type === 'outline') {
-              // 条件跳过后，后端同步推送更新后的大纲，前端重建所有视图
-              const newTree = evt.outline_tree
+              // 条件跳过后，后端同步推送更新后的大纲，前端重建所有视图。
+              // 后端这里返回的是 agent 内存里的"真实业务大纲"，不含看网逻辑分析这个
+              // 前端自动注入的节点，要重新补上，否则这个板块会从报告里消失
+              const newTree = ensureViewLogicNode(evt.outline_tree)
               outlineJsonRef.current = newTree
               setOutlineJson(newTree)
               setOutlineMd(evt.markdown || '')
@@ -476,8 +509,9 @@ export default function ChatView() {
         setOutlineMd(md)
         if (evt.outline_yaml) setOutlineLlm(evt.outline_yaml)
         if (evt.outline_tree) {
-          outlineJsonRef.current = evt.outline_tree
-          setOutlineJson(evt.outline_tree)
+          const tree = ensureViewLogicNode(evt.outline_tree)
+          outlineJsonRef.current = tree
+          setOutlineJson(tree)
         }
         break
       }

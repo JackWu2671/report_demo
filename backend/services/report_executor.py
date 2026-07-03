@@ -26,6 +26,13 @@ report_executor.py — 遍历 outline_tree，执行 SQL，通过结构化事件�
   任意层级（L1~L5）节点均支持 summarySuggestion；descriptionSuggestion 仅结构节点
   （L1~L4）有意义，L5 指标节点的 description 按 SOP 约定永远为空。
   _collect_node_data() 递归收集该节点子树下所有 L5 指标的查询结果，作为生成的数据输入。
+
+看网逻辑分析（固定注入节点，id 恒为 VIEW_LOGIC_NODE_ID）：
+  前端自动把这个节点插到 outline_tree.children[0]，不需要业务模板显式配置。它总结的
+  是"整份报告的分析思路"（先从哪个角度、再从哪个角度……），依赖的是其余章节的结构和
+  已生成的 description/summary，而不是自己的子树数据（它没有子树）——所以必须等其余
+  节点都处理完之后才能生成，跟其余节点各自独立生成的时机不同，复用 report_description
+  事件类型上报（chunk 渲染成平铺文字，不是 blockquote 总结）。
 """
 
 import asyncio
@@ -50,6 +57,9 @@ MAX_PARALLEL = 5  # 同时执行的 metric 查询数
 _PROMPTS_DIR = Path(__file__).parent
 _DESCRIPTION_PROMPT_FILE = _PROMPTS_DIR / "report_description_prompt.txt"
 _SUMMARY_PROMPT_FILE = _PROMPTS_DIR / "report_summary_prompt.txt"
+_VIEW_LOGIC_PROMPT_FILE = _PROMPTS_DIR / "report_view_logic_prompt.txt"
+
+VIEW_LOGIC_NODE_ID = "__view_logic__"  # 前端自动注入的固定节点 id，跟 ChatView.jsx 保持一致
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +93,16 @@ def run_report(
             summaries[event.get("node_id", "")] = event.get("chunk", "").rstrip("\n")
         on_event(event)
 
+    children = outline_tree.get("children", [])
+    view_logic_node = children[0] if children and children[0].get("id") == VIEW_LOGIC_NODE_ID else None
+    rest_children = children[1:] if view_logic_node is not None else children
+
     with DeApiClient() as client:
-        _walk(outline_tree.get("children", []), client, executor, _capturing_on_event, cached_names, cached_summary_ids, collected)
+        _walk(rest_children, client, executor, _capturing_on_event, cached_names, cached_summary_ids, collected)
+
+    # 看网逻辑分析依赖其余所有章节已生成的内容，必须放在 _walk() 之后单独处理
+    if view_logic_node is not None and view_logic_node.get("id") not in cached_summary_ids:
+        _generate_view_logic(view_logic_node, outline_tree, _capturing_on_event)
 
     if session_id:
         _persist_report_data(session_id, collected, descriptions, summaries)
@@ -96,7 +114,13 @@ def run_report(
             # outline.json，避免只留在 report_sessions 的临时数据里
             try:
                 from outline_utils import to_markdown, to_yaml
-                _write_temp_outline(session_id, outline_tree, to_markdown(outline_tree), to_yaml(outline_tree))
+                # 看网逻辑分析是前端注入的报告专属装饰节点，不属于业务大纲本身，
+                # 落盘 outline.json 时要剔除，避免污染 modify_outline/set_outline 等
+                # 后续会读写这份"真实业务大纲"的流程
+                persisted_tree = outline_tree
+                if view_logic_node is not None:
+                    persisted_tree = {**outline_tree, "children": rest_children}
+                _write_temp_outline(session_id, persisted_tree, to_markdown(persisted_tree), to_yaml(persisted_tree))
                 logger.info("[report] description/summary 已回填 outline.json（session=%s, 描述数=%d, 总结数=%d）",
                             session_id, len(descriptions), len(summaries))
             except Exception as e:
@@ -595,3 +619,54 @@ def _generate_summary(
     except Exception as e:
         logger.error("[report] 总结生成失败 %r: %s", node_name, e)
         on_event({"type": "report_summary", "node_id": node_id, "chunk": "_（总结生成失败）_\n\n"})
+
+
+def _collect_outline_summary_text(nodes: List[Dict], depth: int = 1) -> List[str]:
+    """
+    递归收集章节结构 + 已生成的 description/summary，供 _generate_view_logic 使用。
+    只关心结构节点（章节），跳过 L5 指标叶子——看网逻辑分析讲的是"怎么组织分析"，
+    不是具体指标明细。
+    """
+    lines: List[str] = []
+    for node in nodes:
+        if node.get("level") == 5:
+            continue
+        indent = "  " * (depth - 1)
+        lines.append(f"{indent}{'#' * depth} {node.get('name', '')}")
+        if node.get("description"):
+            lines.append(f"{indent}说明：{node['description']}")
+        if node.get("summary"):
+            lines.append(f"{indent}总结：{node['summary']}")
+        lines.extend(_collect_outline_summary_text(node.get("children") or [], depth + 1))
+    return lines
+
+
+def _generate_view_logic(
+    node: Dict,
+    outline_tree: Dict,
+    on_event: Callable[[dict], None],
+) -> None:
+    """
+    调 LLM 生成"看网逻辑分析"节点内容，复用 report_description 事件上报（平铺文字，
+    非 blockquote 总结）。跟其余节点的 description/summary 不同：这里的内容依赖整份
+    报告的章节结构和其余节点已生成的内容，而不是自己的子树数据（这个节点没有子树），
+    所以调用方必须保证其余节点都已处理完（见 run_report）。
+    """
+    from services.llm_service import LLMService
+
+    node_id = node.get("id", "")
+    rest_children = [c for c in outline_tree.get("children", []) if c.get("id") != node_id]
+    outline_text = "\n".join(_collect_outline_summary_text(rest_children)) or "（暂无章节内容）"
+
+    prompt = _load_prompt_template(_VIEW_LOGIC_PROMPT_FILE).replace("{outline_text}", outline_text)
+
+    logger.info("[report] 生成看网逻辑分析")
+    try:
+        llm  = LLMService.from_env()
+        text = asyncio.run(llm.complete([{"role": "user", "content": prompt}])).strip()
+        node["description"] = text  # 回填到大纲节点，供 outline.json 持久化
+        on_event({"type": "report_description", "node_id": node_id, "chunk": text + "\n\n"})
+        logger.info("[report] 看网逻辑分析完成")
+    except Exception as e:
+        logger.error("[report] 看网逻辑分析生成失败: %s", e)
+        on_event({"type": "report_description", "node_id": node_id, "chunk": "_（看网逻辑分析生成失败）_\n\n"})
